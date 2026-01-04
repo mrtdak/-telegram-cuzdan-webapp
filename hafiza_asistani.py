@@ -709,6 +709,11 @@ class HafizaAsistani:
         )
         print("✅ Topic Memory aktif!")
 
+        # 🔄 TOPIC MEMORY COOLDOWN - Aynı kategori sürekli enjekte edilmesin
+        self._injected_categories = {}  # {category_id: message_count_when_injected}
+        self._message_counter = 0  # Toplam mesaj sayacı
+        self._injection_cooldown = 5  # Kaç mesaj sonra tekrar enjekte edilebilir
+
         # 🧠 CONVERSATION CONTEXT - LLM tabanlı akıllı bağlam yönetimi (v1.0)
         # Konu derinleştiğinde bağlamı koruyan özet sistemi
         self.conversation_context = ConversationContextManager(
@@ -869,10 +874,13 @@ class HafizaAsistani:
 
     def get_silent_long_term_context(self, query: str) -> str:
         """
-        🔇 SILENT CONTEXT INJECTION
+        🔇 SILENT CONTEXT INJECTION (with cooldown)
 
         TopicMemory'den hızlı kategori eşleşmesi yap.
         Eşleşme varsa, sessizce LLM'e arka plan bilgisi olarak ver.
+
+        COOLDOWN: Aynı kategori son 5 mesajda enjekte edildiyse tekrar enjekte etme.
+        Böylece sohbet akışında aynı bilgi sürekli tekrarlanmaz.
 
         Bu bilgi:
         - Kullanıcıya gösterilMEZ
@@ -887,6 +895,9 @@ class HafizaAsistani:
             return ""
 
         try:
+            # Mesaj sayacını artır
+            self._message_counter += 1
+
             # Debug: Kategori sayısını göster
             cat_count = len(self.topic_memory.index.get("categories", {}))
             print(f"   🔇 TopicMemory kontrol: {cat_count} kategori mevcut")
@@ -895,23 +906,30 @@ class HafizaAsistani:
             context = self.topic_memory.get_context_for_query(query, max_sessions=2)
 
             if context:
-                print(f"   🔇 Silent long-term context bulundu ({len(context)} karakter)")
-                return context
+                # Context'ten kategori ID'sini çıkar (format: [kategori_adi])
+                import re
+                category_match = re.search(r'\[([^\]]+)\]', context)
+                if category_match:
+                    category_id = category_match.group(1)
+
+                    # Cooldown kontrolü
+                    if category_id in self._injected_categories:
+                        last_injection = self._injected_categories[category_id]
+                        messages_since = self._message_counter - last_injection
+
+                        if messages_since < self._injection_cooldown:
+                            print(f"   🔇 TopicMemory: '{category_id}' cooldown'da ({messages_since}/{self._injection_cooldown} mesaj)")
+                            return ""  # Cooldown'daysa enjekte etme
+
+                    # Cooldown geçti veya ilk kez - enjekte et ve kaydet
+                    self._injected_categories[category_id] = self._message_counter
+                    print(f"   🔇 Silent long-term context bulundu ({len(context)} karakter) - cooldown başladı")
+                    return context
+                else:
+                    print(f"   🔇 Silent long-term context bulundu ({len(context)} karakter)")
+                    return context
             else:
-                # Debug: Neden bulunamadı?
-                if self.topic_memory.embedder:
-                    # Manuel benzerlik kontrolü
-                    query_emb = self.topic_memory.embedder.encode(query)
-                    for cat_id, cat_info in self.topic_memory.index.get("categories", {}).items():
-                        if cat_info.get("embedding"):
-                            from sklearn.metrics.pairwise import cosine_similarity
-                            import numpy as np
-                            sim = cosine_similarity(
-                                [query_emb],
-                                [np.array(cat_info["embedding"])]
-                            )[0][0]
-                            print(f"   🔍 DEBUG: '{cat_info.get('name')}' benzerlik: {sim:.3f} (eşik: 0.45)")
-                print(f"   🔇 Silent long-term context: eşleşme yok (benzerlik < 0.45)")
+                print(f"   🔇 TopicMemory: eşleşme yok")
                 return ""
 
         except Exception as e:

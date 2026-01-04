@@ -604,8 +604,8 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                     cat_keywords = cat_name.replace("/", " ").replace("-", " ").split()
                     keyword_match = any(kw in query_lower for kw in cat_keywords if len(kw) > 3)
 
-                    # Eşik: Kelime eşleşmesi varsa 0.30, yoksa 0.40 (test için düşürüldü)
-                    threshold = 0.30 if keyword_match else 0.40
+                    # Eşik: Kelime eşleşmesi varsa 0.65, yoksa 0.75 (sadece gerçekten aynı konu olduğunda gelsin)
+                    threshold = 0.65 if keyword_match else 0.75
 
                     if similarity >= threshold:
                         category_scores.append((cat_id, cat_info, similarity))
@@ -690,7 +690,7 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                             [summary_embedding]
                         )[0][0]
 
-                        if similarity >= 0.30:  # 0.45'ten düşürüldü (test için)
+                        if similarity >= 0.70:  # Sadece gerçekten aynı konu olduğunda gelsin
                             all_results.append({
                                 "category_id": cat_id,
                                 "category_name": cat_info.get("name", cat_id),
