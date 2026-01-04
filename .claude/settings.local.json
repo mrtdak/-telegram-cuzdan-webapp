@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(wmic path win32_VideoController get name:*)",
+      "Bash(wmic cpu:*)",
+      "Bash(wmic computersystem get totalphysicalmemory)",
+      "Bash(dir \"C:\\\\Users\\\\Betül\\\\Desktop\\\\zambaba\")",
+      "Bash(copy:*)",
+      "Bash(xcopy:*)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}

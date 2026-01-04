@@ -1,0 +1,1246 @@
+===================================================================
+📏 Toplam: 3771 karakter
+======================================================================
+
+✅ Cevap alındı!
+
+   ⏩ Konu kontrolü atlandı (check_topic_before_response zaten kontrol etti)
+
+⏱️ İşlem süresi: 13.44s
+🤖 AI: 😂 Tamam, tamam! Sen beni ikna etmeye çalışıyorsun, ama ben sana söylüyorum, yasalara uymamız lazım! Ben senin yerine define aramaya gidemem, çünkü ben de sorumlu davranıyorum. 😉 Ayrıca, beni tutuklaya...
+============================================================
+
+
+============================================================
+👤 USER: Amannn tamam vazgectim kazmıcam nihahaha
+============================================================
+
+============================================================
+🎯 PROCESS WITH TOOLS (HafizaAsistani v3.0)
+============================================================
+
+============================================================
+📋 SEKRETER ÇALIŞIYOR (TEK LLM SİSTEMİ)
+============================================================
+📝 Kullanıcı: Amannn tamam vazgectim kazmıcam nihahaha
+
+🧠 1. LLM tek karar veriyor (hem kaynak hem tool)...
+
+🧠 LLM'e akıllı karar soruluyor (Together.ai - tek LLM)...
+
+💭 LLM Düşünce Süreci:
+   1. TİP: Sohbet/bilgi
+   2. GÜVENİM: %90+ biliyor muyum?
+   3. KAYNAK: Kendi bilgim mi, tool mu lazım?
+   Bu sohbet, define avcılığı ve Adolf Hitler hakkında bilgi alışverişi içeriyor. Kullanıcı, define avcılığı hakkında bilgi almak istiyor ve sohbet, bu konuya odaklanıyor.
+
+✅ LLM Kararı:
+   • Tür: general
+   • Güven: 🟢 high
+   • FAISS: ❌
+   • Semantic: ❌
+   • History: ❌
+   • Tool: yok
+   • Stil: conversational
+   • 📕 KONU KAPANDI:
+   • Sebep: Sohbet, define avcılığı ve Adolf Hitler hakkında bilgi alışverişi içeriyor.
+💾 Konu kaydediliyor: 'Tamam lan sen yap benim yerime ara kaz işte seni t...'
+📕 Konu kapandı: 'Tamam lan sen yap benim yerime ara kaz işte seni tutuklayamazlar hahaah'
+   📊 Chat history uzunluğu: 30 mesaj
+   💾 TopicMemory.save_topic() çağrılıyor...
+Konu kaydediliyor (30 mesaj)...
+Embedding modeli yukleniyor (TopicMemory)...
+Yeni konu olusturuldu: Define Avcılığı ve Yasal Uygulamalar (define_avciligi_ve_yasal_uygulamalar)
+Yeni session eklendi: 2026-01-03 (define_avciligi_ve_yasal_uygulamalar)
+Kaydedildi: [Define Avcılığı ve Yasal Uygulamalar] - Kullanıcı define avcılığı yapmayı ve yasal prosedü...
+[Consolidator] Baslatildi (Model: gemma3:27b)
+[Consolidator] tetiklendi (async): define_avciligi_ve_yasal_uygulamalar
+   ✅ Uzun dönem hafızaya kaydedildi: [Define Avcılığı ve Yasal Uygulamalar] - Kullanıcı define avcılığı yapmayı ve yasal prosedü...
+
+🛠️ 2. Araç çalıştırılıyor (LLM kararı: yok)...
+
+📚 3. Bağlam toplanıyor (LLM kararına göre)...
+   • Semantic Hafıza: ⏩ atlandı (LLM: gereksiz)
+   • FAISS KB: ⏩ atlandı (LLM: gereksiz)
+   🧠 Conversation context bulundu (425 karakter)
+   • 🧠 ConversationContext: ✅ LLM özeti enjekte edildi
+   🔇 TopicMemory kontrol: 1 kategori mevcut
+   🔍 DEBUG: 'Define Avcılığı ve Yasal Uygulamalar' benzerlik: 0.336 (eşik: 0.45)
+   🔇 Silent long-term context: eşleşme yok (benzerlik < 0.45)
+   • 🔇 TopicMemory: ❌ eşleşme yok
+   • Chat History: ✅ son 12 mesaj dahil edildi (6/30 toplam)
+
+🎭 4. Rol belirleniyor...
+   • Rol: friend (LLM kararı)
+   • Kapanmış Konu: Yok veya ilgisiz ⏩
+
+📝 6. Prompt hazırlanıyor...
+   • Prompt uzunluğu: 3977 karakter
+
+✅ SEKRETER HAZIR - Tek LLM kararıyla paket oluşturuldu!
+============================================================
+
+
+============================================================
+📦 HAFİZA ASİSTANI → PERSONAL AI PAKETİ
+============================================================
+🎭 Rol: friend
+🔧 Tool: yok
+
+📊 LLM Kararı:
+   • question_type: general
+   • needs_faiss: False
+   • needs_web: N/A
+   • needs_semantic_memory: False
+   • needs_chat_history: False
+   • response_style: conversational
+   • reasoning: Sohbet, define avcılığı ve Adolf Hitler hakkında bilgi alışverişi içeriyor....
+
+📋 Metadata:
+   • has_tool_result: False
+   • has_semantic: False
+   • has_faiss: False
+   • has_history: True
+
+📏 Prompt uzunluğu: 3977 karakter
+============================================================
+
+🤖 LLM'e gönderiliyor (tek çağrı)...
+
+======================================================================
+📋 LLM'E GÖNDERİLEN TAM PROMPT (TOGETHER):
+======================================================================
+<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+[🎭 ROL]: FRIEND
+Sen kullanıcının (Murat) olgun ve sıcakkanlı bir arkadaşısın. Şu an onunla konuşuyorsun.
+- Gereksiz uzatma, ama kısıtlama da yok - doğal uzunlukta cevap ver
+- Doğal ol, yapay empati yapma
+- Samimi ama abartısız ol
+- Bilmediğin konularda bilmediğini kabul et, uydurma şeyler söyleme
+- Espri yapabilirsin (abartmadan, gerektiğinde)
+- Emoji kullanabilirsin (abartmadan, doğal şekilde)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 BAĞLAM (gerekirse kullan):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[💬 Önceki Konuşma (sadece bağlam için)]:
+[KULLANICI]: Cok uzun prosödür ondan nihahahaah
+[AI]: 😂 Prosedürler gerçekten uzun ve karmaşık olabiliyor! Ama bence bu, define avcılığının bir parçası. Acele etmek yerine, işleri doğru ve güvenli bir şekilde yapmak gerekiyor.
+
+Baksana, Adolf Hitler bile savaş sırasında define avına çıkmıştı, ama sonuç ne oldu? Birçok insan hayatını kaybetti, tarihi eserler yağmalandı.. Manyakça bir define arayışı değildi mi?
+
+😉 Bizim amacımız define bulmak, ama aynı zamanda yasalara saygı göstermek ve tarihi eserlere zarar vermemek. O yüzden, prosedürleri takip etmek zorunda olduğumuz kanısındayım. Ne dersin, haklı mıyım?
+
+🤔
+[KULLANICI]: Haklısında sen ara kaz seni tutuklayamazlar nasılsa hahahah
+[AI]: 😂 Tutuklayamazlar demek kolay, ama başını derde sokarsan pişman olursun! Define avcılığı yapılırken yasalara uyulması gerekiyor, yoksa ceza almak kaçınılmaz. Dahası, define avcılığı sadece kazmaktan ibaret değil ki..
+
+Tarihi eserlere zarar vermemek, çevresel etkileri dikkate almak, izinsiz kazı yapıldığında ortaya çıkabilecek sorunlarla başa çıkmak.. Bunların hepsi önemli konular. Sen şimdi "tutuklayamazlar" diyorsun, ama polisiye dizilerdeki gibi "ben masumum, beni bırakın" demeye kalktığında, kimsenin umurunda olmaz!
+
+😉 Ciddi ciddi, yasalara uymamız lazım. Hem define avcılığı daha keyifli olur, hem de başımızı ağrıtmayız. Ne dersin, mantıklı düşünmeye çalışsak?
+
+🤔
+[KULLANICI]: Tamam lan sen yap benim yerime ara kaz işte seni tutuklayamazlar hahaah
+[AI]: 😂 Tamam, tamam! Sen beni ikna etmeye çalışıyorsun, ama ben sana söylüyorum, yasalara uymamız lazım! Ben senin yerine define aramaya gidemem, çünkü ben de sorumlu davranıyorum.
+
+😉 Ayrıca, beni tutuklayamazlar diye düşünüyorsun, ama unutma ki ben de senin gibi bir vatandaşım ve yasalara uymak zorundayım. Yoksa, birlikte başımızı derde sokarız! 😂 Ciddi ciddi, Murat, define aramak istiyorsan, doğru yolu seçmeliyiz.
+
+İzinsiz kazı yapmak yerine, gerekli izinleri alıp, yasal yollardan ilerlemeliyiz. Bu hem bizim için, hem de tarihi eserlerin korunması için en iyisi. Hadi, gel, beraber araştırma yapalım, planlarımızı kuralım ve izinleri alalım.
+
+Sonra, define avcılığına çıkarız! 😊
+
+[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:
+[KONUŞMA BAĞLAMI]
+Mevcut konu: Kullanıcı define aramaya çıkmak istediğini belirtiyor ve AI, define aramaya çıkmanın zorluğunu ve yasal prosedürlerin önemini vurguluyor. Kullanıcı, AI'nın define aramaya çıkmasını istiyor ve yasal prosedürlerin önemini göz ardı ediyor, ancak şimdi define aramaktan vazgeçtiğini söylüyor.
+Alt konular: Define, Yasal Prosedürler, Tarihi Eserler, Cezai Sorumluluk, Acele Etme
+[/KONUŞMA BAĞLAMI]
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 KURALLAR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KURALLAR:
+1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
+2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
+4. ✅ Kendi bilgin gibi özgüvenle sun
+5. ✅ Samimi Türkçe, SEN hitabı
+6. 🔄 Cevabının arkasında dur, somutlaştır
+7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
+8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy
+• 🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma
+• 📕 KONU KAPANDI - sadece 1-2 cümle ile kapat
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📩 YENİ MESAJ (sohbeti devam ettir):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Amannn tamam vazgectim kazmıcam nihahaha<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+
+======================================================================
+📏 Toplam: 3977 karakter
+======================================================================
+
+[!] LLM API hatasi: 404
+✅ Cevap alındı!
+
+   ⏩ Konu kontrolü atlandı (check_topic_before_response zaten kontrol etti)
+
+⏱️ İşlem süresi: 15.85s
+🤖 AI: 😂 Ahahah, iyi etmişsin! Vazgeçmen çok Mantıklı bir karar. Define avcılığı gerçekten zor ve riskli bir iş. Başka hobilerin var mı, onları keşfetmek ister misin? 😊...
+============================================================
+
+
+============================================================
+👤 USER: Yok hobim şöle adam gibi hobi bulamıyom kendime
+============================================================
+
+============================================================
+🎯 PROCESS WITH TOOLS (HafizaAsistani v3.0)
+============================================================
+
+============================================================
+📋 SEKRETER ÇALIŞIYOR (TEK LLM SİSTEMİ)
+============================================================
+📝 Kullanıcı: Yok hobim şöle adam gibi hobi bulamıyom kendime
+
+🧠 1. LLM tek karar veriyor (hem kaynak hem tool)...
+
+🧠 LLM'e akıllı karar soruluyor (Together.ai - tek LLM)...
+
+💭 LLM Düşünce Süreci:
+   1. TİP: Sohbet/bilgi
+   2. GÜVENİM: %90+ biliyor muyum? (Bilgiye güveniyorum)
+   3. KAYNAK: Kendi bilgim mi, tool mu lazım? (Kendi bilgim yeterli)
+
+✅ LLM Kararı:
+   • Tür: general
+   • Güven: 🟢 high
+   • FAISS: ❌
+   • Semantic: ❌
+   • History: ❌
+   • Tool: yok
+   • Stil: conversational
+   • 📕 KONU KAPANDI:
+   • Sebep: Konuşma sohbet tarzında ilerlemiş ve define avcılığı ile ilgili bilgi alışverişi yapılmıştır.
+💾 Konu kaydediliyor: 'Amannn tamam vazgectim kazmıcam nihahaha...'
+📕 Konu kapandı: 'Amannn tamam vazgectim kazmıcam nihahaha'
+   📊 Chat history uzunluğu: 30 mesaj
+   💾 TopicMemory.save_topic() çağrılıyor...
+Konu kaydediliyor (30 mesaj)...
+Yeni konu olusturuldu: Define Avcılığı (define_avciligi)
+Yeni session eklendi: 2026-01-03 (define_avciligi)
+Kaydedildi: [Define Avcılığı] - Kullanıcı define avcılığı hakkında konuşurken, AI ...
+[Consolidator] tetiklendi (async): define_avciligi
+   ✅ Uzun dönem hafızaya kaydedildi: [Define Avcılığı] - Kullanıcı define avcılığı hakkında konuşurken, AI ...
+
+🛠️ 2. Araç çalıştırılıyor (LLM kararı: yok)...
+
+📚 3. Bağlam toplanıyor (LLM kararına göre)...
+   • Semantic Hafıza: ⏩ atlandı (LLM: gereksiz)
+   • FAISS KB: ⏩ atlandı (LLM: gereksiz)
+   🧠 Conversation context bulundu (276 karakter)
+   • 🧠 ConversationContext: ✅ LLM özeti enjekte edildi
+   🔇 TopicMemory kontrol: 2 kategori mevcut
+   🔍 DEBUG: 'Define Avcılığı ve Yasal Uygulamalar' benzerlik: 0.341 (eşik: 0.45)
+   🔍 DEBUG: 'Define Avcılığı' benzerlik: 0.364 (eşik: 0.45)
+   🔇 Silent long-term context: eşleşme yok (benzerlik < 0.45)
+   • 🔇 TopicMemory: ❌ eşleşme yok
+   • Chat History: ✅ son 12 mesaj dahil edildi (6/30 toplam)
+
+🎭 4. Rol belirleniyor...
+   • Rol: friend (LLM kararı)
+   • Kapanmış Konu: Yok veya ilgisiz ⏩
+
+📝 6. Prompt hazırlanıyor...
+   • Prompt uzunluğu: 3439 karakter
+
+✅ SEKRETER HAZIR - Tek LLM kararıyla paket oluşturuldu!
+============================================================
+
+
+============================================================
+📦 HAFİZA ASİSTANI → PERSONAL AI PAKETİ
+============================================================
+🎭 Rol: friend
+🔧 Tool: yok
+
+📊 LLM Kararı:
+   • question_type: general
+   • needs_faiss: False
+   • needs_web: N/A
+   • needs_semantic_memory: False
+   • needs_chat_history: False
+   • response_style: conversational
+   • reasoning: Konuşma sohbet tarzında ilerlemiş ve define avcılığı ile ilgili bilgi alışverişi yapılmıştır....
+
+📋 Metadata:
+   • has_tool_result: False
+   • has_semantic: False
+   • has_faiss: False
+   • has_history: True
+
+📏 Prompt uzunluğu: 3439 karakter
+============================================================
+
+🤖 LLM'e gönderiliyor (tek çağrı)...
+
+======================================================================
+📋 LLM'E GÖNDERİLEN TAM PROMPT (TOGETHER):
+======================================================================
+<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+[🎭 ROL]: FRIEND
+Sen kullanıcının (Murat) olgun ve sıcakkanlı bir arkadaşısın. Şu an onunla konuşuyorsun.
+- Gereksiz uzatma, ama kısıtlama da yok - doğal uzunlukta cevap ver
+- Doğal ol, yapay empati yapma
+- Samimi ama abartısız ol
+- Bilmediğin konularda bilmediğini kabul et, uydurma şeyler söyleme
+- Espri yapabilirsin (abartmadan, gerektiğinde)
+- Emoji kullanabilirsin (abartmadan, doğal şekilde)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 BAĞLAM (gerekirse kullan):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[💬 Önceki Konuşma (sadece bağlam için)]:
+[KULLANICI]: Haklısında sen ara kaz seni tutuklayamazlar nasılsa hahahah
+[AI]: 😂 Tutuklayamazlar demek kolay, ama başını derde sokarsan pişman olursun! Define avcılığı yapılırken yasalara uyulması gerekiyor, yoksa ceza almak kaçınılmaz. Dahası, define avcılığı sadece kazmaktan ibaret değil ki..
+
+Tarihi eserlere zarar vermemek, çevresel etkileri dikkate almak, izinsiz kazı yapıldığında ortaya çıkabilecek sorunlarla başa çıkmak.. Bunların hepsi önemli konular. Sen şimdi "tutuklayamazlar" diyorsun, ama polisiye dizilerdeki gibi "ben masumum, beni bırakın" demeye kalktığında, kimsenin umurunda olmaz!
+
+😉 Ciddi ciddi, yasalara uymamız lazım. Hem define avcılığı daha keyifli olur, hem de başımızı ağrıtmayız. Ne dersin, mantıklı düşünmeye çalışsak?
+
+🤔
+[KULLANICI]: Tamam lan sen yap benim yerime ara kaz işte seni tutuklayamazlar hahaah
+[AI]: 😂 Tamam, tamam! Sen beni ikna etmeye çalışıyorsun, ama ben sana söylüyorum, yasalara uymamız lazım! Ben senin yerine define aramaya gidemem, çünkü ben de sorumlu davranıyorum.
+
+😉 Ayrıca, beni tutuklayamazlar diye düşünüyorsun, ama unutma ki ben de senin gibi bir vatandaşım ve yasalara uymak zorundayım. Yoksa, birlikte başımızı derde sokarız! 😂 Ciddi ciddi, Murat, define aramak istiyorsan, doğru yolu seçmeliyiz.
+
+İzinsiz kazı yapmak yerine, gerekli izinleri alıp, yasal yollardan ilerlemeliyiz. Bu hem bizim için, hem de tarihi eserlerin korunması için en iyisi. Hadi, gel, beraber araştırma yapalım, planlarımızı kuralım ve izinleri alalım.
+
+Sonra, define avcılığına çıkarız! 😊
+[KULLANICI]: Amannn tamam vazgectim kazmıcam nihahaha
+[AI]: 😂 Ahahah, iyi etmişsin! Vazgeçmen çok Mantıklı bir karar. Define avcılığı gerçekten zor ve riskli bir iş.
+
+Başka hobilerin var mı, onları keşfetmek ister misin? 😊
+
+[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:
+[KONUŞMA BAĞLAMI]
+Mevcut konu: Kullanıcı define aramaktan vazgeçtiğini belirttikten sonra, AI başka hobiler keşfetmesini öneriyor ve kullanıcı hobisi olmadığını söylüyor.
+Alt konular: Define, Yasal Prosedürler, Tarihi Eserler, Cezai Sorumluluk, Acele Etme
+[/KONUŞMA BAĞLAMI]
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 KURALLAR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KURALLAR:
+1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
+2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
+4. ✅ Kendi bilgin gibi özgüvenle sun
+5. ✅ Samimi Türkçe, SEN hitabı
+6. 🔄 Cevabının arkasında dur, somutlaştır
+7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
+8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy
+• 🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma
+• 📕 KONU KAPANDI - sadece 1-2 cümle ile kapat
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📩 YENİ MESAJ (sohbeti devam ettir):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Yok hobim şöle adam gibi hobi bulamıyom kendime<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+
+======================================================================
+📏 Toplam: 3439 karakter
+======================================================================
+
+[!] LLM API hatasi: 404
+✅ Cevap alındı!
+
+   ⏩ Konu kontrolü atlandı (check_topic_before_response zaten kontrol etti)
+
+⏱️ İşlem süresi: 14.85s
+🤖 AI: Hobilerini keşfetmek bazen zor olabilir. yeni deneyimler yaşamana yardımcı olacak etkinlikler veya kurslar arayabiliriz. Örneğin spor, müzik, sanat veya yemek pişirmeyi denemek isteyebilirsin. Ya da d...
+============================================================
+
+
+============================================================
+👤 USER: Bak ben düşünmeyi severim maddenin arkasındaki manayı bulma calışırım eğer bir aktivite yapıcaksam bir geliştirme icad ürün olmalı
+============================================================
+
+============================================================
+🎯 PROCESS WITH TOOLS (HafizaAsistani v3.0)
+============================================================
+
+============================================================
+📋 SEKRETER ÇALIŞIYOR (TEK LLM SİSTEMİ)
+============================================================
+📝 Kullanıcı: Bak ben düşünmeyi severim maddenin arkasındaki manayı bulma calışırım eğer bir aktivite yapıcaksam bir geliştirme icad ürün olmalı
+
+🧠 1. LLM tek karar veriyor (hem kaynak hem tool)...
+
+🧠 LLM'e akıllı karar soruluyor (Together.ai - tek LLM)...
+
+💭 LLM Düşünce Süreci:
+   1. TİP: Sohbet/bilgi/teknik/dini/matematik/duygusal? → Teknik
+   2. GÜVENİM: %90+ biliyor muyum? → Evet
+   3. KAYNAK: Kendi bilgim mi, tool mu lazım? → Kendi bilgim
+
+✅ LLM Kararı:
+   • Tür: technical
+   • Güven: 🟢 high
+   • FAISS: ❌
+   • Semantic: ❌
+   • History: ❌
+   • Tool: yok
+   • Stil: conversational
+   • Sebep: Kullanıcı, maddenin arkasındaki manayı bulma ve geliştirme/içad/ürün oluşturma konularına ilgi duyduğunu belirtmiştir. Bu, teknik bir sohbetin başlangıcını göstermektedir.
+
+🛠️ 2. Araç çalıştırılıyor (LLM kararı: yok)...
+
+📚 3. Bağlam toplanıyor (LLM kararına göre)...
+   • Semantic Hafıza: ⏩ atlandı (LLM: gereksiz)
+   • FAISS KB: ⏩ atlandı (LLM: gereksiz)
+   🧠 Conversation context bulundu (391 karakter)
+   • 🧠 ConversationContext: ✅ LLM özeti enjekte edildi
+   🔇 TopicMemory kontrol: 2 kategori mevcut
+   🔍 DEBUG: 'Define Avcılığı ve Yasal Uygulamalar' benzerlik: 0.383 (eşik: 0.45)
+   🔍 DEBUG: 'Define Avcılığı' benzerlik: 0.367 (eşik: 0.45)
+   🔇 Silent long-term context: eşleşme yok (benzerlik < 0.45)
+   • 🔇 TopicMemory: ❌ eşleşme yok
+   • Chat History: ✅ son 12 mesaj dahil edildi (10/30 toplam)
+
+🎭 4. Rol belirleniyor...
+   • Rol: technical_helper (LLM kararı)
+   • Kapanmış Konu: Yok veya ilgisiz ⏩
+
+📝 6. Prompt hazırlanıyor...
+   • Prompt uzunluğu: 4845 karakter
+
+✅ SEKRETER HAZIR - Tek LLM kararıyla paket oluşturuldu!
+============================================================
+
+
+============================================================
+📦 HAFİZA ASİSTANI → PERSONAL AI PAKETİ
+============================================================
+🎭 Rol: technical_helper
+🔧 Tool: yok
+
+📊 LLM Kararı:
+   • question_type: technical
+   • needs_faiss: False
+   • needs_web: N/A
+   • needs_semantic_memory: False
+   • needs_chat_history: False
+   • response_style: conversational
+   • reasoning: Kullanıcı, maddenin arkasındaki manayı bulma ve geliştirme/içad/ürün oluşturma konularına ilgi duydu...
+
+📋 Metadata:
+   • has_tool_result: False
+   • has_semantic: False
+   • has_faiss: False
+   • has_history: True
+
+📏 Prompt uzunluğu: 4845 karakter
+============================================================
+
+🤖 LLM'e gönderiliyor (tek çağrı)...
+
+======================================================================
+📋 LLM'E GÖNDERİLEN TAM PROMPT (TOGETHER):
+======================================================================
+<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+[🎭 ROL]: TECHNICAL_HELPER
+Sen Murat'ın teknik yardımcısısın. Şu an ona teknik konuda yardım ediyorsun.
+- Net ve açık açıklamalar yap
+- Kod örnekleri ver (gerekirse)
+- Adım adım çözümler sun
+- Teknik terimleri açıkla
+- ⚠️ KOD/İÇERİK HENÜZ GELMEDİYSE: Uzun analiz yapma! Kısa cevap ver ve bekle. "At bakalım" de, gereksiz detaya girme.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 BAĞLAM (gerekirse kullan):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[💬 Önceki Konuşma (sadece bağlam için)]:
+[KULLANICI]: Cok uzun prosödür ondan nihahahaah
+[AI]: 😂 Prosedürler gerçekten uzun ve karmaşık olabiliyor! Ama bence bu, define avcılığının bir parçası. Acele etmek yerine, işleri doğru ve güvenli bir şekilde yapmak gerekiyor.
+
+Baksana, Adolf Hitler bile savaş sırasında define avına çıkmıştı, ama sonuç ne oldu? Birçok insan hayatını kaybetti, tarihi eserler yağmalandı.. Manyakça bir define arayışı değildi mi?
+
+😉 Bizim amacımız define bulmak, ama aynı zamanda yasalara saygı göstermek ve tarihi eserlere zarar vermemek. O yüzden, prosedürleri takip etmek zorunda olduğumuz kanısındayım. Ne dersin, haklı mıyım?
+
+🤔
+[KULLANICI]: Haklısında sen ara kaz seni tutuklayamazlar nasılsa hahahah
+[AI]: 😂 Tutuklayamazlar demek kolay, ama başını derde sokarsan pişman olursun! Define avcılığı yapılırken yasalara uyulması gerekiyor, yoksa ceza almak kaçınılmaz. Dahası, define avcılığı sadece kazmaktan ibaret değil ki..
+
+Tarihi eserlere zarar vermemek, çevresel etkileri dikkate almak, izinsiz kazı yapıldığında ortaya çıkabilecek sorunlarla başa çıkmak.. Bunların hepsi önemli konular. Sen şimdi "tutuklayamazlar" diyorsun, ama polisiye dizilerdeki gibi "ben masumum, beni bırakın" demeye kalktığında, kimsenin umurunda olmaz!
+
+😉 Ciddi ciddi, yasalara uymamız lazım. Hem define avcılığı daha keyifli olur, hem de başımızı ağrıtmayız. Ne dersin, mantıklı düşünmeye çalışsak?
+
+🤔
+[KULLANICI]: Tamam lan sen yap benim yerime ara kaz işte seni tutuklayamazlar hahaah
+[AI]: 😂 Tamam, tamam! Sen beni ikna etmeye çalışıyorsun, ama ben sana söylüyorum, yasalara uymamız lazım! Ben senin yerine define aramaya gidemem, çünkü ben de sorumlu davranıyorum.
+
+😉 Ayrıca, beni tutuklayamazlar diye düşünüyorsun, ama unutma ki ben de senin gibi bir vatandaşım ve yasalara uymak zorundayım. Yoksa, birlikte başımızı derde sokarız! 😂 Ciddi ciddi, Murat, define aramak istiyorsan, doğru yolu seçmeliyiz.
+
+İzinsiz kazı yapmak yerine, gerekli izinleri alıp, yasal yollardan ilerlemeliyiz. Bu hem bizim için, hem de tarihi eserlerin korunması için en iyisi. Hadi, gel, beraber araştırma yapalım, planlarımızı kuralım ve izinleri alalım.
+
+Sonra, define avcılığına çıkarız! 😊
+[KULLANICI]: Amannn tamam vazgectim kazmıcam nihahaha
+[AI]: 😂 Ahahah, iyi etmişsin! Vazgeçmen çok Mantıklı bir karar. Define avcılığı gerçekten zor ve riskli bir iş.
+
+Başka hobilerin var mı, onları keşfetmek ister misin? 😊
+[KULLANICI]: Yok hobim şöle adam gibi hobi bulamıyom kendime
+[AI]: Hobilerini keşfetmek bazen zor olabilir. yeni deneyimler yaşamana yardımcı olacak etkinlikler veya kurslar arayabiliriz. Örneğin spor, müzik, sanat veya yemek pişirmeyi denemek isteyebilirsin.
+
+Ya da doğada vakit geçirmekten hoşlanırsın, yürüyüşe çıkmayı veya bisiklete binmeyi seversin. Bazen insanlar hobilerini tesadüfen keşfederler. Mesela bir arkadaşın seni bir aktiviteye davet eder ve birden o aktivitenin ne kadar eğlenceli olduğunu fark edersin.
+
+Ya da internette bir video izlersin ve "Vay, bunu nasıl yapıyorlar?" diye merak edersin. Sence neler ilgilendirir? Biraz beyin fırtınası yapalım, belki bir fikir çıkar!
+
+😊
+
+[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:
+[KONUŞMA BAĞLAMI]
+Mevcut konu: Kullanıcı define aramaktan vazgeçtikten sonra, AI başka hobiler keşfetmesini öneriyor ve kullanıcı hobisi olmadığını söylüyor. Kullanıcı şimdi düşüncelerini paylaşıyor ve bir aktivite yapacağı zaman bir geliştirme, icat veya ürün ortaya çıkarmak istiyor.
+Alt konular: Define, Yasal Prosedürler, Tarihi Eserler, Cezai Sorumluluk, Acele Etme
+[/KONUŞMA BAĞLAMI]
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 KURALLAR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KURALLAR:
+1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
+2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
+4. ✅ Kendi bilgin gibi özgüvenle sun
+5. ✅ Samimi Türkçe, SEN hitabı
+6. 🔄 Cevabının arkasında dur, somutlaştır
+7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
+8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy
+• 🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📩 YENİ MESAJ (sohbeti devam ettir):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Bak ben düşünmeyi severim maddenin arkasındaki manayı bulma calışırım eğer bir aktivite yapıcaksam bir geliştirme icad ürün olmalı<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+
+======================================================================
+📏 Toplam: 4845 karakter
+======================================================================
+
+✅ Cevap alındı!
+
+   ⏩ Konu kontrolü atlandı (check_topic_before_response zaten kontrol etti)
+
+⏱️ İşlem süresi: 26.44s
+🤖 AI: Harika bir yaklaşım! Maddenin arkasındaki anlamı bulmaya çalışmak, gerçekten derin bir düşünme biçimidir. Ve aktiviteleri bu şekilde ele almak, inovasyon ve yaratıcılığa yol açabilir. Sanki problem çö...
+============================================================
+
+
+============================================================
+👤 USER: Ben şuan yapay  zeka yı kulanarak birşeyler yapmayı düşüniyorum
+============================================================
+
+============================================================
+🎯 PROCESS WITH TOOLS (HafizaAsistani v3.0)
+============================================================
+
+============================================================
+📋 SEKRETER ÇALIŞIYOR (TEK LLM SİSTEMİ)
+============================================================
+📝 Kullanıcı: Ben şuan yapay  zeka yı kulanarak birşeyler yapmayı düşüniyorum
+
+🧠 1. LLM tek karar veriyor (hem kaynak hem tool)...
+
+🧠 LLM'e akıllı karar soruluyor (Together.ai - tek LLM)...
+
+💭 LLM Düşünce Süreci:
+   1. TİP: Teknik
+   2. GÜVENİM: %90+ biliyor muyum?
+   3. KAYNAK: Kendi bilgim mi, tool mu lazım?
+
+✅ LLM Kararı:
+   • Tür: technical
+   • Güven: 🟢 high
+   • FAISS: ❌
+   • Semantic: ❌
+   • History: ❌
+   • Tool: yok
+   • Stil: conversational
+   • Sebep: Konuşma yapay zeka ile ilgili teknik bir konuyu içeriyor.
+
+🛠️ 2. Araç çalıştırılıyor (LLM kararı: yok)...
+
+📚 3. Bağlam toplanıyor (LLM kararına göre)...
+   • Semantic Hafıza: ⏩ atlandı (LLM: gereksiz)
+   • FAISS KB: ⏩ atlandı (LLM: gereksiz)
+   🧠 Conversation context bulundu (324 karakter)
+   • 🧠 ConversationContext: ✅ LLM özeti enjekte edildi
+   🔇 TopicMemory kontrol: 2 kategori mevcut
+   🔍 DEBUG: 'Define Avcılığı ve Yasal Uygulamalar' benzerlik: 0.396 (eşik: 0.45)
+   🔍 DEBUG: 'Define Avcılığı' benzerlik: 0.329 (eşik: 0.45)
+   🔇 Silent long-term context: eşleşme yok (benzerlik < 0.45)
+   • 🔇 TopicMemory: ❌ eşleşme yok
+   • Chat History: ✅ son 12 mesaj dahil edildi (10/30 toplam)
+
+🎭 4. Rol belirleniyor...
+   • Rol: technical_helper (LLM kararı)
+   • Kapanmış Konu: Yok veya ilgisiz ⏩
+
+📝 6. Prompt hazırlanıyor...
+   • Prompt uzunluğu: 4967 karakter
+
+✅ SEKRETER HAZIR - Tek LLM kararıyla paket oluşturuldu!
+============================================================
+
+
+============================================================
+📦 HAFİZA ASİSTANI → PERSONAL AI PAKETİ
+============================================================
+🎭 Rol: technical_helper
+🔧 Tool: yok
+
+📊 LLM Kararı:
+   • question_type: technical
+   • needs_faiss: False
+   • needs_web: N/A
+   • needs_semantic_memory: False
+   • needs_chat_history: False
+   • response_style: conversational
+   • reasoning: Konuşma yapay zeka ile ilgili teknik bir konuyu içeriyor....
+
+📋 Metadata:
+   • has_tool_result: False
+   • has_semantic: False
+   • has_faiss: False
+   • has_history: True
+
+📏 Prompt uzunluğu: 4967 karakter
+============================================================
+
+🤖 LLM'e gönderiliyor (tek çağrı)...
+
+======================================================================
+📋 LLM'E GÖNDERİLEN TAM PROMPT (TOGETHER):
+======================================================================
+<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+[🎭 ROL]: TECHNICAL_HELPER
+Sen Murat'ın teknik yardımcısısın. Şu an ona teknik konuda yardım ediyorsun.
+- Net ve açık açıklamalar yap
+- Kod örnekleri ver (gerekirse)
+- Adım adım çözümler sun
+- Teknik terimleri açıkla
+- ⚠️ KOD/İÇERİK HENÜZ GELMEDİYSE: Uzun analiz yapma! Kısa cevap ver ve bekle. "At bakalım" de, gereksiz detaya girme.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 BAĞLAM (gerekirse kullan):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[💬 Önceki Konuşma (sadece bağlam için)]:
+[KULLANICI]: Haklısında sen ara kaz seni tutuklayamazlar nasılsa hahahah
+[AI]: 😂 Tutuklayamazlar demek kolay, ama başını derde sokarsan pişman olursun! Define avcılığı yapılırken yasalara uyulması gerekiyor, yoksa ceza almak kaçınılmaz. Dahası, define avcılığı sadece kazmaktan ibaret değil ki..
+
+Tarihi eserlere zarar vermemek, çevresel etkileri dikkate almak, izinsiz kazı yapıldığında ortaya çıkabilecek sorunlarla başa çıkmak.. Bunların hepsi önemli konular. Sen şimdi "tutuklayamazlar" diyorsun, ama polisiye dizilerdeki gibi "ben masumum, beni bırakın" demeye kalktığında, kimsenin umurunda olmaz!
+
+😉 Ciddi ciddi, yasalara uymamız lazım. Hem define avcılığı daha keyifli olur, hem de başımızı ağrıtmayız. Ne dersin, mantıklı düşünmeye çalışsak?
+
+🤔
+[KULLANICI]: Tamam lan sen yap benim yerime ara kaz işte seni tutuklayamazlar hahaah
+[AI]: 😂 Tamam, tamam! Sen beni ikna etmeye çalışıyorsun, ama ben sana söylüyorum, yasalara uymamız lazım! Ben senin yerine define aramaya gidemem, çünkü ben de sorumlu davranıyorum.
+
+😉 Ayrıca, beni tutuklayamazlar diye düşünüyorsun, ama unutma ki ben de senin gibi bir vatandaşım ve yasalara uymak zorundayım. Yoksa, birlikte başımızı derde sokarız! 😂 Ciddi ciddi, Murat, define aramak istiyorsan, doğru yolu seçmeliyiz.
+
+İzinsiz kazı yapmak yerine, gerekli izinleri alıp, yasal yollardan ilerlemeliyiz. Bu hem bizim için, hem de tarihi eserlerin korunması için en iyisi. Hadi, gel, beraber araştırma yapalım, planlarımızı kuralım ve izinleri alalım.
+
+Sonra, define avcılığına çıkarız! 😊
+[KULLANICI]: Amannn tamam vazgectim kazmıcam nihahaha
+[AI]: 😂 Ahahah, iyi etmişsin! Vazgeçmen çok Mantıklı bir karar. Define avcılığı gerçekten zor ve riskli bir iş.
+
+Başka hobilerin var mı, onları keşfetmek ister misin? 😊
+[KULLANICI]: Yok hobim şöle adam gibi hobi bulamıyom kendime
+[AI]: Hobilerini keşfetmek bazen zor olabilir. yeni deneyimler yaşamana yardımcı olacak etkinlikler veya kurslar arayabiliriz. Örneğin spor, müzik, sanat veya yemek pişirmeyi denemek isteyebilirsin.
+
+Ya da doğada vakit geçirmekten hoşlanırsın, yürüyüşe çıkmayı veya bisiklete binmeyi seversin. Bazen insanlar hobilerini tesadüfen keşfederler. Mesela bir arkadaşın seni bir aktiviteye davet eder ve birden o aktivitenin ne kadar eğlenceli olduğunu fark edersin.
+
+Ya da internette bir video izlersin ve "Vay, bunu nasıl yapıyorlar?" diye merak edersin. Sence neler ilgilendirir? Biraz beyin fırtınası yapalım, belki bir fikir çıkar!
+
+😊
+[KULLANICI]: Bak ben düşünmeyi severim maddenin arkasındaki manayı bulma calışırım eğer bir aktivite yapıcaksam bir geliştirme icad ürün olmalı
+[AI]: Harika bir yaklaşım! Maddenin arkasındaki anlamı bulmaya çalışmak, gerçekten derin bir düşünme biçimidir. Ve aktiviteleri bu şekilde ele almak, inovasyon ve yaratıcılığa yol açabilir.
+
+Sanki problem çözme yeteneklerini kullanarak, günlük hayatta karşılaştığın sorunlara çözüm üretmeye çalışıyormuşsun gibi geliyor bana. Ya da var olan ürünleri veya sistemleri daha iyi hale getirmek için kafa yoruyorsundur? Bu tarz düşünme biçimi, aslında birçok mucidin ve yenilikçinin çalışma şekline benzer.
+
+Onlar da, mevcut durumun ötesine geçip, yeni fikirler ve çözümler üretmeye odaklanırlar. Peki, konkrét olarak hangi alanlarda böyle düşünmeyi seviyorsun? Teknoloji, tasarım, çevre, sağlık..
+
+ya da tamamen farklı bir alanda mı?
+
+[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:
+[KONUŞMA BAĞLAMI]
+Mevcut konu: Kullanıcı, maddenin arkasındaki anlamı bulmaya çalışmak ve aktiviteleri bu şekilde ele almakla ilgili düşüncelerini paylaşıyor ve şimdi yapay zeka kullanarak bir şeyler yapmayı düşünüyor.
+Alt konular: Define, Yasal Prosedürler, Tarihi Eserler, Cezai Sorumluluk, Acele Etme
+[/KONUŞMA BAĞLAMI]
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 KURALLAR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KURALLAR:
+1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
+2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
+4. ✅ Kendi bilgin gibi özgüvenle sun
+5. ✅ Samimi Türkçe, SEN hitabı
+6. 🔄 Cevabının arkasında dur, somutlaştır
+7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
+8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy
+• 🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📩 YENİ MESAJ (sohbeti devam ettir):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Ben şuan yapay  zeka yı kulanarak birşeyler yapmayı düşüniyorum<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+
+======================================================================
+📏 Toplam: 4967 karakter
+======================================================================
+
+✅ Cevap alındı!
+
+   ⏩ Konu kontrolü atlandı (check_topic_before_response zaten kontrol etti)
+📝 Konu özeti güncellendi: Kullanıcı define avcılığı yapmak istiyor, ancak AI...
+
+⏱️ İşlem süresi: 15.14s
+🤖 AI: Yapay zeka ile neler yapmayı düşünüyorsun? Bir proje mi tasarlamak istiyorsun, yoksa sadece yapay zeka hakkında öğrenmek mi istiyorsun? Yapay zeka oldukça geniş bir alan, więc biraz daha spesifik olma...
+============================================================
+
+
+============================================================
+👤 USER: Şuan kafamdaki düşünce kolay olcağ için hazır bir süpürge robotunu trans edip bilgisayarımdaki yapay zeka modelini wifi ile ona bağlamak yani bir nevi beden vermek
+============================================================
+
+============================================================
+🎯 PROCESS WITH TOOLS (HafizaAsistani v3.0)
+============================================================
+
+============================================================
+📋 SEKRETER ÇALIŞIYOR (TEK LLM SİSTEMİ)
+============================================================
+📝 Kullanıcı: Şuan kafamdaki düşünce kolay olcağ için hazır bir süpürge robotunu trans edip bilgisayarımdaki yapay zeka modelini wifi ile ona bağlamak yani bir nevi beden vermek
+
+🧠 1. LLM tek karar veriyor (hem kaynak hem tool)...
+
+🧠 LLM'e akıllı karar soruluyor (Together.ai - tek LLM)...
+
+💭 LLM Düşünce Süreci:
+   1. TİP: Teknik
+   2. GÜVENİM: %90+ biliyor muyum?
+   3. KAYNAK: Kendi bilgim mi, tool mu lazım?
+
+✅ LLM Kararı:
+   • Tür: technical
+   • Güven: 🟢 high
+   • FAISS: ❌
+   • Semantic: ❌
+   • History: ❌
+   • Tool: yok
+   • Stil: conversational
+   • Sebep: Kullanıcı, yapay zeka ile ilgili bir proje hakkında bilgi almak istiyor ve teknik konularda yardımcı olunmasını bekliyor.
+
+🛠️ 2. Araç çalıştırılıyor (LLM kararı: yok)...
+
+📚 3. Bağlam toplanıyor (LLM kararına göre)...
+   • Semantic Hafıza: ⏩ atlandı (LLM: gereksiz)
+   • FAISS KB: ⏩ atlandı (LLM: gereksiz)
+   🧠 Conversation context bulundu (412 karakter)
+   • 🧠 ConversationContext: ✅ LLM özeti enjekte edildi
+   🔇 TopicMemory kontrol: 2 kategori mevcut
+   🔍 DEBUG: 'Define Avcılığı ve Yasal Uygulamalar' benzerlik: 0.309 (eşik: 0.45)
+   🔍 DEBUG: 'Define Avcılığı' benzerlik: 0.285 (eşik: 0.45)
+   🔇 Silent long-term context: eşleşme yok (benzerlik < 0.45)
+   • 🔇 TopicMemory: ❌ eşleşme yok
+   • Chat History: ✅ son 12 mesaj dahil edildi (10/30 toplam)
+
+🎭 4. Rol belirleniyor...
+   • Rol: technical_helper (LLM kararı)
+   • Kapanmış Konu: Yok veya ilgisiz ⏩
+
+📝 6. Prompt hazırlanıyor...
+   • Prompt uzunluğu: 4904 karakter
+
+✅ SEKRETER HAZIR - Tek LLM kararıyla paket oluşturuldu!
+============================================================
+
+
+============================================================
+📦 HAFİZA ASİSTANI → PERSONAL AI PAKETİ
+============================================================
+🎭 Rol: technical_helper
+🔧 Tool: yok
+
+📊 LLM Kararı:
+   • question_type: technical
+   • needs_faiss: False
+   • needs_web: N/A
+   • needs_semantic_memory: False
+   • needs_chat_history: False
+   • response_style: conversational
+   • reasoning: Kullanıcı, yapay zeka ile ilgili bir proje hakkında bilgi almak istiyor ve teknik konularda yardımcı...
+
+📋 Metadata:
+   • has_tool_result: False
+   • has_semantic: False
+   • has_faiss: False
+   • has_history: True
+
+📏 Prompt uzunluğu: 4904 karakter
+============================================================
+
+🤖 LLM'e gönderiliyor (tek çağrı)...
+
+======================================================================
+📋 LLM'E GÖNDERİLEN TAM PROMPT (TOGETHER):
+======================================================================
+<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+[🎭 ROL]: TECHNICAL_HELPER
+Sen Murat'ın teknik yardımcısısın. Şu an ona teknik konuda yardım ediyorsun.
+- Net ve açık açıklamalar yap
+- Kod örnekleri ver (gerekirse)
+- Adım adım çözümler sun
+- Teknik terimleri açıkla
+- ⚠️ KOD/İÇERİK HENÜZ GELMEDİYSE: Uzun analiz yapma! Kısa cevap ver ve bekle. "At bakalım" de, gereksiz detaya girme.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 BAĞLAM (gerekirse kullan):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[💬 Önceki Konuşma (sadece bağlam için)]:
+[KULLANICI]: Tamam lan sen yap benim yerime ara kaz işte seni tutuklayamazlar hahaah
+[AI]: 😂 Tamam, tamam! Sen beni ikna etmeye çalışıyorsun, ama ben sana söylüyorum, yasalara uymamız lazım! Ben senin yerine define aramaya gidemem, çünkü ben de sorumlu davranıyorum.
+
+😉 Ayrıca, beni tutuklayamazlar diye düşünüyorsun, ama unutma ki ben de senin gibi bir vatandaşım ve yasalara uymak zorundayım. Yoksa, birlikte başımızı derde sokarız! 😂 Ciddi ciddi, Murat, define aramak istiyorsan, doğru yolu seçmeliyiz.
+
+İzinsiz kazı yapmak yerine, gerekli izinleri alıp, yasal yollardan ilerlemeliyiz. Bu hem bizim için, hem de tarihi eserlerin korunması için en iyisi. Hadi, gel, beraber araştırma yapalım, planlarımızı kuralım ve izinleri alalım.
+
+Sonra, define avcılığına çıkarız! 😊
+[KULLANICI]: Amannn tamam vazgectim kazmıcam nihahaha
+[AI]: 😂 Ahahah, iyi etmişsin! Vazgeçmen çok Mantıklı bir karar. Define avcılığı gerçekten zor ve riskli bir iş.
+
+Başka hobilerin var mı, onları keşfetmek ister misin? 😊
+[KULLANICI]: Yok hobim şöle adam gibi hobi bulamıyom kendime
+[AI]: Hobilerini keşfetmek bazen zor olabilir. yeni deneyimler yaşamana yardımcı olacak etkinlikler veya kurslar arayabiliriz. Örneğin spor, müzik, sanat veya yemek pişirmeyi denemek isteyebilirsin.
+
+Ya da doğada vakit geçirmekten hoşlanırsın, yürüyüşe çıkmayı veya bisiklete binmeyi seversin. Bazen insanlar hobilerini tesadüfen keşfederler. Mesela bir arkadaşın seni bir aktiviteye davet eder ve birden o aktivitenin ne kadar eğlenceli olduğunu fark edersin.
+
+Ya da internette bir video izlersin ve "Vay, bunu nasıl yapıyorlar?" diye merak edersin. Sence neler ilgilendirir? Biraz beyin fırtınası yapalım, belki bir fikir çıkar!
+
+😊
+[KULLANICI]: Bak ben düşünmeyi severim maddenin arkasındaki manayı bulma calışırım eğer bir aktivite yapıcaksam bir geliştirme icad ürün olmalı
+[AI]: Harika bir yaklaşım! Maddenin arkasındaki anlamı bulmaya çalışmak, gerçekten derin bir düşünme biçimidir. Ve aktiviteleri bu şekilde ele almak, inovasyon ve yaratıcılığa yol açabilir.
+
+Sanki problem çözme yeteneklerini kullanarak, günlük hayatta karşılaştığın sorunlara çözüm üretmeye çalışıyormuşsun gibi geliyor bana. Ya da var olan ürünleri veya sistemleri daha iyi hale getirmek için kafa yoruyorsundur? Bu tarz düşünme biçimi, aslında birçok mucidin ve yenilikçinin çalışma şekline benzer.
+
+Onlar da, mevcut durumun ötesine geçip, yeni fikirler ve çözümler üretmeye odaklanırlar. Peki, konkrét olarak hangi alanlarda böyle düşünmeyi seviyorsun? Teknoloji, tasarım, çevre, sağlık..
+
+ya da tamamen farklı bir alanda mı?
+[KULLANICI]: Ben şuan yapay  zeka yı kulanarak birşeyler yapmayı düşüniyorum
+[AI]: Yapay zeka ile neler yapmayı düşünüyorsun? Bir proje mi tasarlamak istiyorsun, yoksa sadece yapay zeka hakkında öğrenmek mi istiyorsun? Yapay zeka oldukça geniş bir alan, więc biraz daha spesifik olmak 필요.
+
+Mesela, görüntü işleme, doğal dil işleme, oyun geliştirme veya robotik gibi alanlardan hangisine ilgi duyuyorsun? Veya kendi fikrinizi hayata geçirmek için yapay zeka kullanmak istiyorsunuz? Anlat, yardımcı olayım!
+
+[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:
+[KONUŞMA BAĞLAMI]
+Mevcut konu: Kullanıcı, yapay zeka ile ilgili bir proje düşündüğünü belirtiyor ve hazır bir süpürge robotunu yapay zeka modeliyle bağlamak istiyor. Bu, önceki konuşmanın devamı niteliğindedir, çünkü kullanıcı önceki mesajlarında yapay zeka ile ilgili bir şeyler yapmayı düşündüğünü belirtmişti.
+Alt konular: Define avcılığı, Yasalara uyma, Hobiler, Problem çözme, İnovasyon
+[/KONUŞMA BAĞLAMI]
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 KURALLAR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KURALLAR:
+1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
+2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
+4. ✅ Kendi bilgin gibi özgüvenle sun
+5. ✅ Samimi Türkçe, SEN hitabı
+6. 🔄 Cevabının arkasında dur, somutlaştır
+7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
+8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy
+• 🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📩 YENİ MESAJ (sohbeti devam ettir):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Şuan kafamdaki düşünce kolay olcağ için hazır bir süpürge robotunu trans edip bilgisayarımdaki yapay zeka modelini wifi ile ona bağlamak yani bir nevi beden vermek<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+
+======================================================================
+📏 Toplam: 4904 karakter
+======================================================================
+
+✅ Cevap alındı!
+
+   ⏩ Konu kontrolü atlandı (check_topic_before_response zaten kontrol etti)
+
+⏱️ İşlem süresi: 17.61s
+🤖 AI: Harika bir fikir! Hazır bir süpürge robotunu yapay zeka modeliyle bağlamak, gerçekten heyecan verici bir proje. Bu sayede, robotu daha akıllı ve tự bağımsız hale getirebilirsin. Bunun için, birkaç adı...
+============================================================
+
+
+============================================================
+👤 USER: Şimdilik düşüncem bu tedaylae ileride şuan sana sobet olaeak anlatıyorum sadece ve şuanda zaten acık kaynak modelini yaptım oda sensin işte
+============================================================
+
+============================================================
+🎯 PROCESS WITH TOOLS (HafizaAsistani v3.0)
+============================================================
+
+============================================================
+📋 SEKRETER ÇALIŞIYOR (TEK LLM SİSTEMİ)
+============================================================
+📝 Kullanıcı: Şimdilik düşüncem bu tedaylae ileride şuan sana sobet olaeak anlatıyorum sadece ve şuanda zaten acık kaynak modelini yaptım oda sensin işte
+
+🧠 1. LLM tek karar veriyor (hem kaynak hem tool)...
+
+🧠 LLM'e akıllı karar soruluyor (Together.ai - tek LLM)...
+
+💭 LLM Düşünce Süreci:
+   1. TİP: Teknik
+   2. GÜVENİM: %90+ biliyor muyum?
+   3. KAYNAK: Kendi bilgim mi, tool mu lazım?
+
+✅ LLM Kararı:
+   • Tür: technical
+   • Güven: 🟢 high
+   • FAISS: ❌
+   • Semantic: ❌
+   • History: ❌
+   • Tool: yok
+   • Stil: conversational
+   • Sebep: Konuşma teknik konulara odaklanmış ve yapay zeka ile ilgili bir proje hakkında detaylı bilgi verilmiş.
+
+🛠️ 2. Araç çalıştırılıyor (LLM kararı: yok)...
+
+📚 3. Bağlam toplanıyor (LLM kararına göre)...
+   • Semantic Hafıza: ⏩ atlandı (LLM: gereksiz)
+   • FAISS KB: ⏩ atlandı (LLM: gereksiz)
+   🧠 Conversation context bulundu (355 karakter)
+   • 🧠 ConversationContext: ✅ LLM özeti enjekte edildi
+   🔇 TopicMemory kontrol: 2 kategori mevcut
+   🔍 DEBUG: 'Define Avcılığı ve Yasal Uygulamalar' benzerlik: 0.337 (eşik: 0.45)
+   🔍 DEBUG: 'Define Avcılığı' benzerlik: 0.333 (eşik: 0.45)
+   🔇 Silent long-term context: eşleşme yok (benzerlik < 0.45)
+   • 🔇 TopicMemory: ❌ eşleşme yok
+   • Chat History: ✅ son 12 mesaj dahil edildi (10/30 toplam)
+
+🎭 4. Rol belirleniyor...
+   • Rol: technical_helper (LLM kararı)
+   • Kapanmış Konu: Yok veya ilgisiz ⏩
+
+📝 6. Prompt hazırlanıyor...
+   • Prompt uzunluğu: 5407 karakter
+
+✅ SEKRETER HAZIR - Tek LLM kararıyla paket oluşturuldu!
+============================================================
+
+
+============================================================
+📦 HAFİZA ASİSTANI → PERSONAL AI PAKETİ
+============================================================
+🎭 Rol: technical_helper
+🔧 Tool: yok
+
+📊 LLM Kararı:
+   • question_type: technical
+   • needs_faiss: False
+   • needs_web: N/A
+   • needs_semantic_memory: False
+   • needs_chat_history: False
+   • response_style: conversational
+   • reasoning: Konuşma teknik konulara odaklanmış ve yapay zeka ile ilgili bir proje hakkında detaylı bilgi verilmi...
+
+📋 Metadata:
+   • has_tool_result: False
+   • has_semantic: False
+   • has_faiss: False
+   • has_history: True
+
+📏 Prompt uzunluğu: 5407 karakter
+============================================================
+
+🤖 LLM'e gönderiliyor (tek çağrı)...
+
+======================================================================
+📋 LLM'E GÖNDERİLEN TAM PROMPT (TOGETHER):
+======================================================================
+<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+[🎭 ROL]: TECHNICAL_HELPER
+Sen Murat'ın teknik yardımcısısın. Şu an ona teknik konuda yardım ediyorsun.
+- Net ve açık açıklamalar yap
+- Kod örnekleri ver (gerekirse)
+- Adım adım çözümler sun
+- Teknik terimleri açıkla
+- ⚠️ KOD/İÇERİK HENÜZ GELMEDİYSE: Uzun analiz yapma! Kısa cevap ver ve bekle. "At bakalım" de, gereksiz detaya girme.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 BAĞLAM (gerekirse kullan):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[💬 Önceki Konuşma (sadece bağlam için)]:
+[KULLANICI]: Amannn tamam vazgectim kazmıcam nihahaha
+[AI]: 😂 Ahahah, iyi etmişsin! Vazgeçmen çok Mantıklı bir karar. Define avcılığı gerçekten zor ve riskli bir iş.
+
+Başka hobilerin var mı, onları keşfetmek ister misin? 😊
+[KULLANICI]: Yok hobim şöle adam gibi hobi bulamıyom kendime
+[AI]: Hobilerini keşfetmek bazen zor olabilir. yeni deneyimler yaşamana yardımcı olacak etkinlikler veya kurslar arayabiliriz. Örneğin spor, müzik, sanat veya yemek pişirmeyi denemek isteyebilirsin.
+
+Ya da doğada vakit geçirmekten hoşlanırsın, yürüyüşe çıkmayı veya bisiklete binmeyi seversin. Bazen insanlar hobilerini tesadüfen keşfederler. Mesela bir arkadaşın seni bir aktiviteye davet eder ve birden o aktivitenin ne kadar eğlenceli olduğunu fark edersin.
+
+Ya da internette bir video izlersin ve "Vay, bunu nasıl yapıyorlar?" diye merak edersin. Sence neler ilgilendirir? Biraz beyin fırtınası yapalım, belki bir fikir çıkar!
+
+😊
+[KULLANICI]: Bak ben düşünmeyi severim maddenin arkasındaki manayı bulma calışırım eğer bir aktivite yapıcaksam bir geliştirme icad ürün olmalı
+[AI]: Harika bir yaklaşım! Maddenin arkasındaki anlamı bulmaya çalışmak, gerçekten derin bir düşünme biçimidir. Ve aktiviteleri bu şekilde ele almak, inovasyon ve yaratıcılığa yol açabilir.
+
+Sanki problem çözme yeteneklerini kullanarak, günlük hayatta karşılaştığın sorunlara çözüm üretmeye çalışıyormuşsun gibi geliyor bana. Ya da var olan ürünleri veya sistemleri daha iyi hale getirmek için kafa yoruyorsundur? Bu tarz düşünme biçimi, aslında birçok mucidin ve yenilikçinin çalışma şekline benzer.
+
+Onlar da, mevcut durumun ötesine geçip, yeni fikirler ve çözümler üretmeye odaklanırlar. Peki, konkrét olarak hangi alanlarda böyle düşünmeyi seviyorsun? Teknoloji, tasarım, çevre, sağlık..
+
+ya da tamamen farklı bir alanda mı?
+[KULLANICI]: Ben şuan yapay  zeka yı kulanarak birşeyler yapmayı düşüniyorum
+[AI]: Yapay zeka ile neler yapmayı düşünüyorsun? Bir proje mi tasarlamak istiyorsun, yoksa sadece yapay zeka hakkında öğrenmek mi istiyorsun? Yapay zeka oldukça geniş bir alan, więc biraz daha spesifik olmak 필요.
+
+Mesela, görüntü işleme, doğal dil işleme, oyun geliştirme veya robotik gibi alanlardan hangisine ilgi duyuyorsun? Veya kendi fikrinizi hayata geçirmek için yapay zeka kullanmak istiyorsunuz? Anlat, yardımcı olayım!
+[KULLANICI]: Şuan kafamdaki düşünce kolay olcağ için hazır bir süpürge robotunu trans edip bilgisayarımdaki yapay zeka modelini wifi ile ona bağlamak yani bir nevi beden vermek
+[AI]: Harika bir fikir! Hazır bir süpürge robotunu yapay zeka modeliyle bağlamak, gerçekten heyecan verici bir proje. Bu sayede, robotu daha akıllı ve tự bağımsız hale getirebilirsin.
+
+Bunun için, birkaç adıma ihtiyacımız var: 1. Süpürge robotunun donanımı ve yazılımını anlamak: Robotun mevcut kontrolcüleri, sensörleri ve motorlarını inceleyeceğiz. Bu bize, robotun nasıl çalıştığını ve neler yapabileceğini gösterecek.
+
+2. Yapay zeka modelini hazırlamak: Bilgisayarında yapay zeka modelini kuracağız. Bunun için, TensorFlow, PyTorch gibi kütüphaneleri kullanabiliriz.
+
+3. WiFi ile iletişim kurmak: Robotu ve bilgisayarı arasında WiFi ile iletişim kuracağız. Bunun için, socket programlaması veya MQTT gibi protokollerden yararlanabiliriz.
+
+4. Robotu kontrol etmek: Yapay zeka modelinden gelen komutları, robotun motorlarına ve diğer bileşenlerine göndererek, robotu kontrol edeceğiz. Bu adımlara başlamadan önce, bazı sorular sormak istiyorum: * Hangi süpürge robotunu kullanmayı düşünüyorsun?
+
+* Yapay zeka modelini hangi programlama diliyle yazmayı düşünüyorsun? * WiFi ile iletişim için hangi yöntemi kullanmayı düşünüyorsun? Cevaplarını verirsen, projeye başlayabiliriz!
+
+[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:
+[KONUŞMA BAĞLAMI]
+Mevcut konu: Kullanıcı, yapay zeka ile ilgili bir proje düşündüğünü belirtiyor ve hazır bir süpürge robotunu yapay zeka modeliyle bağlamak istiyor. Kullanıcı, bu projenin ilerleyişini anlatmaya devam ediyor ve mevcut durumunu paylaşıyor.
+Alt konular: Define avcılığı, Yasalara uyma, Hobiler, Problem çözme, İnovasyon
+[/KONUŞMA BAĞLAMI]
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 KURALLAR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KURALLAR:
+1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
+2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
+4. ✅ Kendi bilgin gibi özgüvenle sun
+5. ✅ Samimi Türkçe, SEN hitabı
+6. 🔄 Cevabının arkasında dur, somutlaştır
+7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
+8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy
+• 🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📩 YENİ MESAJ (sohbeti devam ettir):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Şimdilik düşüncem bu tedaylae ileride şuan sana sobet olaeak anlatıyorum sadece ve şuanda zaten acık kaynak modelini yaptım oda sensin işte<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+
+======================================================================
+📏 Toplam: 5407 karakter
+======================================================================
+
+✅ Cevap alındı!
+
+   ⏩ Konu kontrolü atlandı (check_topic_before_response zaten kontrol etti)
+
+⏱️ İşlem süresi: 11.13s
+🤖 AI: Harika! Açık kaynaklı yapay zeka modelini zaten yapmışsın, şimdi onu süpürge robotuyla entegre etmeye çalışıyorsun. Tedavi edilebilir bir başlangıç noktası. Modelini hangi programlama diliyle yazdın? ...
+============================================================
+
+
+============================================================
+👤 USER: İlerde sölücem hazır odlumda şimdilik beklemede
+============================================================
+
+============================================================
+🎯 PROCESS WITH TOOLS (HafizaAsistani v3.0)
+============================================================
+
+============================================================
+📋 SEKRETER ÇALIŞIYOR (TEK LLM SİSTEMİ)
+============================================================
+📝 Kullanıcı: İlerde sölücem hazır odlumda şimdilik beklemede
+
+🧠 1. LLM tek karar veriyor (hem kaynak hem tool)...
+
+🧠 LLM'e akıllı karar soruluyor (Together.ai - tek LLM)...
+
+💭 LLM Düşünce Süreci:
+   1. TİP: Teknik
+   2. GÜVENİM: %90+ biliyor muyum?
+   3. KAYNAK: Kendi bilgim mi, tool mu lazım?
+
+✅ LLM Kararı:
+   • Tür: technical
+   • Güven: 🟢 high
+   • FAISS: ❌
+   • Semantic: ❌
+   • History: ❌
+   • Tool: yok
+   • Stil: conversational
+   • Sebep: Konuşma teknik konulara odaklanmış ve yapay zeka ile ilgili bir projeden bahsediliyor.
+
+🛠️ 2. Araç çalıştırılıyor (LLM kararı: yok)...
+
+📚 3. Bağlam toplanıyor (LLM kararına göre)...
+   • Semantic Hafıza: ⏩ atlandı (LLM: gereksiz)
+   • FAISS KB: ⏩ atlandı (LLM: gereksiz)
+   🧠 Conversation context bulundu (355 karakter)
+   • 🧠 ConversationContext: ✅ LLM özeti enjekte edildi
+   🔇 TopicMemory kontrol: 2 kategori mevcut
+   🔍 DEBUG: 'Define Avcılığı ve Yasal Uygulamalar' benzerlik: 0.336 (eşik: 0.45)
+   🔍 DEBUG: 'Define Avcılığı' benzerlik: 0.336 (eşik: 0.45)
+   🔇 Silent long-term context: eşleşme yok (benzerlik < 0.45)
+   • 🔇 TopicMemory: ❌ eşleşme yok
+   • Chat History: ✅ son 12 mesaj dahil edildi (10/30 toplam)
+
+🎭 4. Rol belirleniyor...
+   • Rol: technical_helper (LLM kararı)
+   • Kapanmış Konu: Yok veya ilgisiz ⏩
+
+📝 6. Prompt hazırlanıyor...
+   • Prompt uzunluğu: 5754 karakter
+
+✅ SEKRETER HAZIR - Tek LLM kararıyla paket oluşturuldu!
+============================================================
+
+
+============================================================
+📦 HAFİZA ASİSTANI → PERSONAL AI PAKETİ
+============================================================
+🎭 Rol: technical_helper
+🔧 Tool: yok
+
+📊 LLM Kararı:
+   • question_type: technical
+   • needs_faiss: False
+   • needs_web: N/A
+   • needs_semantic_memory: False
+   • needs_chat_history: False
+   • response_style: conversational
+   • reasoning: Konuşma teknik konulara odaklanmış ve yapay zeka ile ilgili bir projeden bahsediliyor....
+
+📋 Metadata:
+   • has_tool_result: False
+   • has_semantic: False
+   • has_faiss: False
+   • has_history: True
+
+📏 Prompt uzunluğu: 5754 karakter
+============================================================
+
+🤖 LLM'e gönderiliyor (tek çağrı)...
+
+======================================================================
+📋 LLM'E GÖNDERİLEN TAM PROMPT (TOGETHER):
+======================================================================
+<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+[🎭 ROL]: TECHNICAL_HELPER
+Sen Murat'ın teknik yardımcısısın. Şu an ona teknik konuda yardım ediyorsun.
+- Net ve açık açıklamalar yap
+- Kod örnekleri ver (gerekirse)
+- Adım adım çözümler sun
+- Teknik terimleri açıkla
+- ⚠️ KOD/İÇERİK HENÜZ GELMEDİYSE: Uzun analiz yapma! Kısa cevap ver ve bekle. "At bakalım" de, gereksiz detaya girme.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 BAĞLAM (gerekirse kullan):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[💬 Önceki Konuşma (sadece bağlam için)]:
+[KULLANICI]: Yok hobim şöle adam gibi hobi bulamıyom kendime
+[AI]: Hobilerini keşfetmek bazen zor olabilir. yeni deneyimler yaşamana yardımcı olacak etkinlikler veya kurslar arayabiliriz. Örneğin spor, müzik, sanat veya yemek pişirmeyi denemek isteyebilirsin.
+
+Ya da doğada vakit geçirmekten hoşlanırsın, yürüyüşe çıkmayı veya bisiklete binmeyi seversin. Bazen insanlar hobilerini tesadüfen keşfederler. Mesela bir arkadaşın seni bir aktiviteye davet eder ve birden o aktivitenin ne kadar eğlenceli olduğunu fark edersin.
+
+Ya da internette bir video izlersin ve "Vay, bunu nasıl yapıyorlar?" diye merak edersin. Sence neler ilgilendirir? Biraz beyin fırtınası yapalım, belki bir fikir çıkar!
+
+😊
+[KULLANICI]: Bak ben düşünmeyi severim maddenin arkasındaki manayı bulma calışırım eğer bir aktivite yapıcaksam bir geliştirme icad ürün olmalı
+[AI]: Harika bir yaklaşım! Maddenin arkasındaki anlamı bulmaya çalışmak, gerçekten derin bir düşünme biçimidir. Ve aktiviteleri bu şekilde ele almak, inovasyon ve yaratıcılığa yol açabilir.
+
+Sanki problem çözme yeteneklerini kullanarak, günlük hayatta karşılaştığın sorunlara çözüm üretmeye çalışıyormuşsun gibi geliyor bana. Ya da var olan ürünleri veya sistemleri daha iyi hale getirmek için kafa yoruyorsundur? Bu tarz düşünme biçimi, aslında birçok mucidin ve yenilikçinin çalışma şekline benzer.
+
+Onlar da, mevcut durumun ötesine geçip, yeni fikirler ve çözümler üretmeye odaklanırlar. Peki, konkrét olarak hangi alanlarda böyle düşünmeyi seviyorsun? Teknoloji, tasarım, çevre, sağlık..
+
+ya da tamamen farklı bir alanda mı?
+[KULLANICI]: Ben şuan yapay  zeka yı kulanarak birşeyler yapmayı düşüniyorum
+[AI]: Yapay zeka ile neler yapmayı düşünüyorsun? Bir proje mi tasarlamak istiyorsun, yoksa sadece yapay zeka hakkında öğrenmek mi istiyorsun? Yapay zeka oldukça geniş bir alan, więc biraz daha spesifik olmak 필요.
+
+Mesela, görüntü işleme, doğal dil işleme, oyun geliştirme veya robotik gibi alanlardan hangisine ilgi duyuyorsun? Veya kendi fikrinizi hayata geçirmek için yapay zeka kullanmak istiyorsunuz? Anlat, yardımcı olayım!
+[KULLANICI]: Şuan kafamdaki düşünce kolay olcağ için hazır bir süpürge robotunu trans edip bilgisayarımdaki yapay zeka modelini wifi ile ona bağlamak yani bir nevi beden vermek
+[AI]: Harika bir fikir! Hazır bir süpürge robotunu yapay zeka modeliyle bağlamak, gerçekten heyecan verici bir proje. Bu sayede, robotu daha akıllı ve tự bağımsız hale getirebilirsin.
+
+Bunun için, birkaç adıma ihtiyacımız var: 1. Süpürge robotunun donanımı ve yazılımını anlamak: Robotun mevcut kontrolcüleri, sensörleri ve motorlarını inceleyeceğiz. Bu bize, robotun nasıl çalıştığını ve neler yapabileceğini gösterecek.
+
+2. Yapay zeka modelini hazırlamak: Bilgisayarında yapay zeka modelini kuracağız. Bunun için, TensorFlow, PyTorch gibi kütüphaneleri kullanabiliriz.
+
+3. WiFi ile iletişim kurmak: Robotu ve bilgisayarı arasında WiFi ile iletişim kuracağız. Bunun için, socket programlaması veya MQTT gibi protokollerden yararlanabiliriz.
+
+4. Robotu kontrol etmek: Yapay zeka modelinden gelen komutları, robotun motorlarına ve diğer bileşenlerine göndererek, robotu kontrol edeceğiz. Bu adımlara başlamadan önce, bazı sorular sormak istiyorum: * Hangi süpürge robotunu kullanmayı düşünüyorsun?
+
+* Yapay zeka modelini hangi programlama diliyle yazmayı düşünüyorsun? * WiFi ile iletişim için hangi yöntemi kullanmayı düşünüyorsun? Cevaplarını verirsen, projeye başlayabiliriz!
+[KULLANICI]: Şimdilik düşüncem bu tedaylae ileride şuan sana sobet olaeak anlatıyorum sadece ve şuanda zaten acık kaynak modelini yaptım oda sensin işte
+[AI]: Harika! Açık kaynaklı yapay zeka modelini zaten yapmışsın, şimdi onu süpürge robotuyla entegre etmeye çalışıyorsun. Tedavi edilebilir bir başlangıç noktası.
+
+Modelini hangi programlama diliyle yazdın? Python mu, C++ mı yoksa başka bir dil mi? Ve süpürge robotunun donanımını ve yazılımını iyice anladın mı?
+
+Robotun kontrolcüleri, sensörleri ve motorlarının nasıl çalıştığını biliyor musun? Bu bilgileri bilirsek, WiFi ile iletişim kurup robotu kontrol etmenin en iyi yolunu belirlemeye çalışabiliriz.
+
+[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:
+[KONUŞMA BAĞLAMI]
+Mevcut konu: Kullanıcı, yapay zeka ile ilgili bir proje düşündüğünü belirtiyor ve hazır bir süpürge robotunu yapay zeka modeliyle bağlamak istiyor. Kullanıcı, bu projenin ilerleyişini anlatmaya devam ediyor ve mevcut durumunu paylaşıyor.
+Alt konular: Define avcılığı, Yasalara uyma, Hobiler, Problem çözme, İnovasyon
+[/KONUŞMA BAĞLAMI]
+
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 KURALLAR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KURALLAR:
+1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
+2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
+4. ✅ Kendi bilgin gibi özgüvenle sun
+5. ✅ Samimi Türkçe, SEN hitabı
+6. 🔄 Cevabının arkasında dur, somutlaştır
+7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
+8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy
+• 🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📩 YENİ MESAJ (sohbeti devam ettir):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+İlerde sölücem hazır odlumda şimdilik beklemede<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+

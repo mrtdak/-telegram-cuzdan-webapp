@@ -1,0 +1,23 @@
+# Kullanici verileri (gizli kalsin)
+user_data/
+*.log
+
+# API anahtarlari (cok onemli - ASLA paylasma)
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Gecici dosyalar
+*.tmp
+*.bak
+
+# Windows ozel dosyasi
+nul
