@@ -524,11 +524,7 @@ class SimpleFAISSKB:
 
     def get_relevant_context(self, query: str, max_chunks: int = 6) -> str:
         """FAISS'ten ilgili bağlamı getir"""
-        if not self.enabled:
-            print("   ⚠️ SimpleFAISSKB: enabled=False")
-            return ""
-        if not self.faiss_kb:
-            print("   ⚠️ SimpleFAISSKB: faiss_kb=None (inject edilmemiş)")
+        if not self.enabled or not self.faiss_kb:
             return ""
         try:
             return self.faiss_kb.get_relevant_context(query, max_chunks)
@@ -1164,12 +1160,6 @@ class HafizaAsistani:
                 result = self.faiss_kb.get_relevant_context(
                     tool_param or user_input, max_chunks=6
                 )
-                if result:
-                    # Log'a FAISS sonucunu yaz (ilk 300 karakter)
-                    preview = result[:300].replace('\n', ' ')
-                    print(f"   📚 FAISS buldu ({len(result)} kar): {preview}...")
-                else:
-                    print("   ⚠️ FAISS: Sonuç bulunamadı")
                 return result or None
 
             if tool_name == "wiki_ara":
@@ -1237,21 +1227,19 @@ Karar sistemi. ÖNCE <analiz> YAZ, SONRA JSON VER.
 {history_section}MESAJ: {user_input}
 
 <analiz>
-1. NİYET: Kullanıcı ne istiyor? (bilgi almak / soru soruyor / öğrenmek istiyor / sadece paylaşıyor-sohbet ediyor)
-2. SORU VAR MI: Gerçekten bir şey öğrenmek mi istiyor, yoksa sadece bir şey anlatıyor/paylaşıyor mu?
-3. KONU: Eğer soru varsa, ne hakkında? (dini/teknik/genel)
-4. KAYNAK: Tool lazım mı, yoksa sohbet devam mı?
+1. TİP: Sohbet/bilgi/teknik/dini/matematik/duygusal?
+2. GÜVENİM: %90+ biliyor muyum?
+3. KAYNAK: Kendi bilgim mi, tool mu lazım?
 </analiz>
 
 KURALLAR:
-• SORU YOK, sadece paylaşım/sohbet → friend, tool_name="yok" (en önemli kural!)
 • Selam/merhaba/veda → friend, tool_name="yok"
 • "evet/anladım/ilginç" gibi onaylar → acknowledger, kısa cevap
-• Dini bilgi/açıklama İSTİYORSA → religious_teacher, risale_ara
-• Matematik sorusu → hesapla | Saat sorusu → zaman_getir | Hava sorusu → hava_durumu
-• Teknik/kod sorusu → technical_helper
+• Dini (Allah/iman/namaz/Kuran) → religious_teacher, risale_ara
+• Matematik → hesapla | Saat → zaman_getir | Hava → hava_durumu
+• Teknik/kod → technical_helper
 • Belirsiz → needs_clarification=true
-• Kişi hakkında bilgi istiyorsa → wiki_ara
+• Kişi tanımıyorsan → wiki_ara
 
 ROLLER: friend|teacher|technical_helper|acknowledger|religious_teacher
 
@@ -1766,10 +1754,10 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 {sep}
 📋 KURALLAR:
 {sep}
-1. Doğrudan cevap ver, akıcı paragraf şeklinde yaz
-2. Kendi bilgin gibi özgüvenle sun
-3. Samimi Türkçe, SEN hitabı
-4. Rolüne uygun davran
+1. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+2. ✅ Kendi bilgin gibi özgüvenle sun
+3. ✅ Samimi Türkçe, SEN hitabı
+4. ✅ Rolüne uygun davran
 
 {sep}
 📩 YENİ MESAJ (sohbeti devam ettir):
@@ -1851,14 +1839,14 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 6. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy"""
         else:
             rules_text = """KURALLAR:
-1. Yanlış bilgiyi nazikçe düzelt
-2. Doğrudan cevap ver, akıcı paragraf şeklinde yaz
-3. Bilgiyi kendi sözlerinle sun
-4. Özgüvenle ve samimi şekilde anlat
-5. Samimi Türkçe, SEN hitabı
-6. Cevabının arkasında dur, somutlaştır
-7. Her seferinde taze cevap ver
-8. Rolüne uygun davran"""
+1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
+2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
+3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
+4. ✅ Kendi bilgin gibi özgüvenle sun
+5. ✅ Samimi Türkçe, SEN hitabı
+6. 🔄 Cevabının arkasında dur, somutlaştır
+7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
+8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy"""
 
         # 🔑 SEPARATOR
         sep = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -8,10 +8,7 @@
       "Bash(dir \"C:\\\\Users\\\\Betül\\\\Desktop\\\\zambaba\")",
       "Bash(copy:*)",
       "Bash(xcopy:*)",
-      "WebFetch(domain:github.com)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nIlk commit - QuantumTree Projesi\n\n- Telegram bot \\(personal_ai + hafiza sistemi\\)\n- Topic Memory \\(kategori bazli uzun sureli hafiza\\)\n- Archive Worker \\(otomatik duplicate temizleme\\)\n- Conversation Context \\(session yonetimi\\)\n- Zaman bilinci \\(gece/sabah/ogleden sonra/aksam\\)\nEOF\n\\)\")",
-      "Bash(dir /s /b \"C:\\\\Users\\\\Betül\\\\Desktop\\\\quantum_proje\\\\quantumtree_project\")",
-      "Bash(findstr:*)"
+      "WebFetch(domain:github.com)"
     ]
   }
 }
