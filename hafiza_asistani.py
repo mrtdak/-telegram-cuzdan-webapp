@@ -1754,10 +1754,10 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 {sep}
 📋 KURALLAR:
 {sep}
-1. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
-2. ✅ Kendi bilgin gibi özgüvenle sun
-3. ✅ Samimi Türkçe, SEN hitabı
-4. ✅ Rolüne uygun davran
+1. Doğrudan cevap ver, akıcı paragraf şeklinde yaz
+2. Kendi bilgin gibi özgüvenle sun
+3. Samimi Türkçe, SEN hitabı
+4. Rolüne uygun davran
 
 {sep}
 📩 YENİ MESAJ (sohbeti devam ettir):
@@ -1839,14 +1839,14 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 6. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy"""
         else:
             rules_text = """KURALLAR:
-1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
-2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
-3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
-4. ✅ Kendi bilgin gibi özgüvenle sun
-5. ✅ Samimi Türkçe, SEN hitabı
-6. 🔄 Cevabının arkasında dur, somutlaştır
-7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
-8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy"""
+1. Yanlış bilgiyi nazikçe düzelt
+2. Doğrudan cevap ver, akıcı paragraf şeklinde yaz
+3. Bilgiyi kendi sözlerinle sun
+4. Özgüvenle ve samimi şekilde anlat
+5. Samimi Türkçe, SEN hitabı
+6. Cevabının arkasında dur, somutlaştır
+7. Her seferinde taze cevap ver
+8. Rolüne uygun davran"""
 
         # 🔑 SEPARATOR
         sep = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
