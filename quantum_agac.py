@@ -695,9 +695,9 @@ class QuantumTree:
             try:
                 search_text_en = GoogleTranslator(source='auto', target='en').translate(search_text)
                 logging.info(f"🌐 WİKİPEDİA ARAMASI: '{search_text}' → '{search_text_en}' (dil: en)")
-            except:
+            except Exception as e:
                 search_text_en = search_text
-                logging.info(f"🌐 WİKİPEDİA ARAMASI: '{search_text}' (çeviri yapılamadı)")
+                logging.info(f"🌐 WİKİPEDİA ARAMASI: '{search_text}' (çeviri hatası: {e})")
 
             results = wikipedia.search(search_text_en, results=10)
             logging.info(f"🔍 Wikipedia {len(results)} sonuç buldu: {results[:5]}")
@@ -1660,13 +1660,13 @@ Türkçe yanıt ver."""
                                 sim = util.cos_sim(icerik_emb, prev_emb).item()
                                 if sim > 0.7:
                                     skor -= 200  # Çok benzer, skor düşür
-                        except:
-                            pass
-                    
+                        except Exception as e:
+                            logging.debug(f"Embedding benzerlik hesaplama hatası: {e}")
+
                     if skor > en_iyi_skor:
                         en_iyi_skor = skor
                         en_iyi = icerik
-                
+
                 if en_iyi:
                     secilen_icerikler.append(f"[{kat_baslik}]\n{en_iyi}")
                     # Bu içeriğin embedding'ini kaydet
@@ -1674,8 +1674,8 @@ Türkçe yanıt ver."""
                         if self.sentence_model:
                             emb = self.sentence_model.encode(en_iyi[:500], convert_to_tensor=True)
                             tum_secilen_embeddings.append(emb)
-                    except:
-                        pass
+                    except Exception as e:
+                        logging.debug(f"Embedding kaydetme hatası: {e}")
 
         logging.info("📦 Senteze dahil edilen kategori: %d / 9", len(secilen_icerikler))
 

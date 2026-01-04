@@ -177,8 +177,8 @@ async def wiki_ara(query: str) -> str:
                         summary = wikipedia.summary(search_results[1], sentences=3, auto_suggest=False)
                         lang_flag = "🇹🇷" if lang == "tr" else "🇬🇧"
                         return True, f"📚 {lang_flag} {search_results[1]}:\n{summary}"
-                    except:
-                        pass
+                    except (wikipedia.PageError, wikipedia.WikipediaException) as e:
+                        print(f"Wikipedia alternatif arama hatası: {e}")
                 return False, ""
 
         except Exception:
@@ -563,7 +563,8 @@ class DecisionLLM:
                 timeout=5
             )
             return response.status_code == 200
-        except:
+        except (requests.RequestException, requests.Timeout) as e:
+            print(f"Together API bağlantı hatası: {e}")
             return False
 
     def _call_llm(self, prompt: str, max_tokens: int = 100) -> str:

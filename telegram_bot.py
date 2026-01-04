@@ -8,8 +8,8 @@ if sys.platform == 'win32':
     try:
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except:
-        pass
+    except (AttributeError, OSError):
+        pass  # Console encoding değiştirilemedi, varsayılan kullanılacak
 import asyncio
 import logging
 import json
@@ -651,7 +651,8 @@ class PersonalAIWrapper:
                 
                 try:
                     english_text = GoogleTranslator(source='auto', target='en').translate(user_input)
-                except:
+                except Exception as e:
+                    print(f"Çeviri hatası: {e}")
                     english_text = user_input
                 
                 loop = asyncio.get_event_loop()
@@ -1401,9 +1402,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if status_message:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-            except:
-                pass
-        
+            except Exception:
+                pass  # Mesaj zaten silinmiş olabilir
+
         await update.message.reply_text("❌ Bir sorun oluştu, tekrar dener misin? 🔄")
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1496,8 +1497,8 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         if status_message:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-            except:
-                pass
+            except Exception:
+                pass  # Mesaj zaten silinmiş olabilir
         await update.message.reply_text("❌ Sesli mesajı işlerken sorun oluştu. 🔄")
 
 async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1561,8 +1562,8 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         if status_message:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-            except:
-                pass
+            except Exception:
+                pass  # Mesaj zaten silinmiş olabilir
         await update.message.reply_text("❌ Görseli analiz ederken sorun oluştu. 🔄")
 
 async def speed_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1642,7 +1643,8 @@ def main():
             with open('config.json', 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
             neo4j_enabled = config_data.get('neo4j', {}).get('enabled', False)
-        except:
+        except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+            print(f"Config okuma hatası: {e}")
             neo4j_enabled = False
 
         neo4j_pass = os.getenv("NEO4J_PASS") or os.getenv("NEO4J_PASSWORD") or "senegal5454"
@@ -1755,22 +1757,22 @@ def main():
             try:
                 quantum_tree.stop_background()
                 print("  ✅ QuantumTree kapatıldı")
-            except:
-                pass
-        
+            except Exception as e:
+                print(f"  ⚠️ QuantumTree kapatma hatası: {e}")
+
         if chat_manager and chat_manager.driver:
             try:
                 chat_manager.driver.close()
                 print("  ✅ Neo4j chat manager kapatıldı")
-            except:
-                pass
-        
+            except Exception as e:
+                print(f"  ⚠️ Neo4j chat manager kapatma hatası: {e}")
+
         if chat_analyzer and chat_analyzer.driver:
             try:
                 chat_analyzer.close()
                 print("  ✅ Chat analyzer kapatıldı")
-            except:
-                pass
+            except Exception as e:
+                print(f"  ⚠️ Chat analyzer kapatma hatası: {e}")
         
         for telegram_id, ai_instance in list(ai_instances.items()):
             if hasattr(ai_instance, 'ai_core_instance') and ai_instance.ai_core_instance:

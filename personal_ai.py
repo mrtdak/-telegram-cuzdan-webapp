@@ -195,8 +195,10 @@ Sessizce cevap ver:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
     
     # FAISS Knowledge Base
     FAISS_KB_ENABLED = True
-    FAISS_INDEX_FILE = "C:/Users/mrt/Desktop/Murat/quantum_proje/quantumtree_project/faiss_index.bin"
-    FAISS_TEXTS_FILE = "C:/Users/mrt/Desktop/Murat/quantum_proje/quantumtree_project/faiss_texts_final.json"
+    # Dinamik path - dosyanın bulunduğu dizini kullan
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    FAISS_INDEX_FILE = os.path.join(_BASE_DIR, "faiss_index.bin")
+    FAISS_TEXTS_FILE = os.path.join(_BASE_DIR, "faiss_texts_final.json")
     FAISS_SEARCH_TOP_K = 10
     FAISS_SIMILARITY_THRESHOLD = 0.48
     FAISS_MAX_RESULTS = 6  # Maksimum kaç sonuç kullanılacak
@@ -396,8 +398,8 @@ class VectorMemory:
         if SystemConfig.ENABLE_RERANKER:
             try:
                 self.reranker = FlagReranker(SystemConfig.RERANKER_MODEL, use_fp16=True)
-            except:
-                pass
+            except Exception as e:
+                print(f"Reranker yükleme hatası: {e}")
         
         # Data
         self.data: List[Dict[str, Any]] = []
@@ -448,7 +450,8 @@ class VectorMemory:
                     self.index = faiss.read_index(self.index_file)
                     if self.index.d != self.dimension or len(self.data) != self.index.ntotal:
                         self.data, self.index = self._rebuild_index_from_data(self.data)
-                except:
+                except Exception as e:
+                    print(f"FAISS index yükleme hatası, yeni oluşturuluyor: {e}")
                     self.index = self._create_empty_index()
             else:
                 self.index = self._create_empty_index()
@@ -681,13 +684,13 @@ class VectorMemory:
             if self.index is not None:
                 temp_index = f"{self.index_file}.tmp"
                 faiss.write_index(self.index, temp_index)
-                
+
                 if os.name == 'nt':
                     if os.path.exists(self.index_file):
                         os.remove(self.index_file)
                 os.rename(temp_index, self.index_file)
-        except:
-            pass
+        except (IOError, OSError) as e:
+            print(f"Hafıza kaydetme hatası: {e}")
     
     def get_stats(self) -> Dict[str, Any]:
         """İstatistikleri döndür"""
@@ -1346,7 +1349,8 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
                 "relative_threshold": self.relative_threshold,
                 "features": ["multi_user_isolation", "temporal_awareness", "relative_scoring"]
             }
-        except:
+        except Exception as e:
+            print(f"FAISS KB stats hatası: {e}")
             return {
                 "enabled": False,
                 "status": "error"

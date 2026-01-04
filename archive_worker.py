@@ -286,8 +286,8 @@ SADECE JSON döndür.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             # Yöntem 1: Direkt JSON parse
             try:
                 data = json.loads(result)
-            except:
-                pass
+            except json.JSONDecodeError:
+                pass  # Diğer yöntemleri dene
 
             # Yöntem 2: JSON bloğunu bul (```json ... ``` veya { ... })
             if not data:
@@ -296,8 +296,8 @@ SADECE JSON döndür.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 if code_match:
                     try:
                         data = json.loads(code_match.group(1))
-                    except:
-                        pass
+                    except json.JSONDecodeError:
+                        pass  # Diğer yöntemleri dene
 
             # Yöntem 3: İlk { ile son } arasını al
             if not data:
@@ -306,8 +306,8 @@ SADECE JSON döndür.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 if start != -1 and end != -1 and end > start:
                     try:
                         data = json.loads(result[start:end+1])
-                    except:
-                        pass
+                    except json.JSONDecodeError:
+                        pass  # JSON parse edilemedi
 
             if data and "duplicates" in data:
                 for dup in data.get("duplicates", []):
@@ -366,8 +366,8 @@ SADECE JSON döndür.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 data = json.loads(json_match.group())
                 if data.get("is_mixed") and data.get("topics"):
                     return data["topics"]
-        except:
-            pass
+        except json.JSONDecodeError as e:
+            print(f"Mixed kategori JSON parse hatası: {e}")
 
         return []
 

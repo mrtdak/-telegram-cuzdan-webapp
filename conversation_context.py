@@ -397,8 +397,8 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
                 contexts = [r.get("text", "")[:200] for r in results if r.get("type") == "archived_session"]
                 if contexts:
                     return "Geçmiş konuşmalardan:\n" + "\n".join(contexts)
-        except:
-            pass
+        except Exception as e:
+            print(f"Arşiv context getirme hatası: {e}")
 
         return ""
 

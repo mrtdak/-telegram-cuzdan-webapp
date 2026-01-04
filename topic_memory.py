@@ -117,8 +117,8 @@ class TopicMemory:
             try:
                 with open(self.index_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Index yükleme hatası: {e}")
 
         # Varsayılan index
         return {
@@ -143,8 +143,8 @@ class TopicMemory:
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Kategori yükleme hatası ({category_id}): {e}")
 
         return {
             "category_id": category_id,
@@ -397,8 +397,8 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         if self.embedder:
             try:
                 embedding = self.embedder.encode(category_name).tolist()
-            except:
-                pass
+            except Exception as e:
+                print(f"Embedding oluşturma hatası ({category_name}): {e}")
 
         # Index'e ekle
         self.index["categories"][category_id] = {
@@ -422,7 +422,8 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             date1 = datetime.fromisoformat(timestamp1).date()
             date2 = datetime.fromisoformat(timestamp2).date()
             return date1 == date2
-        except:
+        except ValueError as e:
+            print(f"Tarih parse hatası: {e}")
             return False
 
     def _add_session_to_category(
