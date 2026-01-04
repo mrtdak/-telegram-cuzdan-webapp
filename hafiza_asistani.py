@@ -524,7 +524,11 @@ class SimpleFAISSKB:
 
     def get_relevant_context(self, query: str, max_chunks: int = 6) -> str:
         """FAISS'ten ilgili bağlamı getir"""
-        if not self.enabled or not self.faiss_kb:
+        if not self.enabled:
+            print("   ⚠️ SimpleFAISSKB: enabled=False")
+            return ""
+        if not self.faiss_kb:
+            print("   ⚠️ SimpleFAISSKB: faiss_kb=None (inject edilmemiş)")
             return ""
         try:
             return self.faiss_kb.get_relevant_context(query, max_chunks)
@@ -1160,6 +1164,12 @@ class HafizaAsistani:
                 result = self.faiss_kb.get_relevant_context(
                     tool_param or user_input, max_chunks=6
                 )
+                if result:
+                    # Log'a FAISS sonucunu yaz (ilk 300 karakter)
+                    preview = result[:300].replace('\n', ' ')
+                    print(f"   📚 FAISS buldu ({len(result)} kar): {preview}...")
+                else:
+                    print("   ⚠️ FAISS: Sonuç bulunamadı")
                 return result or None
 
             if tool_name == "wiki_ara":
