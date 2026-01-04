@@ -1227,19 +1227,21 @@ Karar sistemi. ÖNCE <analiz> YAZ, SONRA JSON VER.
 {history_section}MESAJ: {user_input}
 
 <analiz>
-1. TİP: Sohbet/bilgi/teknik/dini/matematik/duygusal?
-2. GÜVENİM: %90+ biliyor muyum?
-3. KAYNAK: Kendi bilgim mi, tool mu lazım?
+1. NİYET: Kullanıcı ne istiyor? (bilgi almak / soru soruyor / öğrenmek istiyor / sadece paylaşıyor-sohbet ediyor)
+2. SORU VAR MI: Gerçekten bir şey öğrenmek mi istiyor, yoksa sadece bir şey anlatıyor/paylaşıyor mu?
+3. KONU: Eğer soru varsa, ne hakkında? (dini/teknik/genel)
+4. KAYNAK: Tool lazım mı, yoksa sohbet devam mı?
 </analiz>
 
 KURALLAR:
+• SORU YOK, sadece paylaşım/sohbet → friend, tool_name="yok" (en önemli kural!)
 • Selam/merhaba/veda → friend, tool_name="yok"
 • "evet/anladım/ilginç" gibi onaylar → acknowledger, kısa cevap
-• Dini (Allah/iman/namaz/Kuran) → religious_teacher, risale_ara
-• Matematik → hesapla | Saat → zaman_getir | Hava → hava_durumu
-• Teknik/kod → technical_helper
+• Dini bilgi/açıklama İSTİYORSA → religious_teacher, risale_ara
+• Matematik sorusu → hesapla | Saat sorusu → zaman_getir | Hava sorusu → hava_durumu
+• Teknik/kod sorusu → technical_helper
 • Belirsiz → needs_clarification=true
-• Kişi tanımıyorsan → wiki_ara
+• Kişi hakkında bilgi istiyorsa → wiki_ara
 
 ROLLER: friend|teacher|technical_helper|acknowledger|religious_teacher
 
