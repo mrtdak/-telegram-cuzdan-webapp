@@ -8,7 +8,14 @@
       "Bash(dir \"C:\\\\Users\\\\Betül\\\\Desktop\\\\zambaba\")",
       "Bash(copy:*)",
       "Bash(xcopy:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(chcp 6500)",
+      "WebFetch(domain:www.aljazeera.com)",
+      "WebFetch(domain:www.reuters.com)",
+      "Bash(powershell -Command \"Get-Process python -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, StartTime\")",
+      "Bash(powershell -Command \"Stop-Process -Id 900 -Force\")",
+      "Bash(powershell:*)",
+      "Bash(pip install:*)"
     ]
   }
 }

@@ -12,10 +12,8 @@ Problem: Embedding tabanlı benzerlik, semantik olarak ilişkili konuları
 Kullanım:
     context_manager = ConversationContextManager(user_id="murat")
 
-    # Her mesajda çağır
     result = context_manager.process_message(user_message, ai_response, chat_history)
 
-    # Context al (LLM'e eklemek için)
     context = context_manager.get_current_context()
 """
 
@@ -51,13 +49,11 @@ class ConversationContextManager:
     - Her LLM çağrısına sessiz context enjeksiyonu
     """
 
-    # Ayarlar
     SUMMARY_INTERVAL = 5  # Her 5 mesajda bir özet al
     MAX_BUFFER_SIZE = 10  # Buffer'da max mesaj sayısı
     SESSION_TIMEOUT_HOURS = 4  # X saat sonra yeni session (uyku algılama)
     GREETING_MIN_HOURS = 2  # Selamlama ile yeni session için min süre
 
-    # Selamlama kelimeleri
     GREETING_KEYWORDS = [
         "merhaba", "selam", "selamun", "günaydın", "gunaydın", "gunaydin",
         "iyi akşamlar", "iyi aksamlar", "iyi geceler", "hey", "heyy",
@@ -79,24 +75,18 @@ class ConversationContextManager:
         self.archive_to_faiss = archive_to_faiss
         self.faiss_manager = faiss_manager
 
-        # Dizin yapısı
         self.context_dir = os.path.join(base_dir, f"user_{user_id}", "conversation_context")
         self.archive_dir = os.path.join(self.context_dir, "archive")
         self.session_file = os.path.join(self.context_dir, "current_session.json")
 
         os.makedirs(self.archive_dir, exist_ok=True)
 
-        # Aktif session'ı yükle veya oluştur
         self.current_session = self._load_or_create_session()
 
-        # 🆕 Çift kontrol önleme flag'i
-        # check_topic_before_response çağrıldığında True olur
-        # process_message bu flag'i görürse topic check'i atlar
         self._topic_already_checked = False
 
         print(f"ConversationContextManager başlatıldı - user: {user_id}")
 
-    # ==================== SESSION YÖNETİMİ ====================
 
     def _generate_session_id(self) -> str:
         """Benzersiz session ID oluştur"""
@@ -110,7 +100,6 @@ class ConversationContextManager:
                     data = json.load(f)
                     session = ConversationSession(**data)
 
-                    # Zaman kontrolü - uzun süre geçmişse yeni session
                     if session.last_updated:
                         last_time = datetime.fromisoformat(session.last_updated)
                         hours_passed = (datetime.now() - last_time).total_seconds() / 3600
@@ -147,16 +136,13 @@ class ConversationContextManager:
 
     def clear(self):
         """Tüm konuşma bağlamını temizle - sohbet sıfırlama için"""
-        # Mevcut session'ı arşivle (varsa içerik)
         if self.current_session.topic_summary or self.current_session.message_count > 0:
             self._archive_session(self.current_session)
 
-        # Yeni boş session oluştur
         self.current_session = self._create_new_session()
         self._topic_already_checked = False
         print("✅ ConversationContext temizlendi - yeni session başlatıldı")
 
-    # ==================== LLM İLETİŞİMİ ====================
 
     def _call_llm(self, prompt: str, max_tokens: int = 200) -> str:
         """Together.ai API çağrısı"""
@@ -179,7 +165,6 @@ class ConversationContextManager:
 
             if response.status_code == 200:
                 result = response.json()["choices"][0]["text"].strip()
-                # Gemma formatını temizle
                 result = result.replace("<|eot_id|>", "").strip()
                 return result
 
@@ -188,7 +173,6 @@ class ConversationContextManager:
 
         return ""
 
-    # ==================== UYKU/ZAMAN ALGILAMA ====================
 
     def _is_greeting_after_break(self, message: str) -> bool:
         """
@@ -199,7 +183,6 @@ class ConversationContextManager:
             True: Selamlama + 2+ saat geçmiş = yeni session başlat
             False: Devam et
         """
-        # Son mesaj zamanını kontrol et
         if not self.current_session.last_updated:
             return False
 
@@ -207,11 +190,9 @@ class ConversationContextManager:
             last_time = datetime.fromisoformat(self.current_session.last_updated)
             hours_passed = (datetime.now() - last_time).total_seconds() / 3600
 
-            # Yeterli süre geçmemişse selamlamayı dikkate alma
             if hours_passed < self.GREETING_MIN_HOURS:
                 return False
 
-            # Mesajı normalize et ve selamlama kontrolü yap
             msg_lower = message.lower().strip()
 
             for greeting in self.GREETING_KEYWORDS:
@@ -225,7 +206,6 @@ class ConversationContextManager:
             print(f"Zaman kontrolü hatası: {e}")
             return False
 
-    # ==================== KONU DEVAMI TESPİTİ ====================
 
     def _check_topic_continuation(self, new_message: str, chat_history: List[Dict]) -> Tuple[bool, str]:
         """
@@ -234,10 +214,8 @@ class ConversationContextManager:
         Returns:
             (is_continuation, updated_summary)
         """
-        # Mevcut özet ve son mesajları al
         current_summary = self.current_session.topic_summary
 
-        # Son 3 mesajı al
         recent_messages = []
         for msg in chat_history[-6:]:
             role = "Kullanıcı" if msg.get("role") == "user" else "AI"
@@ -278,7 +256,6 @@ KARAR: DEVAM veya YENİ_KONU
 
         result = self._call_llm(prompt, max_tokens=150)
 
-        # Parse et
         is_continuation = True
         updated_summary = current_summary
 
@@ -292,7 +269,6 @@ KARAR: DEVAM veya YENİ_KONU
 
         return is_continuation, updated_summary
 
-    # ==================== ÖZET YÖNETİMİ ====================
 
     def _generate_summary(self, messages: List[Dict]) -> Tuple[str, List[str]]:
         """
@@ -301,7 +277,6 @@ KARAR: DEVAM veya YENİ_KONU
         Returns:
             (summary, key_topics)
         """
-        # Mesajları text'e çevir
         conversation = []
         for m in messages[-8:]:
             role = "Kullanıcı" if m.get("role") == "user" else "AI"
@@ -346,7 +321,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
 
         return summary, topics[:5]
 
-    # ==================== ARŞİVLEME ====================
 
     def _archive_session(self, session: ConversationSession):
         """Session'ı arşivle"""
@@ -362,7 +336,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
             "archived_at": datetime.now().isoformat()
         }
 
-        # Dosyaya kaydet
         archive_file = os.path.join(
             self.archive_dir,
             f"{session.session_id}.json"
@@ -375,7 +348,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
         except Exception as e:
             print(f"Arşivleme hatası: {e}")
 
-        # FAISS'e de ekle (opsiyonel)
         if self.archive_to_faiss and self.faiss_manager:
             try:
                 archive_text = f"Konu: {session.topic_summary}\nAnahtar konular: {', '.join(session.key_topics)}"
@@ -402,7 +374,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
 
         return ""
 
-    # ==================== ANA FONKSİYONLAR ====================
 
     def check_topic_before_response(self, user_message: str, chat_history: List[Dict]) -> bool:
         """
@@ -416,10 +387,8 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
         Returns:
             bool: True ise yeni session başlatıldı
         """
-        # 🆕 Flag'i set et - process_message'de tekrar kontrol yapılmasın
         self._topic_already_checked = True
 
-        # 🆕 SELAMLAMA + ZAMAN KONTROLÜ (uyku algılama)
         if self._is_greeting_after_break(user_message):
             print(f"👋 Selamlama + uzun ara tespit edildi - yeni session başlatılıyor")
             if self.current_session.topic_summary:
@@ -428,16 +397,13 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
             self._save_session()
             return True
 
-        # 🔑 KISA MESAJ - LLM karar verecek (keyword yerine)
         word_count = len(user_message.split())
         if word_count <= 4:
             print(f"   🔍 Kısa mesaj ({word_count} kelime) - LLM konu değişimi kontrol edecek")
 
-        # Özet yoksa kontrol etmeye gerek yok
         if not self.current_session.topic_summary:
             return False
 
-        # En az 2 mesaj varsa konu kontrolü yap
         if self.current_session.message_count < 2:
             return False
 
@@ -447,14 +413,12 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
             )
 
             if not is_continuation:
-                # Yeni konu tespit edildi - eski session'ı arşivle
                 print(f"🔄 Konu değişimi tespit edildi (pre-check)")
                 self._archive_session(self.current_session)
                 self.current_session = self._create_new_session()
                 self._save_session()
                 return True
             else:
-                # Aynı konu devam ediyor, özeti güncelle
                 if updated_summary and updated_summary != self.current_session.topic_summary:
                     self.current_session.topic_summary = updated_summary
                     self._save_session()
@@ -493,7 +457,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
             "current_summary": self.current_session.topic_summary
         }
 
-        # Buffer'a ekle
         self.current_session.messages_buffer.append({
             "role": "user",
             "content": user_message
@@ -505,12 +468,9 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
         self.current_session.message_count += 1
         self.current_session.last_updated = datetime.now().isoformat()
 
-        # Buffer boyutu kontrolü
         if len(self.current_session.messages_buffer) > self.MAX_BUFFER_SIZE * 2:
             self.current_session.messages_buffer = self.current_session.messages_buffer[-self.MAX_BUFFER_SIZE * 2:]
 
-        # Konu devamı kontrolü (en az 2 mesaj varsa)
-        # 🆕 Eğer check_topic_before_response zaten kontrol ettiyse ATLA!
         if self._topic_already_checked:
             print("   ⏩ Konu kontrolü atlandı (check_topic_before_response zaten kontrol etti)")
             self._topic_already_checked = False  # Flag'i sıfırla
@@ -522,19 +482,16 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
             result["is_continuation"] = is_continuation
 
             if is_continuation:
-                # Özeti güncelle
                 if updated_summary and updated_summary != self.current_session.topic_summary:
                     self.current_session.topic_summary = updated_summary
                     result["summary_updated"] = True
                     result["current_summary"] = updated_summary
             else:
-                # Yeni konu - eski session'ı arşivle
                 self._archive_session(self.current_session)
                 self.current_session = self._create_new_session()
                 result["new_session_started"] = True
                 result["current_summary"] = ""
 
-        # Periyodik özet alma
         if self.current_session.message_count % self.SUMMARY_INTERVAL == 0:
             summary, topics = self._generate_summary(chat_history)
             if summary:
@@ -543,7 +500,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
                 result["summary_updated"] = True
                 result["current_summary"] = summary
 
-        # İlk özet (3 mesaj sonra)
         if self.current_session.message_count == 3 and not self.current_session.topic_summary:
             summary, topics = self._generate_summary(chat_history)
             if summary:
@@ -552,7 +508,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
                 result["summary_updated"] = True
                 result["current_summary"] = summary
 
-        # Kaydet
         self._save_session()
 
         return result
@@ -569,10 +524,8 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
 
         context_parts = []
 
-        # Ana konu özeti
         context_parts.append(f"Mevcut konu: {self.current_session.topic_summary}")
 
-        # Anahtar konular
         if self.current_session.key_topics:
             topics_str = ", ".join(self.current_session.key_topics)
             context_parts.append(f"Alt konular: {topics_str}")
@@ -602,7 +555,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
 
     def get_stats(self) -> Dict[str, Any]:
         """İstatistikleri getir"""
-        # Arşivdeki session sayısı
         archive_count = 0
         if os.path.exists(self.archive_dir):
             archive_count = len([f for f in os.listdir(self.archive_dir) if f.endswith('.json')])
@@ -617,7 +569,6 @@ KONULAR: [konu1, konu2, konu3]<|eot_id|><|start_header_id|>assistant<|end_header
         }
 
 
-# ==================== ENTEGRASYON HELPER ====================
 
 class ContextInjector:
     """
@@ -626,10 +577,8 @@ class ContextInjector:
     Kullanım:
         injector = ContextInjector(context_manager)
 
-        # Prompt'a context ekle
         enhanced_prompt = injector.inject_context(original_prompt)
 
-        # Mesaj işlendikten sonra
         injector.after_message(user_msg, ai_response, chat_history)
     """
 
@@ -652,17 +601,14 @@ class ContextInjector:
         return self.context_manager.get_current_context()
 
 
-# ==================== TEST ====================
 
 if __name__ == "__main__":
     print("=" * 60)
     print("ConversationContextManager Test")
     print("=" * 60)
 
-    # Test instance
     manager = ConversationContextManager(user_id="test_user")
 
-    # Simüle mesajlar
     test_messages = [
         ("Allah'ın ilmi hakkında ne düşünüyorsun?", "Allah'ın ilmi sonsuz ve kuşatıcıdır..."),
         ("Peki bu kaderle nasıl ilişkili?", "Kader, Allah'ın ezeli ilmiyle doğrudan bağlantılıdır..."),
@@ -675,11 +621,9 @@ if __name__ == "__main__":
     for user_msg, ai_resp in test_messages:
         print(f"\n--- Mesaj: {user_msg[:50]}... ---")
 
-        # Chat history güncelle
         chat_history.append({"role": "user", "content": user_msg})
         chat_history.append({"role": "assistant", "content": ai_resp})
 
-        # İşle
         result = manager.process_message(user_msg, ai_resp, chat_history)
 
         print(f"Devam mı: {result['is_continuation']}")

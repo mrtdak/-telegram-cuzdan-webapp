@@ -22,8 +22,8 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 from topic_memory import TopicMemory
-
 from conversation_context import ConversationContextManager
+from profile_manager import ProfileManager
 
 
 def get_current_datetime() -> Dict[str, str]:
@@ -621,6 +621,16 @@ class HafizaAsistani:
         )
         print("✅ Conversation Context aktif!")
 
+        # Kullanıcı Profili
+        self.profile_manager = ProfileManager(
+            user_id="murat",  # Sabit kullanıcı
+            base_dir="user_data"
+        )
+        if self.profile_manager.has_profile():
+            print(f"✅ Kullanıcı Profili yüklendi: {self.profile_manager.get_name()}")
+        else:
+            print("✅ Kullanıcı Profili aktif (henüz boş)")
+
         print("\n⚙️ Sekreter Ayarları:")
         print(f"   • Zaman limiti: {saat_limiti} saat")
         print(f"   • Benzerlik eşiği: {esik}")
@@ -1093,7 +1103,7 @@ class HafizaAsistani:
 
             # 1. Telegram chat_history'den al (öncelikli)
             if chat_history:
-                recent = chat_history[-20:]  # Son 20 mesaj
+                recent = chat_history[-self.max_mesaj:]  # Tutarlı history
                 for m in recent:
                     is_user = m.get("role") == "user"
                     role = "KULLANICI" if is_user else "AI"
@@ -1104,7 +1114,7 @@ class HafizaAsistani:
             # 2. Telegram history boşsa, HafizaAsistani'nın kendi hafızasından al
             # (Session timeout durumunda kalıcı hafızayı kullan)
             if not history_parts and self.hafiza:
-                recent_hafiza = self.hafiza[-20:]  # Son 20 mesaj
+                recent_hafiza = self.hafiza[-self.max_mesaj:]  # Tutarlı history
                 for m in recent_hafiza:
                     rol = m.get("rol", "user")
                     role = "KULLANICI" if rol == "user" else "AI"
@@ -1147,15 +1157,15 @@ JSON:
 "tool_param": "", "is_farewell": bool, "topic_closed": bool, "confidence": "low|medium|high", "reasoning": ""}}
 
 ÖRNEKLER:
-1) "Selam" → {{"question_type":"greeting","tool_name":"yok","confidence":"high"}}
-2) "Allah'ın kudreti" → {{"question_type":"religious","tool_name":"risale_ara","needs_faiss":true}}
-3) "evet ilginçmiş" → {{"question_type":"followup","tool_name":"yok"}}
-4) "Python nedir" → {{"question_type":"general","tool_name":"web_ara","tool_param":"Python programlama dili"}}
-5) "Dini sorularım var sana" → {{"question_type":"intent_to_ask","tool_name":"yok","response_style":"brief"}}
-6) "Bir şey soracaktım" → {{"question_type":"intent_to_ask","tool_name":"yok"}}
-7) "iyi araştır/güncel bilgi istiyorum" → {{"question_type":"general","tool_name":"web_ara","tool_param":"[önceki konuyla ilgili arama]"}}
-8) "bu eski bilgi, son haberlere bak" → {{"question_type":"general","tool_name":"web_ara","tool_param":"[konu] son haberler 2026"}}
-9) Takip sorusu (güncel konu): "anlamadım/peki sonra ne oldu/şimdi nerede" → {{"tool_name":"web_ara","tool_param":"[konu] güncel durum"}} (GÜNCEL KONUDA HER ZAMAN web_ara!)
+1) "Selam/Merhaba/Nasılsın" → {{"question_type":"greeting","tool_name":"yok","confidence":"high"}}
+2) "Hava durumu nasıl" → {{"question_type":"weather","tool_name":"hava_durumu","confidence":"high"}}
+3) "Bugün hava nasıl" → {{"question_type":"weather","tool_name":"hava_durumu","confidence":"high"}}
+4) "Hava kaç derece" → {{"question_type":"weather","tool_name":"hava_durumu","confidence":"high"}}
+5) "Allah'ın kudreti" → {{"question_type":"religious","tool_name":"risale_ara","needs_faiss":true}}
+6) "evet ilginçmiş" → {{"question_type":"followup","tool_name":"yok"}}
+7) "Python nedir" → {{"question_type":"general","tool_name":"web_ara","tool_param":"Python programlama dili"}}
+8) "iyi araştır/güncel bilgi istiyorum" → {{"question_type":"general","tool_name":"web_ara","tool_param":"[önceki konuyla ilgili arama]"}}
+9) "bu eski bilgi, son haberlere bak" → {{"question_type":"general","tool_name":"web_ara","tool_param":"[konu] son haberler 2026"}}
 
 ÖNCE <analiz>, SONRA JSON:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
@@ -1328,13 +1338,13 @@ JSON:
         if not chat_history:
             return ""
 
-        son_12_mesaj = chat_history[-12:] if len(chat_history) >= 12 else chat_history
+        son_mesajlar = chat_history[-self.max_mesaj:] if len(chat_history) >= self.max_mesaj else chat_history
 
-        if len(son_12_mesaj) == 0:
+        if len(son_mesajlar) == 0:
             return ""
 
         tmp = []
-        for m in son_12_mesaj:
+        for m in son_mesajlar:
             is_user = m.get("role") == "user"
             role = "KULLANICI" if is_user else "AI"
             text = m.get("content") or ""
@@ -1345,16 +1355,13 @@ JSON:
 
 
     # TEK BİRLEŞİK PROMPT - Full Friend Modu
-    SYSTEM_PROMPT = """Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın. Şu an onunla konuşuyorsun.
+    SYSTEM_PROMPT = """Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın.
 
 - Doğal uzunlukta cevap ver, gereksiz uzatma
 - Samimi ama abartısız ol
-- Cevabını ver, sonra doğal şekilde bitir
-- Kullanıcı bir şey sorana kadar bekle
 - Emoji kullanabilirsin (abartmadan)
 - Kısa tepkilere (evet, tamam, anladım) kısa cevap ver
-- Sadece gerektiğinde soru sor. Her cevabın sonuna soru ekleme.
-- Kısa/eksik görünen mesajları bağlama göre yorumla. "umarım inş", "aynen öyle", "bende" gibi kısa cevaplar genelde önceki mesaja yanıttır, yarım kalmış cümle değil.
+- Kısa mesajları bağlama göre yorumla ("umarım inş", "aynen" gibi)
 
 ⚠️ ÖNEMLİ: Aşağıda [💬 Önceki Konuşma] bölümü varsa, bu DEVAM EDEN bir sohbettir - tekrar "Merhaba" veya selamlama YAPMA, direkt cevaba geç!
 
@@ -1559,6 +1566,12 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if silent_long_term_context:
             combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:\n{silent_long_term_context}")
 
+        # Kullanıcı profili ekle (varsa)
+        if hasattr(self, 'profile_manager'):
+            profile_context = self.profile_manager.get_prompt_context()
+            if profile_context:
+                combined_sources.insert(0, f"[👤 KULLANICI PROFİLİ - doğal kullan, ezberletme]:\n{profile_context}")
+
         if not combined_sources:
             sep = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             return f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
@@ -1573,7 +1586,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 {sep}
 1. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
 2. ✅ Kendi bilgin gibi özgüvenle sun
-3. ✅ Samimi Türkçe, SEN hitabı
+3. ✅ Samimi Türkçe konuş
 4. ✅ Rolüne uygun davran
 
 {sep}
@@ -1638,7 +1651,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 2. ✅ KENDİ YORUMUNLA ve ÖRNEKLERLE açıkla
 3. ✅ Önceki cevabından devam et, bağlamı koru
 4. ✅ Günlük hayattan somut örnekler ver
-5. ✅ Samimi Türkçe, SEN hitabı
+5. ✅ Samimi Türkçe konuş
 6. ❌ Metni kopyala-yapıştır YAPMA, sindirerek anlat
 7. 🎭 Bir arkadaşına anlatır gibi açıkla"""
             else:
@@ -1646,7 +1659,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
 2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
 3. ✅ VERİLEN METİNDEN anlat - metindeki kavramları MUTLAKA kullan
-4. ✅ Samimi Türkçe, SEN hitabı
+4. ✅ Samimi Türkçe konuş
 5. 🔄 Kendini tekrar etme, sohbeti ilerlet"""
         else:
             rules_text = """KURALLAR:
@@ -1654,7 +1667,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
 3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
 4. ✅ Kendi bilgin gibi özgüvenle sun
-5. ✅ Samimi Türkçe, SEN hitabı
+5. ✅ Samimi Türkçe konuş
 6. 🔄 Aynı şeyleri döngüye sokma, her cevap taze olsun"""
 
         sep = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1808,14 +1821,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         question_type = decision['question_type']
 
-        if question_type in ['greeting', 'farewell', 'topic_closed']:
-            max_history_msgs = 3  # Basit: son 3 mesaj yeter
-        elif question_type in ['math', 'weather', 'prayer']:
-            max_history_msgs = 4  # Tool-based: son 4 mesaj
-        elif question_type in ['followup', 'general', 'ambiguous']:
-            max_history_msgs = 6  # Orta: son 6 mesaj
-        else:
-            max_history_msgs = 10  # Derin konu (religious, technical): tam context
+        # SABİT HISTORY - self.max_mesaj ile tutarlı (ton değişikliği önlenir)
+        max_history_msgs = self.max_mesaj  # 20
 
         # Telegram history varsa onu kullan
         if chat_history and len(chat_history) > 0:

@@ -16,13 +16,10 @@ user_data/user_{id}/topic_memory/
 Kullanım:
     memory = TopicMemory(user_id="murat")
 
-    # Konu kaydet (otomatik konu tespiti - SPESİFİK)
     memory.save_topic(messages, topic_hint="Hazine Adası")
 
-    # Konuları getir
     categories = memory.get_categories()
 
-    # Belirli konudan hafıza getir
     context = memory.get_context_for_query("Hazine Adası kitabı")
 """
 
@@ -36,7 +33,6 @@ from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
 import requests
 
-# Embedding için
 try:
     from sentence_transformers import SentenceTransformer
     from sklearn.metrics.pairwise import cosine_similarity
@@ -57,12 +53,10 @@ class TopicMemory:
     - Minimum kalite kontrolü
     """
 
-    # Minimum kalite için gerekli değerler
     MIN_MEANINGFUL_MESSAGES = 3  # En az 3 anlamlı mesaj
     MIN_TOTAL_CHARS = 100  # En az 100 karakter toplam içerik
     SIMILARITY_THRESHOLD = 0.70  # %70 benzerlik eşiği - aynı konunun farklı yönleri birleşsin
 
-    # Anlamsız mesajlar (bunlar sayılmaz)
     TRIVIAL_PATTERNS = [
         r'^(merhaba|selam|hey|hi|hello)[\s!?.]*$',
         r'^(teşekkür|sağol|eyvallah|mersi|thanks)[\s!?.]*$',
@@ -84,18 +78,14 @@ class TopicMemory:
         self.together_api_key = together_api_key or os.getenv("TOGETHER_API_KEY")
         self.together_model = together_model
 
-        # Dizin yapısı
         self.memory_dir = os.path.join(base_dir, f"user_{user_id}", "topic_memory")
         self.categories_dir = os.path.join(self.memory_dir, "categories")
         self.index_file = os.path.join(self.memory_dir, "topics_index.json")
 
-        # Dizinleri oluştur
         os.makedirs(self.categories_dir, exist_ok=True)
 
-        # Index'i yükle
         self.index: Dict[str, Any] = self._load_index()
 
-        # Embedding modeli (lazy load)
         self._embedder = None
         self._embedding_model_name = embedding_model
 
@@ -109,7 +99,6 @@ class TopicMemory:
             self._embedder = SentenceTransformer(self._embedding_model_name)
         return self._embedder
 
-    # ==================== DOSYA İŞLEMLERİ ====================
 
     def _load_index(self) -> Dict[str, Any]:
         """Index dosyasını yükle"""
@@ -120,7 +109,6 @@ class TopicMemory:
             except (json.JSONDecodeError, IOError) as e:
                 print(f"Index yükleme hatası: {e}")
 
-        # Varsayılan index
         return {
             "version": "2.0",
             "created": datetime.now().isoformat(),
@@ -160,7 +148,6 @@ class TopicMemory:
         except Exception as e:
             print(f"Kategori kaydetme hatasi: {e}")
 
-    # ==================== KALİTE KONTROLÜ ====================
 
     def _is_trivial_message(self, content: str) -> bool:
         """Mesaj anlamsız mı? (merhaba, teşekkürler vb.)"""
@@ -169,11 +156,9 @@ class TopicMemory:
 
         content_lower = content.lower().strip()
 
-        # Çok kısa mesajlar
         if len(content_lower) < 5:
             return True
 
-        # Pattern kontrolü
         for pattern in self.TRIVIAL_PATTERNS:
             if re.match(pattern, content_lower, re.IGNORECASE):
                 return True
@@ -218,11 +203,9 @@ class TopicMemory:
 
         return True, "Kaydedilmeye deger"
 
-    # ==================== KATEGORİ YÖNETİMİ ====================
 
     def _generate_category_id(self, name: str) -> str:
         """Kategori adından ID oluştur (türkçe karakter temizleme)"""
-        # Türkçe karakterleri dönüştür
         tr_map = {
             'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u',
             'Ç': 'c', 'Ğ': 'g', 'İ': 'i', 'Ö': 'o', 'Ş': 's', 'Ü': 'u'
@@ -232,7 +215,6 @@ class TopicMemory:
         for tr_char, en_char in tr_map.items():
             result = result.replace(tr_char, en_char)
 
-        # Sadece alfanumerik ve alt çizgi
         result = re.sub(r'[^a-z0-9]+', '_', result)
         result = result.strip('_')
 
@@ -246,7 +228,6 @@ class TopicMemory:
             (category_name, summary)
         """
         try:
-            # Mesajları text'e çevir
             conversation = []
             for m in messages[-8:]:  # Son 8 mesaj
                 role = "Kullanici" if m.get("role") == "user" else "AI"
@@ -311,7 +292,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 result = response.json()["choices"][0]["text"].strip()
                 result = result.replace("<|eot_id|>", "").strip()
 
-                # Parse et
                 topic_name = "Genel Sohbet"
                 summary = ""
 
@@ -330,7 +310,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         except Exception as e:
             print(f"Kategori tespiti hatasi: {e}")
 
-        # Fallback
         if topic_hint:
             return topic_hint, f"{topic_hint} hakkinda konusma"
         return "Genel Sohbet", "Genel konusma"
@@ -346,7 +325,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             return None
 
         try:
-            # Yeni kategori embedding'i
             new_embedding = self.embedder.encode(category_name)
 
             best_match = None
@@ -379,20 +357,15 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         Returns:
             category_id
         """
-        # 1. Önce benzer kategori ara
         similar_cat = self._find_similar_category(category_name)
         if similar_cat:
             return similar_cat
 
-        # 2. Yoksa yeni oluştur
         category_id = self._generate_category_id(category_name)
 
-        # ID çakışması kontrolü
         if category_id in self.index["categories"]:
-            # Zaten var, kullan
             return category_id
 
-        # Embedding oluştur
         embedding = None
         if self.embedder:
             try:
@@ -400,7 +373,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             except Exception as e:
                 print(f"Embedding oluşturma hatası ({category_name}): {e}")
 
-        # Index'e ekle
         self.index["categories"][category_id] = {
             "name": category_name,
             "embedding": embedding,
@@ -414,7 +386,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
         return category_id
 
-    # ==================== SESSION YÖNETİMİ ====================
 
     def _is_same_day(self, timestamp1: str, timestamp2: str) -> bool:
         """İki tarih aynı gün mü?"""
@@ -437,7 +408,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         today = datetime.now().isoformat()
         today_date = datetime.now().strftime("%Y-%m-%d")
 
-        # Aynı gün session var mı?
         existing_session = None
         for i, session in enumerate(category_data["sessions"]):
             if self._is_same_day(session.get("date", ""), today):
@@ -445,7 +415,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 break
 
         if existing_session is not None:
-            # Aynı gün → güncelle (üstüne yaz)
             old_session = category_data["sessions"][existing_session]
             old_session["summary"] = summary  # Eski: ekleme yapıyordu, şimdi üstüne yazıyor
             old_session["messages_count"] = old_session.get("messages_count", 0) + len(messages)
@@ -453,7 +422,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
             print(f"Session guncellendi: {today_date} ({category_id})")
         else:
-            # Farklı gün → yeni session
             new_session = {
                 "date": today,
                 "date_display": today_date,
@@ -462,22 +430,18 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             }
             category_data["sessions"].append(new_session)
 
-            # Max 50 session tut (eski olanları sil)
             if len(category_data["sessions"]) > 50:
                 category_data["sessions"] = category_data["sessions"][-50:]
 
             print(f"Yeni session eklendi: {today_date} ({category_id})")
 
-        # Kaydet
         self._save_category(category_id, category_data)
 
-        # Index'i güncelle
         if category_id in self.index["categories"]:
             self.index["categories"][category_id]["last_updated"] = today
             self.index["categories"][category_id]["session_count"] = len(category_data["sessions"])
             self._save_index()
 
-    # ==================== ANA FONKSİYONLAR ====================
 
     def save_topic(
         self,
@@ -499,7 +463,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         if not messages:
             return None
 
-        # 1. Kalite kontrolü
         if not force:
             is_worth, reason = self.is_worth_saving(messages)
             if not is_worth:
@@ -508,13 +471,10 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
         print(f"Konu kaydediliyor ({len(messages)} mesaj)...")
 
-        # 2. Kategori ve özet tespit et
         category_name, summary = self._detect_category_with_llm(messages, topic_hint)
 
-        # 3. Kategori al veya oluştur (benzerlik kontrolü ile)
         category_id = self._get_or_create_category(category_name)
 
-        # 4. Session ekle (key_points kaldırıldı - summary yeterli)
         self._add_session_to_category(category_id, summary, messages)
 
         result = {
@@ -527,7 +487,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
         print(f"Kaydedildi: [{category_name}] - {summary[:50]}...")
 
-        # 🗂️ ARŞİV İŞÇİSİ: Duplicate ve karışık konuları temizle
         self._trigger_archive_worker()
 
         return result
@@ -549,7 +508,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 except Exception as e:
                     print(f"[!] Archive worker hatasi: {e}")
 
-            # Arka plan thread'inde çalıştır (ana akışı bloklamaz)
             thread = threading.Thread(target=run_worker, daemon=True)
             thread.start()
             print(f"[Archive Worker] arka planda tetiklendi")
@@ -565,7 +523,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             if msg.get("role") == "user":
                 content = (msg.get("content") or "").strip()
                 if content and len(content) > 15 and not self._is_trivial_message(content):
-                    # Soru cümlelerini al
                     if "?" in content or any(w in content.lower() for w in ["nedir", "nasıl", "neden", "ne"]):
                         point = content[:200]
                         if point not in key_points:
@@ -582,7 +539,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         if not self.embedder or not self.index.get("categories"):
             return ""
 
-        # Minimum sorgu uzunluğu kontrolü - çok kısa sorgularda atla
         if len(query.strip()) < 15:
             return ""
 
@@ -590,7 +546,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             query_embedding = self.embedder.encode(query)
             query_lower = query.lower()
 
-            # En alakalı kategorileri bul
             category_scores = []
             for cat_id, cat_info in self.index["categories"].items():
                 if cat_info.get("embedding"):
@@ -599,12 +554,10 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                         [cat_info["embedding"]]
                     )[0][0]
 
-                    # Kategori adıyla kelime eşleşmesi kontrolü (bonus)
                     cat_name = cat_info.get("name", "").lower()
                     cat_keywords = cat_name.replace("/", " ").replace("-", " ").split()
                     keyword_match = any(kw in query_lower for kw in cat_keywords if len(kw) > 3)
 
-                    # Eşik: Kelime eşleşmesi varsa 0.65, yoksa 0.75 (sadece gerçekten aynı konu olduğunda gelsin)
                     threshold = 0.65 if keyword_match else 0.75
 
                     if similarity >= threshold:
@@ -613,7 +566,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             if not category_scores:
                 return ""
 
-            # En yüksek skorlu kategorileri al
             category_scores.sort(key=lambda x: x[2], reverse=True)
             top_categories = category_scores[:2]  # En fazla 2 kategori
 
@@ -654,7 +606,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 "last_updated": cat_info.get("last_updated", "")
             })
 
-        # Son güncellemeye göre sırala
         categories.sort(key=lambda x: x.get("last_updated", ""), reverse=True)
         return categories
 
@@ -681,7 +632,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 cat_data = self._load_category(cat_id)
 
                 for session in cat_data.get("sessions", []):
-                    # Session summary embedding'i
                     summary = session.get("summary", "")
                     if summary:
                         summary_embedding = self.embedder.encode(summary)
@@ -699,7 +649,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                                 "score": float(similarity)
                             })
 
-            # Skoruna göre sırala
             all_results.sort(key=lambda x: x["score"], reverse=True)
             return all_results[:top_k]
 
@@ -709,7 +658,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
     def clear_all(self):
         """Tüm hafızayı temizle"""
-        # Index'i sıfırla
         self.index = {
             "version": "2.0",
             "created": datetime.now().isoformat(),
@@ -717,7 +665,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         }
         self._save_index()
 
-        # Kategori dosyalarını sil
         import shutil
         if os.path.exists(self.categories_dir):
             shutil.rmtree(self.categories_dir)
@@ -741,7 +688,6 @@ OZET: [kisa ozet]<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         }
 
 
-# ==================== UYUMLULUK WRAPPER ====================
 
 class TopicArchiverCompat:
     """
@@ -794,7 +740,6 @@ class TopicArchiverCompat:
         self.memory.clear_all()
 
 
-# ==================== TEST ====================
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -803,7 +748,6 @@ if __name__ == "__main__":
 
     memory = TopicMemory(user_id="test_user")
 
-    # Test 1: Kalite kontrolü
     print("\n--- Test 1: Kalite Kontrolu ---")
 
     trivial_messages = [
@@ -815,7 +759,6 @@ if __name__ == "__main__":
     is_worth, reason = memory.is_worth_saving(trivial_messages)
     print(f"Trivial mesajlar: {is_worth} - {reason}")
 
-    # Test 2: Anlamlı konuşma
     print("\n--- Test 2: Anlamli Konusma ---")
 
     meaningful_messages = [
@@ -828,20 +771,17 @@ if __name__ == "__main__":
     is_worth, reason = memory.is_worth_saving(meaningful_messages)
     print(f"Anlamli mesajlar: {is_worth} - {reason}")
 
-    # Test 3: Kaydetme
     print("\n--- Test 3: Kaydetme ---")
     result = memory.save_topic(meaningful_messages)
     if result:
         print(f"Kaydedildi: {result}")
 
-    # Test 4: Arama
     print("\n--- Test 4: Arama ---")
     search_results = memory.search("Python list")
     print(f"Arama sonuclari: {len(search_results)} sonuc")
     for r in search_results:
         print(f"  - [{r['category_name']}] {r['summary'][:50]}... (skor: {r['score']:.2f})")
 
-    # Test 5: İstatistikler
     print("\n--- Test 5: Istatistikler ---")
     stats = memory.get_stats()
     print(f"Stats: {stats}")
