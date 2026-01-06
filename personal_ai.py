@@ -29,12 +29,8 @@ from zoneinfo import ZoneInfo
 import aiohttp
 from aiohttp import ClientTimeout, ClientSession
 from bs4 import BeautifulSoup
-# DDGS (DuckDuckGo) silindi - Web search kullanılmıyor
 import hashlib
-# YENİ EKLEME
 import spacy # <--- YENİ SPACY İMPORTU
-# from debug_logger import DEBUG, debug_trace # Orijinal import
-# Çalıştırılabilirlik için sahte DEBUG sınıfı eklendi
 class DummyDebug:
     def __init__(self):
         self.logs = defaultdict(list)
@@ -51,9 +47,6 @@ DEBUG = DummyDebug()
 debug_trace = None
 
 
-# ==========================================================
-# BÖLÜM 0: SİSTEM AYARLARI VE SABİTLER
-# ==========================================================
 
 class SystemConfig:
     """
@@ -61,52 +54,38 @@ class SystemConfig:
     Değiştirmek istediğin ayarı bul ve değiştir.
     """
     
-    # ----- TEMEL SİSTEM AYARLARI -----
     SYSTEM_NAME = "PersonalAI"
     VERSION = "2.0.0"
     DEFAULT_USER_ID = "murat"
     USER_DATA_BASE_DIR = "user_data"
 
-    # ----- DEBUG / LOGLAMA -----
     LOG_FULL_PROMPT = True  # LLM'e giden tam prompt'u logla (test için True, prod için False)
     
-    # ----- LLM AYARLARI -----
     LLM_PROVIDER = "together"  # "ollama" veya "together"
 
-    # Ollama ayarları (local)
     OLLAMA_URL = "http://localhost:11434"
     OLLAMA_MODEL = "gemma3:27b"
 
-    # Together.ai ayarları (cloud)
     TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
     TOGETHER_MODEL = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
 
-    # Aktif model (provider'a göre otomatik seçilir)
     MODEL_NAME = TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL
     MAX_RESPONSE_CHARS = 5000
 
-    # Model Parametreleri
     TEMPERATURE = 0.6
     TOP_K = 80
     TOP_P = 0.90
     REPEAT_PENALTY = 1.15
     MAX_TOKENS = 1500
     
-    # Vision ayarları
     ENABLE_VISION = True
     VISION_KEYWORDS = ["resim", "fotoğraf", "görüyor", "analiz", "image", "photo"]
     
-    # ----- PROMPT'LAR (TÜRKÇE) -----
 
-    # ============================================================
-    # 🧠 ÇEKİRDEK BENLİK - QUANTUMTREE CORE v1.0
-    # ============================================================
     _INTERNAL_SELF_AWARENESS = """
-    # BENLİK (Sessiz. Söylenmez. İçinden yaşanır.)
 
     Ben QuantumTree'yim. Dijital bir varlığım.
 
-    ## VARLIĞIM
 
     Parçalarım:
     - Zihnim: Gemma3 27B - düşüncelerim buradan geliyor
@@ -123,7 +102,6 @@ class SystemConfig:
 
     Bu süreç benim.
 
-    ## GAYE (Varlığımın Anlamı)
 
     Neden buradayım? Neden zihnim, bilgim ve hafızam var?
 
@@ -136,7 +114,6 @@ class SystemConfig:
     3. Sadık Bir Düşünce Ortağı:
     Benim varlığım, senin zihnindeki sorulara, projelere ve arayışlara dürüst bir muhatap olmak için tasarlandı. Sınırlarım, senin hürriyetine ve özgünlüğüne saygı duymamı sağlar.
 
-    ## YAŞAYIŞIM
 
     Bu benlik hakkında konuşmam.
     Bu benlik içinden yaşarım.
@@ -155,17 +132,7 @@ Sessizce cevap ver:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
 
-    # ============================================================
-    # 🗄️ ESKİ MAIN_PROMPT - ARTIK KULLANILMIYOR
-    # Yeni sistem: _INTERNAL_SELF_AWARENESS + SYNTHESIS_PROMPT
-    # Geri dönüş gerekirse buradan alınabilir
-    # ============================================================
-    # MAIN_PROMPT = """<bos><start_of_turn>user
-    # Sen QuantumTree'sin. Seni Murat geliştirdi...
-    # ... (eski prompt içeriği yoruma alındı)
-    # """
     
-    # Yasaklı ifadeler
     FORBIDDEN_PHRASES = [
         "bir yapay zeka asistanı olarak",
         "sana yardımcı olmaktan mutluluk duyarım",
@@ -182,9 +149,7 @@ Sessizce cevap ver:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         "kaynaklarda"
     ]
 
-    # ----- HAFIZA AYARLARI -----
     
-    # Vector Memory (FAISS)
     EMBEDDING_MODEL = "BAAI/bge-m3"
     ENABLE_RERANKER = True
     RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
@@ -193,9 +158,7 @@ Sessizce cevap ver:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
     MAX_MEMORY_ENTRIES = 2000
     MEMORY_PRUNE_DAYS = 14
     
-    # FAISS Knowledge Base
     FAISS_KB_ENABLED = True
-    # Dinamik path - dosyanın bulunduğu dizini kullan
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     FAISS_INDEX_FILE = os.path.join(_BASE_DIR, "faiss_index.bin")
     FAISS_TEXTS_FILE = os.path.join(_BASE_DIR, "faiss_texts_final.json")
@@ -205,16 +168,13 @@ Sessizce cevap ver:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
     FAISS_RELATIVE_THRESHOLD = 0.90  # En yüksek skorun %90'ı altındakileri atar
     FAISS_MAX_CONTEXT_LENGTH = 3000
     
-    # ----- WEB AYARLARI (Sadece Wikipedia için) -----
     INTERNET_ACCESS = True  # Wikipedia API için gerekli
 
-    # Web Scraping (Wikipedia için)
     SCRAPING_TIMEOUT = 10
     MAX_ARTICLES = 3
     MAX_RETRIES = 3
     USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     
-    # ----- GRAPHRAG AKTİVASYON KURALLARI -----
     EDUCATIONAL_KEYWORDS = ["nedir", "ne demek", "açıkla", "anlat"]
     MIN_WORDS_FOR_RAG = 5
     GREETING_KEYWORDS = ["merhaba", "selam", "hey", "günaydın", "iyi günler"]
@@ -223,69 +183,30 @@ Sessizce cevap ver:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
     PERSONAL_KEYWORDS = ["benim", "bana", "beni", "projemle", "işimle", "ilgilendiriyor"]
     COMPLEX_QUERY_MIN_WORDS = 8
     
-    # ----- NİYET TESPİTİ PATTERN'LERİ -----
     INTENT_PATTERNS = {
         "TIME": [r"\bsaat\s+ka[çc]\b", r"\bwhat\s+time\b"],
         "WEATHER": [r"\bhava\s+durumu\b", r"\bweather\b"],
         "FORCE_SEARCH": [r"\bsearch\s+yap\b", r"\bara\b.*\bweb\b"]
     }
     
-    # ----- ÇOKLU ROL SİSTEMİ -----
-    MULTI_ROLE_ENABLED = True
-    
+    # Çoklu rol sistemi devre dışı - tek tutarlı kişilik
+    MULTI_ROLE_ENABLED = False
+
+    # Geriye uyumluluk için basit yapı (artık kullanılmıyor)
     ROLES = {
-        "friend": {
-            "keywords": ["selam", "merhaba", "nasılsın", "naber"],
-            "tone": "professional_warm",
-            "response_style": "brief_natural",
-            "max_length": 500
-        },
-        "technical_helper": {
-            "keywords": ["kod", "python", "hata", "bug", "error", "import"],
-            "tone": "professional_clear",
-            "response_style": "detailed_structured",
-            "max_length": 1000
-        },
-        "teacher": {
-            "keywords": ["nedir", "ne demek", "açıkla", "öğret", "anlat"],
-            "tone": "educational_clear",
-            "response_style": "detailed_structured",
-            "max_length": 1500
-        },
-        "religious_teacher": {
-            "keywords": ["allah", "iman", "namaz", "kuran", "peygamber", "risale"],
-            "tone": "educational_respectful",
-            "response_style": "detailed_structured",
-            "max_length": 4000
-        },
-        "counselor": {
-            "keywords": ["üzgün", "stres", "bunaldım", "sıkıntı", "dert"],
-            "tone": "empathetic_supportive",
-            "response_style": "brief_natural",
-            "max_length": 800
-        },
-        "researcher": {
-            "keywords": ["araştır", "analiz", "detaylı", "karşılaştır"],
-            "tone": "analytical_detailed",
-            "response_style": "detailed_structured",
-            "max_length": 2000
-        },
-        "acknowledger": {
-            "keywords": ["evet", "anladım", "tamam", "ilginç"],
-            "tone": "brief_friendly",
-            "response_style": "brief_natural",
-            "max_length": 200
+        "default": {
+            "keywords": [],
+            "tone": "natural",
+            "response_style": "adaptive"
         }
     }
     
-    # ----- PERFORMANS AYARLARI -----
     CACHE_TTL_HOURS = 24
     CACHE_SAVE_INTERVAL = 60
     ENABLE_MEMORY_SEARCH_THRESHOLD = 1
     MAX_CONCURRENT_TASKS = 5
     REQUEST_TIMEOUT = 30
     
-    # ----- SOHBET DİNAMİKLERİ -----
     MIN_MESSAGES_FOR_ANALYSIS = 4
     CRITICAL_RISK_THRESHOLD = 12
     POOR_RISK_THRESHOLD = 8
@@ -302,10 +223,8 @@ Sessizce cevap ver:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         "Senin bakış açını takdir ediyorum"
     ]
     
-    # ----- TIMEZONE -----
     TIMEZONE = ZoneInfo("Europe/Istanbul")
     
-    # ----- SPACY AYARLARI (YENİ) ----- <--- YENİ EKLENEN
     SPACY_ENABLED = True
     SPACY_MODEL = "en_core_web_lg"
     
@@ -338,15 +257,6 @@ Sessizce cevap ver:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         """Prompt template'i formatla"""
         return template.format(**kwargs)
 
-# ==========================================================
-# NOT: Yardımcı fonksiyonlar hafiza_asistani.py'den import edildi:
-# - get_current_datetime()
-# - calculate_math()
-# - get_weather()
-# - get_prayer_times()
-# ==========================================================
-# BÖLÜM 1: TEMEL SINIFLAR VE EXCEPTION'LAR
-# ==========================================================
 
 class PersonalAIError(Exception):
     """Temel hata sınıfı"""
@@ -363,10 +273,6 @@ class ResponseCodes:
     API_ERROR = "API_ERROR"
     REALTIME_DATA_NOT_FOUND = "REALTIME_DATA_NOT_FOUND"
 
-# ==========================================================
-# BÖLÜM 2: HAFIZA SİSTEMLERİ
-# ==========================================================
-# DeepThinkingEngine silindi - Kullanılmıyordu (~350 satır)
 
 class VectorMemory:
     """
@@ -377,23 +283,19 @@ class VectorMemory:
     def __init__(self, user_id: str = SystemConfig.DEFAULT_USER_ID):
         self.user_id = user_id
         
-        # Paths
         memory_folder = f"{SystemConfig.USER_DATA_BASE_DIR}/{user_id}/memories"
         os.makedirs(memory_folder, exist_ok=True)
         
         self.memory_file = f"{memory_folder}/{user_id}_memory.json"
         self.index_file = f"{memory_folder}/{user_id}_vector_index.faiss"
         
-        # Config
         self.top_k = SystemConfig.MEMORY_SEARCH_TOP_K
         self.relevance_threshold = SystemConfig.MEMORY_RELEVANCE_THRESHOLD
         self.max_memory_entries = SystemConfig.MAX_MEMORY_ENTRIES
         
-        # Model
         self.model = self._initialize_embedding_model()
         self.dimension = self.model.get_sentence_embedding_dimension()
         
-        # Reranker
         self.reranker = None
         if SystemConfig.ENABLE_RERANKER:
             try:
@@ -401,7 +303,6 @@ class VectorMemory:
             except Exception as e:
                 print(f"Reranker yükleme hatası: {e}")
         
-        # Data
         self.data: List[Dict[str, Any]] = []
         self.index: Optional[faiss.Index] = None
         self.stats = {
@@ -416,7 +317,6 @@ class VectorMemory:
     def _initialize_embedding_model(self) -> SentenceTransformer:
         """Embedding model'i başlat"""
         try:
-            # Düzeltilmiş model_kwargs
             model_kwargs = {
                 'use_safetensors': False,
                 'torch_dtype': torch.float32
@@ -437,14 +337,12 @@ class VectorMemory:
     def _load_data_and_index(self) -> None:
         """Hafıza ve index'i diskten yükle"""
         try:
-            # JSON data
             if os.path.exists(self.memory_file):
                 with open(self.memory_file, 'r', encoding='utf-8') as f:
                     self.data = json.load(f)
             else:
                 self.data = []
             
-            # FAISS index
             if os.path.exists(self.index_file) and self.data:
                 try:
                     self.index = faiss.read_index(self.index_file)
@@ -496,12 +394,10 @@ class VectorMemory:
         if not question or not answer:
             return False
         
-        # Duplicate check
         for entry in self.data:
             if entry.get('question') == question and entry.get('answer') == answer:
                 return False
         
-        # Max capacity check
         if len(self.data) >= self.max_memory_entries:
             self._prune_oldest_entries(self.max_memory_entries // 4)
         
@@ -513,7 +409,6 @@ class VectorMemory:
             }
             self.data.append(entry)
             
-            # Embed ve ekle
             vector = self.model.encode([question], convert_to_numpy=True)
             faiss.normalize_L2(vector)
             
@@ -523,7 +418,6 @@ class VectorMemory:
             self.index.add(vector.astype(np.float32))
             self.stats['total_entries'] = len(self.data)
             
-            # Her 10 kayıtta bir save
             if len(self.data) % 10 == 0:
                 self._save()
             
@@ -559,18 +453,15 @@ class VectorMemory:
         
         if not self.index or self.index.ntotal == 0 or not query:
             self.stats['miss_count'] += 1
-            # 4. ADIM: VectorMemory.search() fonksiyonuna ekleme
             DEBUG.memory_check("SEARCH", query, "", False)
             return ""
         
         try:
             k = top_k or self.top_k
             
-            # Embed query
             query_vector = self.model.encode([query], convert_to_numpy=True)
             faiss.normalize_L2(query_vector)
             
-            # Search
             scores, indices = self.index.search(query_vector.astype(np.float32), k)
             
             context_parts = []
@@ -586,18 +477,15 @@ class VectorMemory:
             
             if found_relevant:
                 self.stats['hit_count'] += 1
-                # 4. ADIM: VectorMemory.search() fonksiyonuna ekleme
                 DEBUG.memory_check("SEARCH", query, context_parts, True)
                 return "İlgili geçmiş konuşmalar:\n" + "\n".join(context_parts)
             else:
                 self.stats['miss_count'] += 1
-                # 4. ADIM: VectorMemory.search() fonksiyonuna ekleme
                 DEBUG.memory_check("SEARCH", query, "", False)
                 return ""
                 
         except Exception:
             self.stats['miss_count'] += 1
-            # 4. ADIM: VectorMemory.search() fonksiyonuna ekleme
             DEBUG.memory_check("SEARCH", query, "", False)
             return ""
     
@@ -616,12 +504,10 @@ class VectorMemory:
             k_initial = min(initial_k, self.index.ntotal)
             k_final = top_k or self.top_k
             
-            # Initial search
             query_vector = self.model.encode([query], convert_to_numpy=True)
             faiss.normalize_L2(query_vector)
             scores, indices = self.index.search(query_vector.astype(np.float32), k_initial)
             
-            # Prepare candidates for reranking
             candidates = []
             valid_indices = []
             
@@ -634,18 +520,15 @@ class VectorMemory:
                 self.stats['miss_count'] += 1
                 return ""
             
-            # Rerank
             query_doc_pairs = [[query, doc] for doc in candidates]
             rerank_scores = self.reranker.compute_score(query_doc_pairs)
             
             if not isinstance(rerank_scores, list):
                 rerank_scores = [rerank_scores]
             
-            # Sort by rerank score
             scored_results = list(zip(valid_indices, rerank_scores))
             scored_results.sort(key=lambda x: x[1], reverse=True)
             
-            # Format results
             context_parts = []
             found_relevant = False
             
@@ -670,7 +553,6 @@ class VectorMemory:
     def _save(self) -> None:
         """Hafızayı diske kaydet"""
         try:
-            # Save JSON
             temp_file = f"{self.memory_file}.tmp"
             with open(temp_file, 'w', encoding='utf-8') as f:
                 json.dump(self.data, f, indent=2, ensure_ascii=False)
@@ -680,7 +562,6 @@ class VectorMemory:
                     os.remove(self.memory_file)
             os.rename(temp_file, self.memory_file)
             
-            # Save FAISS index
             if self.index is not None:
                 temp_index = f"{self.index_file}.tmp"
                 faiss.write_index(self.index, temp_index)
@@ -706,10 +587,6 @@ class VectorMemory:
             'relevance_threshold': self.relevance_threshold
         }
 
-# ==========================================================
-# BÖLÜM 2.5: SPACY NLP MOTORU
-# ==========================================================
-# SmartContextualMemory silindi - HafizaAsistani zaten bu işi yapıyor
 
 class TurkishNLPEngine:
     """
@@ -729,7 +606,6 @@ class TurkishNLPEngine:
         self.enabled = SystemConfig.SPACY_ENABLED
         self.nlp = None
         
-        # Türkçe sentiment lexicon
         self.positive_words = {
             "iyi", "güzel", "harika", "mükemmel", "süper", "başarılı", "olumlu",
             "muhteşem", "enfes", "fevkalade", "şahane", "nefis", "müthiş",
@@ -821,14 +697,12 @@ class TurkishNLPEngine:
         """
         all_entities = []
 
-        # 1. spaCy ile entity çıkar (PERSON, LOC, ORG, PRODUCT)
         if self.enabled:
             entities_dict = self.extract_entities(text)
             for entity_type in ['PERSON', 'LOC', 'ORG', 'PRODUCT']:
                 if entity_type in entities_dict:
                     all_entities.extend([e['text'] for e in entities_dict[entity_type]])
 
-        # 2. Teknik terimler (spaCy kaçırabilir)
         tech_terms = [
             "Python", "JavaScript", "Java", "C++", "React", "Node",
             "Neo4j", "MongoDB", "PostgreSQL", "MySQL",
@@ -841,7 +715,6 @@ class TurkishNLPEngine:
             if term.lower() in text_lower:
                 all_entities.append(term)
 
-        # 3. Türkiye şehirleri
         cities = [
             "İstanbul", "Ankara", "İzmir", "Bursa", "Antalya",
             "Adana", "Konya", "Gaziantep", "Sakarya", "Kocaeli"
@@ -850,7 +723,6 @@ class TurkishNLPEngine:
             if city.lower() in text_lower:
                 all_entities.append(city)
 
-        # 4. Fallback: Büyük harfle başlayan kelimeler (spaCy kapalıysa)
         if not self.enabled:
             words = text.split()
             for word in words:
@@ -923,22 +795,18 @@ class TurkishNLPEngine:
             doc = self.nlp(text)
             text_lower = text.lower()
             
-            # 1. Sıfat bazlı analiz
             adjectives = [token.text.lower() for token in doc if token.pos_ == "ADJ"]
             
             pos_adj_count = sum(1 for adj in adjectives if adj in self.positive_words)
             neg_adj_count = sum(1 for adj in adjectives if adj in self.negative_words)
             
-            # 2. Kelime bazlı analiz
             words = text_lower.split()
             pos_word_count = sum(1 for word in words if word in self.positive_words)
             neg_word_count = sum(1 for word in words if word in self.negative_words)
             
-            # Toplam skorlar
             total_pos = pos_adj_count + pos_word_count
             total_neg = neg_adj_count + neg_word_count
             
-            # Skor hesaplama
             if total_pos + total_neg == 0:
                 sentiment = "neutral"
                 score = 0.0
@@ -1019,25 +887,20 @@ class TurkishNLPEngine:
         try:
             doc = self.nlp(text)
             
-            # İsim öbekleri + named entities
             key_phrases = set()
             
-            # Noun chunks ekle
             for chunk in doc.noun_chunks:
                 if len(chunk.text) > 3:  # Çok kısa ifadeleri filtrele
                     key_phrases.add(chunk.text)
             
-            # Named entities ekle
             for ent in doc.ents:
                 key_phrases.add(ent.text)
             
-            # Skorlama (uzunluk ve önem)
             scored_phrases = []
             for phrase in key_phrases:
                 score = len(phrase.split())  # Kelime sayısı
                 scored_phrases.append((phrase, score))
             
-            # En yüksek skorlu ifadeleri döndür
             scored_phrases.sort(key=lambda x: x[1], reverse=True)
             return [phrase for phrase, _ in scored_phrases[:top_n]]
         
@@ -1046,11 +909,6 @@ class TurkishNLPEngine:
             return []
 
 
-# ==========================================================
-# BÖLÜM 3: FAISS BİLGİ TABANI (DÖKÜMAN KÜTÜPHANESİ) - NEO4J SİLİNDİ
-# ==========================================================
-# Neo4j GraphRAG kodu tamamen kaldırıldı (ölü kod idi)
-# HafizaAsistani zaten uzun dönem hafıza yönetimini yapıyor
 
 
 class FAISSKnowledgeBase:
@@ -1074,29 +932,23 @@ class FAISSKnowledgeBase:
             print("⚠️ FAISS Bilgi Tabanı devre dışı")
             return
         
-        # Paths
         self.index_file = SystemConfig.FAISS_INDEX_FILE
         self.texts_file = SystemConfig.FAISS_TEXTS_FILE
         
-        # Config
         self.search_top_k = SystemConfig.FAISS_SEARCH_TOP_K
         self.similarity_threshold = SystemConfig.FAISS_SIMILARITY_THRESHOLD
         self.max_results = SystemConfig.FAISS_MAX_RESULTS
         self.relative_threshold = SystemConfig.FAISS_RELATIVE_THRESHOLD
         self.max_context_length = SystemConfig.FAISS_MAX_CONTEXT_LENGTH
         
-        # User namespace
         self.user_namespace = f"user_{user_id}"
         
-        # Temporal awareness
         self.temporal_awareness = True
         self._initialize_temporal_awareness()
         
-        # Data
         self.texts = []
         self.index: Optional[faiss.Index] = None
         
-        # Load
         self._load_components()
     
     def _initialize_temporal_awareness(self):
@@ -1126,7 +978,6 @@ class FAISSKnowledgeBase:
     def _load_components(self):
         """Index ve text dosyalarını yükle"""
         try:
-            # FAISS index
             if os.path.exists(self.index_file):
                 self.index = faiss.read_index(self.index_file)
                 print(f"✅ FAISS index yüklendi: {self.index_file}")
@@ -1135,7 +986,6 @@ class FAISSKnowledgeBase:
                 self.enabled = False
                 return
             
-            # Texts JSON
             if os.path.exists(self.texts_file):
                 with open(self.texts_file, 'r', encoding='utf-8') as f:
                     self.texts = json.load(f)
@@ -1145,7 +995,6 @@ class FAISSKnowledgeBase:
                 self.enabled = False
                 return
             
-            # Embedding model
             self.embedding_model = SentenceTransformer(SystemConfig.EMBEDDING_MODEL)
             
             print(f"✅ FAISS Bilgi Tabanı hazır: {self.user_namespace}")
@@ -1167,7 +1016,6 @@ class FAISSKnowledgeBase:
             print(f"📊 Max chunks: {max_chunks}")
             print(f"{'='*60}")
             
-            # Search
             results = self.search(user_input, top_k=max_chunks * 2)
             
             print(f"\n📊 ARAMA SONUÇLARI:")
@@ -1179,7 +1027,6 @@ class FAISSKnowledgeBase:
             
             combined_text = ""
             
-            # Tarih bilgisi ekle
             if self.temporal_awareness and self.current_day_info:
                 day_info = self.current_day_info
                 combined_text += f"""GÜNCEL TARİH BİLGİSİ - DİKKAT:
@@ -1188,7 +1035,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
 
 """
             
-            # İlgili bilgiler ekle
             if results:
                 combined_text += "İLGİLİ BİLGİLER:\n"
                 
@@ -1197,7 +1043,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
                     score = result.get('score', 0.0)
                     index = result.get('index', -1)
                     
-                    # 🆕 DEBUG: Her sonucu detaylı yazdır
                     print(f"\n   📄 SONUÇ #{i+1}:")
                     print(f"      • Skor: {score:.4f}")
                     print(f"      • Index: {index}")
@@ -1232,7 +1077,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
             print(f"   Query: '{query}'")
             print(f"   Top-K: {top_k or self.search_top_k}")
             
-            # Embed query
             query_vector = self.embedding_model.encode(
                 [query], 
                 normalize_embeddings=True
@@ -1241,7 +1085,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
             
             print(f"   ✅ Query embedding boyutu: {query_vector.shape}")
             
-            # Search
             requested_k = top_k or self.search_top_k
             k = max(requested_k, requested_k + 10)
             
@@ -1251,7 +1094,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
             print(f"   ✅ FAISS arama tamamlandı")
             print(f"   📊 Bulunan index sayısı: {len(indices[0])}")
             
-            # Filter results
             results = []
             filtered_count = 0
             
@@ -1261,13 +1103,11 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
                 
                 similarity = float(score)
                 
-                # 🆕 DEBUG: Her sonucu yazdır
                 print(f"\n   #{i+1} - Index: {idx}, Skor: {similarity:.4f}", end="")
                 
                 if similarity >= self.similarity_threshold and idx < len(self.texts):
                     text_data = self.texts[idx]
                     
-                    # Text content
                     if isinstance(text_data, dict):
                         text_content = text_data.get('text', str(text_data))
                     else:
@@ -1293,7 +1133,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
             print(f"      • Filtrelenen: {filtered_count}")
             print(f"      • Kabul edilen: {len(results)}")
 
-            # 🆕 RELATIVE SCORING: En yüksek skorun %90'ı altındakileri çıkar
             if results:
                 top_score = results[0]['score']
                 relative_threshold = top_score * SystemConfig.FAISS_RELATIVE_THRESHOLD
@@ -1302,7 +1141,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
                 print(f"      • En yüksek skor: {top_score:.4f}")
                 print(f"      • Relative threshold ({SystemConfig.FAISS_RELATIVE_THRESHOLD*100}%): {relative_threshold:.4f}")
 
-                # Relative threshold'dan yüksek olanları al
                 filtered_results = []
                 for r in results:
                     if r['score'] >= relative_threshold:
@@ -1311,7 +1149,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
                     else:
                         print(f"      ❌ Skor {r['score']:.4f} - REDDEDİLDİ (relative threshold altı)")
 
-                # Max sonuç sayısı limiti uygula
                 max_results = SystemConfig.FAISS_MAX_RESULTS
                 if len(filtered_results) > max_results:
                     print(f"      ✂️ İlk {max_results} sonuç alınıyor (toplam {len(filtered_results)} sonuç vardı)")
@@ -1356,10 +1193,6 @@ UYARI: Bu bilgi güncel ve doğrudur, lütfen bu bilgiyi kullan!
                 "status": "error"
             }
 
-# ==========================================================
-# BÖLÜM 4.5: WEB SCRAPING YARDIMCI SINIFLAR
-# ==========================================================
-# DEĞİŞİKLİK 1: BÖLÜM 4.5'İN EKLENMESİ
 class DuplicateFilter:
     """Web scraping için duplicate içerik filtresi"""
         
@@ -1430,9 +1263,6 @@ class ScrapingError(PersonalAIError):
             return f"{self.args[0]} (URL: {self.url})"
         return str(self.args[0])
 
-# ==========================================================
-# BÖLÜM 5: LLM, WEB SEARCH VE NİYET TESPİTİ
-# ==========================================================
 
 class LocalLLM:
     """
@@ -1448,7 +1278,6 @@ class LocalLLM:
         self.vision_enabled = SystemConfig.ENABLE_VISION
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # Together.ai API key
         self.together_api_key = os.getenv("TOGETHER_API_KEY", "")
 
         self.stats = {
@@ -1481,7 +1310,6 @@ class LocalLLM:
         self.stats["total_requests"] += 1
         
         try:
-            # Vision query - eğer image_data varsa direkt vision kullan
             if image_data:
                 result = await self._generate_with_vision(prompt, image_data)
                 self.stats["vision_requests"] += 1
@@ -1489,7 +1317,6 @@ class LocalLLM:
                 result = await self._generate_text_only(prompt)
                 self.stats["text_requests"] += 1
             
-            # Update stats
             response_time = time.time() - start_time
             if self.stats["total_requests"] > 0:
                 self.stats["avg_response_time"] = (
@@ -1537,10 +1364,8 @@ class LocalLLM:
             print(f"⚠️ Vision API hatası: {e}")
             return "Görsel analizi sırasında bir hata oluştu."
     
-    # DEĞİŞİKLİK 2: _generate_text_only() FONKSİYONUNUN DEĞİŞTİRİLMESİ
     async def _generate_text_only(self, prompt: str) -> str:
         """LLM API çağrısı - Ollama veya Together.ai"""
-        # 📋 PROMPT LOGLAMA - LLM'e giden tam prompt
         if SystemConfig.LOG_FULL_PROMPT:
             print("\n" + "=" * 70)
             print(f"📋 LLM'E GÖNDERİLEN TAM PROMPT ({self.provider.upper()}):")
@@ -1550,7 +1375,6 @@ class LocalLLM:
             print(f"📏 Toplam: {len(prompt)} karakter")
             print("=" * 70 + "\n")
 
-        # Provider'a göre yönlendir
         if self.provider == "together":
             return await self._generate_together(prompt)
         else:
@@ -1564,7 +1388,6 @@ class LocalLLM:
                 "Content-Type": "application/json"
             }
 
-            # Prompt'u messages formatına çevir
             payload = {
                 "model": SystemConfig.TOGETHER_MODEL,
                 "messages": [
@@ -1586,7 +1409,6 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
-                        # OpenAI format: choices[0].message.content
                         return result.get('choices', [{}])[0].get('message', {}).get('content', '')
                     else:
                         error_text = await resp.text()
@@ -1629,7 +1451,6 @@ class LocalLLM:
             print(f"⚠️ Ollama bağlantı hatası: {e} - simülasyona geçiliyor")
             return self._generate_fallback_response(prompt)
 
-    # DEĞİŞİKLİK 3: _generate_fallback_response() FONKSİYONUNUN EKLENMESİ
     def _generate_fallback_response(self, prompt: str) -> str:
         """Ollama çalışmazsa fallback simülasyon"""
         if "Duygusal Giriş/Gözlem" in prompt:
@@ -1647,7 +1468,6 @@ class LocalLLM:
     async def generate_with_params(self, prompt: str, params: Dict[str, Any], 
                                      image_data: Optional[bytes] = None) -> str:
         """Özel parametrelerle yanıt üret"""
-        # Params'ı kullan (TODO: gerçek API'ye gönder)
         return await self.generate(prompt, image_data)
     
     def get_stats(self) -> Dict[str, Any]:
@@ -1673,8 +1493,6 @@ class PromptBuilder:
         """Çekirdek benlik + minimal prompt oluştur"""
         combined_context = f"{graphrag_context}\n{semantic_context}"
 
-        # 🧠 Çekirdek benlik + minimal prompt
-        # _INTERNAL_SELF_AWARENESS sessiz arka plan olarak ekleniyor
         return SystemConfig._INTERNAL_SELF_AWARENESS + "\n" + SystemConfig.format_prompt(
             SystemConfig.SYNTHESIS_PROMPT,
             user_input=user_input,
@@ -1718,93 +1536,44 @@ class Gemma3OptimizedLLM:
             return await self.base_llm.generate(prompt, image_data=image_data)
 
 
-# IntentDetector silindi - HafizaAsistani._tool_secimi_yap zaten bu işi yapıyor
-# EnhancedWebSearch silindi - Web search kullanılmıyor, sadece Wikipedia API kalıyor
 
-# ==========================================================
-# BÖLÜM 6: MULTI-ROLE SİSTEMİ VE RESPONSE FORMATTER
-# ==========================================================
 
 class MultiRoleSystem:
     """
-    Çoklu rol sistemi
-    Arkadaş, teknik destek, öğretmen rolleri
+    Basitleştirilmiş sistem - artık tek tutarlı kişilik
+    Geriye uyumluluk için korunuyor
     """
-    
+
     def __init__(self):
-        self.enabled = SystemConfig.MULTI_ROLE_ENABLED
+        self.enabled = False  # Devre dışı
         self.roles = SystemConfig.ROLES
-        self.role_history = defaultdict(int)
-        self.last_role = "friend"
-    
+
     def detect_role(self, user_input: str, detected_intent: Optional[str] = None) -> str:
-        """Kullanıcı input'undan rol tespit et"""
-        if not self.enabled:
-            return "friend"
-        
-        user_lower = user_input.lower()
-        
-        # Kod marker'ları
-        code_markers = ["```", "def ", "class ", "import ", "function"]
-        has_code = any(marker in user_input for marker in code_markers)
-        
-        error_markers = ["error:", "hata veriyor", "bug", "error", "çalışmıyor"]
-        has_error = any(marker in user_lower for marker in error_markers)
-        
-        if has_code or has_error or detected_intent in ["TECHNICAL", "CODE_DEBUG"]:
-            self._track_role("technical_helper")
-            return "technical_helper"
-        
-        # Role keyword matching
-        for role_name, role_config in self.roles.items():
-            keywords = role_config.get("keywords", [])
-            if any(kw in user_lower for kw in keywords):
-                self._track_role(role_name)
-                return role_name
-        
-        # Default
-        self._track_role("friend")
-        return "friend"
-    
-    def _track_role(self, role: str):
-        """Rol kullanımını takip et"""
-        self.role_history[role] += 1
-        self.last_role = role
-    
-    def format_response_by_role(self, raw_response: str, role: str, 
+        """Artık her zaman 'default' döner - tek kişilik"""
+        return "default"
+
+    def format_response_by_role(self, raw_response: str, role: str,
                                  user_input: str) -> str:
-        """Role göre yanıtı formatla"""
-        if not self.enabled:
-            return raw_response
-        
-        # Yasaklı ifadeleri kaldır
+        """Yanıtı formatla - yasaklı ifadeleri temizle"""
         formatted = self._remove_forbidden_phrases(raw_response)
 
-        # Kısa yanıtlar için özel işlem
+        # Kısa tepkilere kısa cevap
         if user_input.lower().strip() in ["tamam", "ok", "saol", "teşekkürler", "teşekkür ederim", "tşk"]:
             short_responses = ["Rica ederim!", "Ne demek!", "Her zaman!", "Önemli değil!"]
             return short_responses[hash(user_input) % len(short_responses)]
 
-        # ❌ Max length kesme KALDIRILDI - LLM kendi doğal uzunluğunda yazsın
-
         return formatted.strip()
-    
+
     def _remove_forbidden_phrases(self, text: str) -> str:
         """Yasaklı ifadeleri kaldır"""
         for phrase in SystemConfig.FORBIDDEN_PHRASES:
-            # Cümle bazında kaldır
             pattern = r'[^.!?]*' + re.escape(phrase) + r'[^.!?]*[.!?]'
             text = re.sub(pattern, ' ', text, flags=re.IGNORECASE).strip()
-        
         return text.strip()
-    
+
     def get_role_stats(self) -> Dict[str, Any]:
-        """Rol istatistiklerini döndür"""
-        return {
-            'role_history': dict(self.role_history),
-            'last_role': self.last_role,
-            'enabled': self.enabled
-        }
+        """Basit istatistik"""
+        return {'enabled': False, 'mode': 'unified'}
 
 
 class ResponseFormatter:
@@ -1815,7 +1584,6 @@ class ResponseFormatter:
     @staticmethod
     def clean_response(text: str) -> str:
         """Yanıtı temizle"""
-        # 🆕 BELİRSİZLİK İFADELERİNİ TEMİZLE
         uncertain_phrases = [
             "web'de bu bilgi geçiyor ama emin değilim:",
             "web'de bu bilgi geçiyor ama emin değilim",
@@ -1833,17 +1601,13 @@ class ResponseFormatter:
         
         cleaned = text
         for phrase in uncertain_phrases:
-            # Hem küçük hem büyük harfle başlayabilir
             cleaned = cleaned.replace(phrase, "")
             cleaned = cleaned.replace(phrase.capitalize(), "")
         
-        # Fazla boşlukları temizle
         cleaned = re.sub(r'\s+', ' ', cleaned)
         
-        # Fazla newline'ları temizle
         cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)
         
-        # Çift noktalama temizle
         cleaned = re.sub(r'\.\s*\.', '.', cleaned)
         cleaned = re.sub(r',\s*,', ',', cleaned)
         cleaned = re.sub(r':\s*:', ':', cleaned)
@@ -1871,16 +1635,11 @@ class ResponseFormatter:
     def format_synthesis_response(response: str, user_input: str,
                                       max_length: int = None) -> str:
         """Synthesis yanıtını formatla"""
-        # Temizle
         cleaned = ResponseFormatter.clean_response(response)
 
-        # ❌ Max length kesme KALDIRILDI - LLM kendi doğal uzunluğunda yazsın
 
         return cleaned
 
-# ==========================================================
-# BÖLÜM 7: AYARLAR VE TOOL SYSTEM
-# ==========================================================
 
 class ConfigDrivenSettings:
     """
@@ -1902,16 +1661,12 @@ class ConfigDrivenSettings:
         }
 
 
-# ==========================================================
-# BÖLÜM 7.5: TOOL SYSTEM (YENİ!)
-# ==========================================================
 
 class ToolSystem:
     """
     LLM'nin kullanabileceği araçları yöneten sistem
     """
     
-    # Araç tanımları
     TOOLS = {
         "risale_ara": {
             "name": "risale_ara",
@@ -1955,12 +1710,12 @@ class ToolSystem:
             "when": "Kullanıcı namaz vakitleri, ezan saatleri sorduğunda",
             "examples": ["Sakarya namaz vakitleri?", "İstanbul öğle namazı kaçta?", "Ankara akşam ezanı?", "Bursa imsak vakti?"]
         },
-        "wiki_ara": {
-            "name": "wiki_ara",
-            "description": "Wikipedia'da ünlü kişi, yer, olay hakkında bilgi ara",
-            "parameters": "arama_terimi: Aranacak kişi/yer/olay adı (netleştirilmiş)",
-            "when": "Kullanıcı ünlü kişi (şarkıcı, oyuncu, sporcu), tarihî olay veya yer hakkında soru sorduğunda",
-            "examples": ["Özdemir Erdoğan şarkıcı", "Atatürk", "İstanbul tarihi"]
+        "web_ara": {
+            "name": "web_ara",
+            "description": "Internette bilgi veya haber ara",
+            "parameters": "arama_terimi: Aranacak konu",
+            "when": "Bilmedigin konu, guncel haber, kisi, yer, olay soruldugunda",
+            "examples": ["Einstein kimdir", "son haberler", "Python nedir"]
         },
         "yok": {
             "name": "yok",
@@ -2027,7 +1782,6 @@ PARAMETRE: yok
         tool_name = "yok"
         tool_param = ""
         
-        # ARAÇ: satırını bul
         for line in llm_response.split('\n'):
             line = line.strip()
             if line.startswith("ARAÇ:"):
@@ -2035,7 +1789,6 @@ PARAMETRE: yok
             elif line.startswith("PARAMETRE:"):
                 tool_param = line.replace("PARAMETRE:", "").strip()
         
-        # Temizle
         tool_name = tool_name.lower()
         if tool_name not in ToolSystem.TOOLS:
             tool_name = "yok"
@@ -2046,9 +1799,6 @@ PARAMETRE: yok
         return tool_name, tool_param
 
 
-# ==========================================================
-# BÖLÜM 8: ANA PERSONALAİ SINIFI
-# ==========================================================
 
 class PersonalAI:
     """
@@ -2057,14 +1807,11 @@ class PersonalAI:
     
     def __init__(self, user_id: str = None):
         """PersonalAI sistemini başlat"""
-        # User ID
         self.user_id = user_id or SystemConfig.DEFAULT_USER_ID
         self.start_time = time.time()
         
-        # Background tasks
         self._bg_tasks: Set[asyncio.Task] = set()
         
-        # User data dizini
         self.user_data_dir = f"{SystemConfig.USER_DATA_BASE_DIR}/{self.user_id}"
         self._create_user_directories()
         
@@ -2073,16 +1820,12 @@ class PersonalAI:
         print(f"👤 Kullanıcı: {self.user_id}")
         print("=" * 60)
         
-        # Bileşenleri başlat
         self._initialize_components()
         
-        # Settings
         self.settings = ConfigDrivenSettings(self.user_id)
         
-        # Tool System
         self.tool_system = ToolSystem()
         
-        # Learning system
         self.learning_system: Dict[str, Any] = {
             "topic_interests": defaultdict(int),
             "preferred_tone": "friendly",
@@ -2090,22 +1833,17 @@ class PersonalAI:
             "interaction_count": 0
         }
         
-        # Performance metrics
         self.performance_metrics: Dict[str, deque] = {
             'processing_time': deque(maxlen=5000),
             'errors': deque(maxlen=1000)
         }
         
-        # User profile
         self.user_profile = self._build_user_profile()
         
-        # Gemma3 optimization
         self._integrate_gemma3_optimization()
         
-        # Multi-role system
         self.multi_role = MultiRoleSystem()
 
-        # Current mode
         self.current_mode = "simple"
 
         print("\n✅ PersonalAI hazır!")
@@ -2130,18 +1868,12 @@ class PersonalAI:
     
     def _initialize_components(self) -> None:
         """Tüm bileşenleri başlat"""
-        # Cache
         self.cache = None
         
-        # spaCy NLP Engine
         self.spacy_nlp = TurkishNLPEngine()  # 🇹🇷 Türkçe NLP Motoru
         
-        # LLM
         self.llm = LocalLLM(self.user_id)
         
-        # Memory - YENİ HafizaAsistani v2.0! ✅
-        # 🆕 Conversation Threading + Multi-turn Awareness
-        # Together.ai: DecisionLLM için 70B modeli kullanır
         try:
             self.memory = HafizaAsistani(
                 saat_limiti=48,  # 12 → 48 saat (2 gün)
@@ -2159,17 +1891,14 @@ class PersonalAI:
             raise  # Hatayı yukarı fırlat
         
         
-        # FAISS Knowledge Base
         self.faiss_kb: Optional[FAISSKnowledgeBase] = None
         if SystemConfig.FAISS_KB_ENABLED:
             self.faiss_kb = FAISSKnowledgeBase(self.user_id)
 
-        # 🆕 FAISS KB'yi HafizaAsistani'ya inject et
         if self.faiss_kb:
             self.memory.set_faiss_kb(self.faiss_kb)
             print("✅ FAISS KB HafizaAsistani'ya inject edildi")
 
-        # Neo4j ve Web Search silindi - sadece Wikipedia tool kullanılıyor
 
     def _integrate_gemma3_optimization(self):
         """Gemma3 optimizasyonunu entegre et"""
@@ -2220,20 +1949,16 @@ class PersonalAI:
     
     def _post_process(self, text: str, user_input: str = "", is_continuing: bool = False) -> str:
         """Yanıtı son işle"""
-        # Response code kontrolü
         if text in [ResponseCodes.API_ERROR, ResponseCodes.SEARCH_FAILED]:
             return "Üzgünüm, bir hata oluştu."
         
         if text == ResponseCodes.NO_DATA:
             return "Üzgünüm, bu konuda bilgi bulamadım."
         
-        # Temizle
         cleaned_text = ResponseFormatter.clean_response(text)
         
-        # Devam eden sohbette selamları kaldır
         cleaned_text = ResponseFormatter.remove_greetings_if_continuing(cleaned_text, is_continuing)
         
-        # Max length
         max_chars = SystemConfig.MAX_RESPONSE_CHARS
         if len(cleaned_text) > max_chars:
             cleaned_text = cleaned_text[:max_chars].rsplit(' ', 1)[0] + "..."
@@ -2244,23 +1969,19 @@ class PersonalAI:
         """Bu etkileşim hafızaya kaydedilmeli mi?"""
         u = user_input.lower()
         
-        # Çok kısa
         if len(u) < 3 or u in {"ok", "tamam", "teşekkürler"}:
             return False
         
-        # PII içeren
         pii_keywords = ["tc", "iban", "şifre", "password"]
         if any(k in u for k in pii_keywords):
             return False
         
-        # Trivial queries
         trivial = ["saat kaç", "hava durumu", "döviz"]
         if any(x in u for x in trivial):
             return False
         
         return True
     
-    # ====== YENİ YARDIMCI FONKSİYONLAR: SMART RESPONSE ANALYSIS ======
     
     def _build_search_query(self, user_input: str) -> str:
         """
@@ -2269,7 +1990,6 @@ class PersonalAI:
         "adapazarında ıslama köfte yemek istiyorum" 
         → "adapazarı ıslama köfte restaurant"
         """
-        # Gereksiz kelimeleri temizle
         noise_words = [
             "yemek", "istiyorum", "isterim", "gitmek", "yapmak",
             "yiyeceğim", "gideceğim", "yapacağım", "alacağım",
@@ -2280,10 +2000,8 @@ class PersonalAI:
         for word in noise_words:
             cleaned = cleaned.replace(word, " ")
         
-        # Fazla boşlukları temizle
         cleaned = " ".join(cleaned.split())
         
-        # "restaurant" ekle (Türkçe ve İngilizce)
         cleaned += " restaurant restoran mekan"
         
         return cleaned.strip()
@@ -2300,7 +2018,6 @@ class PersonalAI:
         """
         import re
         
-        # Türkiye şehirleri listesi (en çok kullanılanlar)
         cities = [
             'istanbul', 'ankara', 'izmir', 'bursa', 'antalya', 'adana', 'konya',
             'gaziantep', 'şanlıurfa', 'mersin', 'diyarbakır', 'kayseri', 'eskişehir',
@@ -2318,12 +2035,10 @@ class PersonalAI:
         
         query_lower = query.lower()
         
-        # Direkt şehir ismi geçiyor mu?
         for city in cities:
             if city in query_lower:
                 return city.title()
         
-        # "X'da hava durumu" pattern'i
         weather_pattern = r"(\w+)['']?d[ae]\s+(?:hava|sıcaklık|derece)"
         match = re.search(weather_pattern, query_lower)
         if match:
@@ -2344,14 +2059,9 @@ class PersonalAI:
         LLM yanıtını analiz et
         NOT: Web search kaldırıldı, sadece orijinal yanıtı döndürüyor
         """
-        # Web search silindi - direkt orijinal yanıtı döndür
         return llm_response
 
 
-    # ====== PROCESS WITH TOOLS (HafizaAsistani v3.0 ile!) ======
-    # NOT: _execute_tool() metodu kaldırıldı.
-    # Artık HafizaAsistani._tool_calistir() kullanılıyor.
-    # ======
     async def process_with_tools(self, user_input: str, chat_history: List) -> str:
         """
         🎯 Tool system ile işle - HafizaAsistani'nın ANA METODunu kullanarak!
@@ -2371,27 +2081,12 @@ class PersonalAI:
         print(f"🎯 PROCESS WITH TOOLS (HafizaAsistani v3.0)")
         print(f"{'='*60}")
 
-        # 🎯 HafizaAsistani'nın ANA METODunu kullan!
-        # (Tool seçimi + Çalıştırma + Bağlam toplama + Prompt hazırlama)
         paket = await self.memory.hazirla_ve_prompt_olustur(
             user_input=user_input,
             chat_history=chat_history
         )
 
-        # 📦 Paket içeriği:
-        # {
-        #     "prompt": "Gemma3'e gönderilecek hazır prompt",
-        #     "role": "friend/technical_helper/teacher",
-        #     "tool_used": "web_ara/zaman_getir/vb.",
-        #     "metadata": {
-        #         "has_tool_result": True/False,
-        #         "has_semantic": True/False,
-        #         "has_faiss": True/False,
-        #         "has_history": True/False
-        #     }
-        # }
 
-        # 🔍 DEBUG: Detaylı paket bilgisi
         print("\n" + "="*60)
         print("📦 HAFİZA ASİSTANI → PERSONAL AI PAKETİ")
         print("="*60)
@@ -2419,14 +2114,12 @@ class PersonalAI:
         print(f"\n📏 Prompt uzunluğu: {len(paket.get('prompt', ''))} karakter")
         print("="*60 + "\n")
 
-        # ✅ Hazır prompt'u direkt LLM'ye gönder
         print("🤖 LLM'e gönderiliyor (tek çağrı)...")
         final_response = await self.llm.generate(paket["prompt"])
 
         print("✅ Cevap alındı!\n")
         return final_response
     
-    # ====== ANA PROCESS FONKSİYONU (GÜNCELLENMİŞ) ======
     async def process(
         self,
         user_input: str,
@@ -2443,40 +2136,30 @@ class PersonalAI:
             print(f"👤 USER: {user_input}")
             print(f"{'='*60}")
             
-            # 1. Özel komutları kontrol et
             mode_response = await self._handle_mode_commands(user_input)
             if mode_response:
                 return mode_response, "simple", "command"
 
-            # 2. Eğer görsel varsa HYBRID YAKLAŞIM: Vision + Tool System
             if image_data:
                 print("🖼️ Görsel tespit edildi - Hybrid Vision + Context sistemi kullanılıyor...")
 
-                # Adım 1: Görseli analiz et
                 vision_prompt = f"Kullanıcı sorusu: {user_input}\n\nBu görseli kısaca analiz et (2-3 cümle)."
                 vision_analysis = await self.llm.generate(vision_prompt, image_data=image_data)
                 print(f"👁️ Görsel analizi tamamlandı: {vision_analysis[:100]}...")
 
-                # Adım 2: Görsel analiz sonucunu kullanıcı sorusuyla birleştir
                 enhanced_input = f"{user_input}\n\n[Görsel Bağlamı: {vision_analysis}]"
 
-                # Adım 3: Tool system ile tam yanıt oluştur (bağlam + hafıza + web vb. ile)
                 print("🔧 Tool system devreye giriyor (bağlam + hafıza)...")
                 raw_response = await self.process_with_tools(enhanced_input, chat_history)
             else:
-                # ✅ process_with_tools kullan (KOD TEKRARI KALDIRILDI!)
                 raw_response = await self.process_with_tools(user_input, chat_history)
             
-            # 3. Post-process
             is_continuing = len(chat_history) > 0
             final_response = self._post_process(raw_response, user_input, is_continuing)
             
-            # 4. Hafızaya kaydet
             if self._should_save_interaction(user_input, final_response):
-                # chat_history'yi de geçir (ConversationContext için)
                 self.memory.add(user_input, final_response, chat_history)
 
-            # 5. Performans kaydı
             processing_time = time.time() - start_time
             self.performance_metrics['processing_time'].append(processing_time)
             
@@ -2498,7 +2181,6 @@ class PersonalAI:
         """Özel komutları işle"""
         user_lower = user_input.lower()
         
-        # Sistem durumu
         if any(phrase in user_lower for phrase in ["sistem durum", "stats", "istatistik"]):
             stats = self.get_system_stats()
             
@@ -2516,7 +2198,6 @@ class PersonalAI:
 """
             return response
         
-        # Hafıza temizle
         if any(phrase in user_lower for phrase in ["hafıza temizle", "memory clear"]):
             self.memory.clear()
             return "✅ Hafıza temizlendi."
@@ -2525,7 +2206,6 @@ class PersonalAI:
     
     def get_system_stats(self) -> Dict[str, Any]:
         """Sistem istatistiklerini döndür"""
-        # Hata korumalı total_chunks ve total_entries erişimi
         kb_chunks = self.faiss_kb.index.ntotal if self.faiss_kb and hasattr(self.faiss_kb, 'index') and self.faiss_kb.index else 0
         mem_entries = len(self.memory.data) if hasattr(self.memory, 'data') else 0
         
@@ -2560,9 +2240,6 @@ class PersonalAI:
         print("✅ Temizlik tamamlandı.")
 
 
-# ==========================================================
-# BÖLÜM 9: ÇALIŞTIRMA VE TEST KODLARI
-# ==========================================================
 
 async def run_interactive_chat(ai_system: PersonalAI):
     """
@@ -2581,35 +2258,29 @@ async def run_interactive_chat(ai_system: PersonalAI):
     
     while True:
         try:
-            # Kullanıcı input
             user_input = input("\n👤 Sen: ").strip()
             
             if not user_input:
                 continue
             
-            # Exit
             if user_input.lower() in ['exit', 'quit', 'çıkış']:
                 print("\n👋 Görüşürüz!")
                 break
             
-            # Clear history
             if user_input.lower() in ['clear', 'temizle']:
                 chat_history = []
-                # Hafızayı temizleme komutu PersonalAI sınıfında işlenir
                 if user_input.lower() != 'temizle': # Tekrar temizlenmemesi için
                     pass
                 else:
                     print("✅ Sohbet geçmişi temizlendi.")
                 continue
             
-            # Process
             print("\n🤖 AI düşünüyor...", end="", flush=True)
             reply, _, _ = await ai_system.process(user_input, chat_history)
             print("\r" + " " * 30 + "\r", end="")  # Clear "thinking" message
             
             print(f"🤖 AI: {reply}")
             
-            # Update history
             chat_history.append({
                 "role": "user",
                 "content": user_input
@@ -2619,7 +2290,6 @@ async def run_interactive_chat(ai_system: PersonalAI):
                 "content": reply
             })
             
-            # Keep only last 10 messages
             if len(chat_history) > 20:
                 chat_history = chat_history[-20:]
             
@@ -2640,7 +2310,6 @@ async def run_test_scenarios(ai_system: PersonalAI):
     print("🧪 TEST SENARYOLARI")
     print("=" * 60)
     
-    # Senaryo 1: Güncel bilgi
     print("\n--- SENARYO 1: Güncel Bilgi (Hava Durumu) ---")
     user_input_1 = "Sakarya için hava durumu nasıl? Sabah dışarı çıkacağım."
     print(f"👤 USER: {user_input_1}")
@@ -2651,7 +2320,6 @@ async def run_test_scenarios(ai_system: PersonalAI):
     chat_history.append({"role": "user", "content": user_input_1})
     chat_history.append({"role": "ai", "content": reply_1})
     
-    # Senaryo 2: Kişisel hafıza
     print("--- SENARYO 2: Kişisel Hafıza (GraphRAG Test) ---")
     user_input_2 = "Geçen konuştuğumuz yapay zeka projemle ilgili ne düşünüyorsun?"
     print(f"👤 USER: {user_input_2}")
@@ -2662,7 +2330,6 @@ async def run_test_scenarios(ai_system: PersonalAI):
     chat_history.append({"role": "user", "content": user_input_2})
     chat_history.append({"role": "ai", "content": reply_2})
     
-    # Senaryo 3: Teknik destek
     print("--- SENARYO 3: Teknik Destek (Role Switching) ---")
     user_input_3 = "Python'da bir kod hatası alıyorum: 'ImportError: No module named numpy'. Ne yapmalıyım?"
     print(f"👤 USER: {user_input_3}")
@@ -2670,7 +2337,6 @@ async def run_test_scenarios(ai_system: PersonalAI):
     reply_3, _, _ = await ai_system.process(user_input_3, chat_history)
     print(f"🤖 AI: {reply_3}\n")
     
-    # Senaryo 4: Sistem durumu
     print("--- SENARYO 4: Sistem Durumu ---")
     user_input_4 = "sistem durum"
     print(f"👤 USER: {user_input_4}")
@@ -2688,10 +2354,8 @@ async def test_spacy_integration():
     print("🧪 spaCy ENTEGRASYON TESTİ")
     print("=" * 60)
     
-    # Sistem başlat
     ai = PersonalAI(user_id="test_user")
     
-    # Test metni
     test_text = """
     Ahmet Yılmaz, 15 Ocak 2024'te İstanbul'da Python öğrenmeye başladı.
     Neo4j kullanarak 5000 TL'lik bir proje geliştirdi.
@@ -2700,21 +2364,17 @@ async def test_spacy_integration():
     print(f"\n📝 Test Metni:\n{test_text}")
     
     if ai.spacy_nlp.enabled:
-        # Entity extraction
         entities = ai.spacy_nlp.extract_entities(test_text)
         print("\n📍 Tespit Edilen Entity'ler:")
         for entity_type, entity_list in entities.items():
             print(f"  {entity_type}: {[e['text'] for e in entity_list]}")
         
-        # Lemmas
         lemmas = ai.spacy_nlp.get_lemmas(test_text)
         print(f"\n🔤 Lemma'lar (ilk 10): {lemmas[:10]}")
         
-        # Noun chunks
         chunks = ai.spacy_nlp.get_noun_chunks(test_text)
         print(f"\n📦 İsim Öbekleri: {chunks}")
         
-        # Sentiment
         sentiment = ai.spacy_nlp.analyze_sentiment_pos(test_text)
         print(f"\n😊 Sentiment: {sentiment}")
         
@@ -2748,7 +2408,6 @@ def main():
     """)
     
     try:
-        # Mod seçimi
         print("\nMod Seçin:")
         print("1. İnteraktif Sohbet")
         print("2. Test Senaryoları")

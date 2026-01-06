@@ -14,25 +14,17 @@ from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from collections import defaultdict
-import wikipedia  # Wikipedia API
-wikipedia.set_lang("tr")  # Türkçe Wikipedia
+from web_search import WebSearch
+_web_searcher = WebSearch()  # Global instance
 
-# 🔇 DEBUG LOGLARINI KAPAT (Production için)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Topic Memory - Uzun Dönem Hafıza Sistemi (v2.0)
-# Kategori bazlı, semantik benzerlikle gruplandırma
 from topic_memory import TopicMemory
 
-# Conversation Context - LLM Tabanlı Bağlam Yönetimi (v1.0)
-# Konu derinleştiğinde bağlamı koruyan akıllı özet sistemi
 from conversation_context import ConversationContextManager
 
-# ============================================================
-# BÖLÜM 1: YARDIMCI FONKSİYONLAR VE ARAÇLAR
-# ============================================================
 
 def get_current_datetime() -> Dict[str, str]:
     """Türkiye saati ile şu anki tarih ve saati getir"""
@@ -55,7 +47,6 @@ def get_current_datetime() -> Dict[str, str]:
         gun = gun_isimleri[now.weekday()]
         saat = now.hour
 
-        # Zaman dilimi belirleme (basit)
         if 0 <= saat < 6:
             zaman_dilimi = "gece"
         elif 6 <= saat < 12:
@@ -65,7 +56,6 @@ def get_current_datetime() -> Dict[str, str]:
         else:
             zaman_dilimi = "akşam"
 
-        # Cuma kontrolü
         cuma_notu = " (Cuma)" if now.weekday() == 4 else ""
 
         return {
@@ -94,7 +84,6 @@ def calculate_math(expression: str) -> str:
     try:
         safe_expression = expression.strip()
 
-        # Türkçe operatörleri İngilizce'ye çevir
         safe_expression = safe_expression.replace("x", "*")
         safe_expression = safe_expression.replace("X", "*")
         safe_expression = safe_expression.replace("çarpı", "*")
@@ -103,7 +92,6 @@ def calculate_math(expression: str) -> str:
         safe_expression = safe_expression.replace("artı", "+")
         safe_expression = safe_expression.replace("eksi", "-")
 
-        # Sadece güvenli karakterlere izin ver
         allowed_chars = "0123456789+-*/(). "
         if not all(c in allowed_chars for c in safe_expression):
             return "❌ Güvenlik: Sadece sayılar ve matematiksel operatörler kullanılabilir."
@@ -135,75 +123,37 @@ def calculate_math(expression: str) -> str:
         return "❌ Hesaplama hatası: Geçersiz matematiksel ifade."
 
 
-async def wiki_ara(query: str) -> str:
+async def web_ara(query: str, context: str = "") -> str:
     """
-    Wikipedia'da arama yap ve özet getir.
-    Önce Türkçe Wikipedia'da arar, bulamazsa İngilizce'de dener.
+    Tavily API ile internet araması.
+
+    Args:
+        query: Arama sorgusu
+        context: Opsiyonel bağlam
     """
-
-    def _ara_dil(query: str, lang: str) -> tuple[bool, str]:
-        """Belirli bir dilde Wikipedia araması yap"""
-        wikipedia.set_lang(lang)
-
-        try:
-            search_results = wikipedia.search(query, results=3)
-
-            if not search_results:
-                return False, ""
-
-            try:
-                page = wikipedia.page(search_results[0], auto_suggest=False)
-                summary = wikipedia.summary(search_results[0], sentences=4, auto_suggest=False)
-
-                lang_flag = "🇹🇷" if lang == "tr" else "🇬🇧"
-                result = f"📚 {lang_flag} **{page.title}**\n\n{summary}"
-
-                # Alternatif sonuçları da göster (varsa)
-                if len(search_results) > 1:
-                    alternatives = ", ".join(search_results[1:3])
-                    result += f"\n\n🔍 İlgili: {alternatives}"
-
-                return True, result
-
-            except wikipedia.DisambiguationError as e:
-                # Birden fazla sonuç var - seçenekleri sun
-                options = e.options[:5]
-                return True, f"🤔 '{query}' için birden fazla sonuç var:\n• " + "\n• ".join(options) + "\n\nHangisini istediğini belirtir misin?"
-
-            except wikipedia.PageError:
-                # İlk sonuç bulunamadı, alternatif dene
-                if len(search_results) > 1:
-                    try:
-                        summary = wikipedia.summary(search_results[1], sentences=3, auto_suggest=False)
-                        lang_flag = "🇹🇷" if lang == "tr" else "🇬🇧"
-                        return True, f"📚 {lang_flag} {search_results[1]}:\n{summary}"
-                    except (wikipedia.PageError, wikipedia.WikipediaException) as e:
-                        print(f"Wikipedia alternatif arama hatası: {e}")
-                return False, ""
-
-        except Exception:
-            return False, ""
-
     try:
-        # 1. Önce Türkçe Wikipedia'da ara
-        found, result = _ara_dil(query, "tr")
-        if found:
-            wikipedia.set_lang("tr")  # Dili geri ayarla
+        search_query = query
+        if context:
+            search_query = f"{query} {context}"
+
+        print(f"\n🌐 Web araması: '{search_query}'")
+
+        result = _web_searcher.quick_answer(search_query)
+
+        if result and "Arama hatasi" not in result and "Sonuc bulunamadi" not in result:
+            print(f"   ✅ Sonuç bulundu")
             return result
 
-        # 2. Türkçe'de bulunamadı, İngilizce'de dene
-        print(f"   📖 Türkçe Wikipedia'da bulunamadı, İngilizce deneniyor...")
-        found, result = _ara_dil(query, "en")
-        wikipedia.set_lang("tr")  # Dili geri ayarla
-
-        if found:
-            return result
-
-        return f"❌ Wikipedia'da '{query}' bulunamadı (Türkçe ve İngilizce denendi)."
+        return f"❌ '{query}' için bilgi bulunamadı."
 
     except Exception as e:
-        wikipedia.set_lang("tr")  # Hata durumunda da dili geri ayarla
-        return f"❌ Wikipedia hatası: {str(e)}"
+        print(f"❌ Web arama hatası: {e}")
+        return f"❌ Arama hatası: {str(e)}"
+
+
+async def wiki_ara(query: str) -> str:
+    """Eski isim - web_ara'ya yönlendirir."""
+    return await web_ara(query)
 
 
 async def get_weather(city: str) -> str:
@@ -260,7 +210,6 @@ async def get_weather(city: str) -> str:
 
 async def get_weather_fallback(city: str) -> str:
     """Fallback: hava durumu - Web search kaldırıldı"""
-    # Web search (DuckDuckGo) kaldırıldı
     return f"❌ {city} için hava durumu servisi kullanılamıyor. Web arama devre dışı."
 
 
@@ -346,11 +295,6 @@ async def get_prayer_times(city: str, specific_prayer: str = None) -> str:
         return f"❌ Namaz vakitleri alınamadı: {str(e)}"
 
 
-# ============================================================
-# BÖLÜM 2: TOOL SYSTEM (personal_ai.py'dan import edilecek)
-# ============================================================
-# NOT: ToolSystem artık personal_ai.py'da tanımlı (tek kaynak)
-# Lazy import ile kullanılıyor (circular import önlemi)
 
 _ToolSystem = None
 
@@ -362,7 +306,6 @@ def get_tool_system_class():
             from personal_ai import ToolSystem
             _ToolSystem = ToolSystem
         except ImportError:
-            # Fallback: basit bir ToolSystem class
             class FallbackToolSystem:
                 TOOLS = {
                     "risale_ara": {"name": "risale_ara", "description": "Dini sorulara cevap", "parameters": "soru", "when": "Dini konularda", "examples": ["İman nedir?"]},
@@ -370,7 +313,7 @@ def get_tool_system_class():
                     "hesapla": {"name": "hesapla", "description": "Hesaplama", "parameters": "ifade", "when": "Matematik sorulduğunda", "examples": ["2+2"]},
                     "hava_durumu": {"name": "hava_durumu", "description": "Hava durumu", "parameters": "şehir", "when": "Hava sorulduğunda", "examples": ["İstanbul hava"]},
                     "namaz_vakti": {"name": "namaz_vakti", "description": "Namaz vakitleri", "parameters": "şehir", "when": "Namaz vakti sorulduğunda", "examples": ["Ankara namaz"]},
-                    "wiki_ara": {"name": "wiki_ara", "description": "Wikipedia'da ara (ünlü kişi, yer, olay)", "parameters": "arama terimi", "when": "Ünlü kişi/yer/olay sorulduğunda", "examples": ["Özdemir Erdoğan şarkıcı"]},
+                    "web_ara": {"name": "web_ara", "description": "İnternette bilgi veya haber ara", "parameters": "arama terimi", "when": "Bilmediğin konu, güncel haber, kişi, yer, olay sorulduğunda", "examples": ["Einstein kimdir", "son haberler", "Python nedir"]},
                     "yok": {"name": "yok", "description": "Direkt cevap", "parameters": "yok", "when": "Genel sohbet", "examples": ["Merhaba"]},
                 }
                 @staticmethod
@@ -396,7 +339,6 @@ def get_tool_system_class():
     return _ToolSystem
 
 
-# ToolSystem wrapper (geriye uyumluluk için)
 class ToolSystem:
     """
     ToolSystem wrapper - personal_ai.py'daki ToolSystem'e yönlendirir
@@ -421,73 +363,51 @@ class ToolSystem:
         return get_tool_system_class().parse_tool_decision(llm_response)
 
 
-# ============================================================
-# BÖLÜM 3: WEB SEARCH - KALDIRILDI
-# ============================================================
-# NOT: Web araması kaldırıldı (saçma bilgiler çekiyordu)
-# Artık sadece Wikipedia (wiki_ara) kullanılıyor
-# Din soruları için FAISS (risale_ara) kullanılıyor
 
 
-# ============================================================
-# BÖLÜM 4: MULTI-ROLE SYSTEM (ROLES personal_ai.py'dan alınıyor)
-# ============================================================
 
-# NOT: ROLES artık personal_ai.py/SystemConfig'de tanımlı (tek kaynak)
 _ROLES_CACHE = None
 
 def get_roles():
-    """ROLES'u personal_ai.py'dan al (circular import önlemi)"""
+    """ROLES'u personal_ai.py'dan al - artık tek basit rol"""
     global _ROLES_CACHE
     if _ROLES_CACHE is None:
         try:
             from personal_ai import SystemConfig
             _ROLES_CACHE = SystemConfig.ROLES
         except ImportError:
-            # Fallback: varsayılan roller
+            # Fallback: tek basit rol
             _ROLES_CACHE = {
-                "friend": {"keywords": ["selam", "merhaba", "nasılsın", "naber"], "tone": "professional_warm", "max_length": 1500},
-                "technical_helper": {"keywords": ["kod", "python", "hata", "bug", "error"], "tone": "professional_clear", "max_length": 2000},
-                "teacher": {"keywords": ["nedir", "ne demek", "açıkla", "öğret", "anlat"], "tone": "educational_clear", "max_length": 2500},
+                "default": {"keywords": [], "tone": "natural", "response_style": "adaptive"}
             }
     return _ROLES_CACHE
 
 
-# MultiRoleSystem artık personal_ai.py'dan import ediliyor (tek kaynak)
 _MultiRoleSystem = None
 
 def get_multi_role_system_class():
-    """MultiRoleSystem'i lazy import et (circular import önlemi)"""
+    """MultiRoleSystem'i lazy import et - artık sadeleştirilmiş"""
     global _MultiRoleSystem
     if _MultiRoleSystem is None:
         try:
             from personal_ai import MultiRoleSystem as _MRS
             _MultiRoleSystem = _MRS
         except ImportError:
-            # Fallback: basit MultiRoleSystem
             class FallbackMultiRoleSystem:
                 def __init__(self):
-                    self.enabled = True
+                    self.enabled = False  # Devre dışı
                 @property
                 def ROLES(self):
                     return get_roles()
                 def detect_role(self, user_input: str) -> str:
-                    user_lower = user_input.lower()
-                    code_markers = ["```", "def ", "class ", "import "]
-                    if any(m in user_input for m in code_markers):
-                        return "technical_helper"
-                    for role_name, role_config in self.ROLES.items():
-                        if any(kw in user_lower for kw in role_config.get("keywords", [])):
-                            return role_name
-                    return "friend"
+                    return "default"  # Her zaman default
             _MultiRoleSystem = FallbackMultiRoleSystem
     return _MultiRoleSystem
 
 
 class MultiRoleSystem:
     """
-    MultiRoleSystem wrapper - personal_ai.py'daki class'a yönlendirir
-    NOT: Asıl implementasyon personal_ai.py'da (tek kaynak)
+    Sadeleştirilmiş MultiRoleSystem - tek tutarlı kişilik
     """
 
     def __init__(self):
@@ -498,12 +418,9 @@ class MultiRoleSystem:
         return get_roles()
 
     def detect_role(self, user_input: str) -> str:
-        return self._impl.detect_role(user_input)
+        return "default"  # Artık her zaman default döner
 
 
-# ============================================================
-# BÖLÜM 5: FAISS KNOWLEDGE BASE (BASIT WRAPPER)
-# ============================================================
 
 class SimpleFAISSKB:
     """
@@ -533,14 +450,11 @@ class SimpleFAISSKB:
             return ""
 
 
-# ============================================================
-# BÖLÜM 6: DECISION LLM (Together.ai - Llama 70B)
-# ============================================================
 
 class DecisionLLM:
     """Together.ai API ile akıllı karar verme (Llama 70B)"""
 
-    def __init__(self, api_key: str = None, model: str = "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"):
+    def __init__(self, api_key: str = None, model: str = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"):
         self.api_key = api_key or os.getenv("TOGETHER_API_KEY")
         self.model = model
         self.base_url = "https://api.together.xyz/v1/completions"
@@ -548,7 +462,6 @@ class DecisionLLM:
         if not self.api_key:
             raise ValueError("❌ TOGETHER_API_KEY bulunamadı! .env dosyasını kontrol edin.")
 
-        # API bağlantısını test et
         if not self._try_connect():
             raise ConnectionError("❌ Together.ai API'sine bağlanılamadı!")
 
@@ -622,9 +535,6 @@ KONULAR:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         return topics[:max_topics]
 
 
-# ============================================================
-# BÖLÜM 7: ANA HAFIZA ASİSTANI (GENİŞLETİLMİŞ SEKRETER)
-# ============================================================
 
 class HafizaAsistani:
     """
@@ -648,28 +558,24 @@ class HafizaAsistani:
         model_adi: str = "BAAI/bge-m3",
         use_decision_llm: bool = True,
         together_api_key: str = None,
-        decision_model: str = "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+        decision_model: str = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     ):
         print("=" * 60)
         print("🧠 HafizaAsistani v3.0 - Genişletilmiş Sekreter")
         print("=" * 60)
 
-        # Together.ai API key
         self.together_api_key = together_api_key or os.getenv("TOGETHER_API_KEY")
         self.decision_model = decision_model
 
-        # Embedding modeli
         print("📦 Embedding modeli yükleniyor...")
         self.embedder = SentenceTransformer(model_adi)
         print(f"✅ Model '{model_adi}' yüklendi!")
 
-        # Temel ayarlar
         self.hafiza: List[Dict[str, Any]] = []
         self.saat_limiti = saat_limiti * 3600
         self.esik = esik
         self.max_mesaj = max_mesaj
 
-        # DecisionLLM (zorunlu)
         if not use_decision_llm:
             raise ValueError("❌ DecisionLLM zorunludur!")
 
@@ -680,26 +586,19 @@ class HafizaAsistani:
         except Exception as e:
             raise RuntimeError(f"DecisionLLM başlatılamadı: {e}")
 
-        # Tool System
         self.tool_system = ToolSystem()
         print("✅ Tool System aktif!")
 
-        # Multi-Role System
         self.multi_role = MultiRoleSystem()
         print("✅ Multi-Role System aktif!")
 
-        # FAISS KB (placeholder, inject edilecek)
         self.faiss_kb = SimpleFAISSKB()
         print("✅ FAISS KB wrapper hazır (inject edilecek)!")
 
-        # 🆕 KAPANAN KONULAR LİSTESİ (sohbet içinde kapanan konuları takip et)
-        # Aynı konuya geri dönmemek için kullanılır
         self.closed_topics: List[Dict[str, Any]] = []
         self.max_closed_topics = 20  # En fazla 20 kapanan konu tut
         print("✅ Closed Topics Tracker aktif!")
 
-        # 📚 TOPIC MEMORY - Uzun dönem hafıza sistemi (v2.0)
-        # Kategori bazlı, semantik benzerlikle gruplandırma
         self.topic_memory = TopicMemory(
             user_id="murat",  # Sabit kullanıcı
             base_dir="user_data",
@@ -709,13 +608,10 @@ class HafizaAsistani:
         )
         print("✅ Topic Memory aktif!")
 
-        # 🔄 TOPIC MEMORY COOLDOWN - Aynı kategori sürekli enjekte edilmesin
         self._injected_categories = {}  # {category_id: message_count_when_injected}
         self._message_counter = 0  # Toplam mesaj sayacı
         self._injection_cooldown = 5  # Kaç mesaj sonra tekrar enjekte edilebilir
 
-        # 🧠 CONVERSATION CONTEXT - LLM tabanlı akıllı bağlam yönetimi (v1.0)
-        # Konu derinleştiğinde bağlamı koruyan özet sistemi
         self.conversation_context = ConversationContextManager(
             user_id="murat",  # Sabit kullanıcı
             base_dir="user_data",
@@ -730,13 +626,12 @@ class HafizaAsistani:
         print(f"   • Benzerlik eşiği: {esik}")
         print(f"   • Max mesaj: {max_mesaj}")
         print("   • Tool System: ✅")
-        print("   • Wikipedia (wiki_ara): ✅")
+        print("   • Web Arama (web_ara): ✅")
         print("   • Multi-Role: ✅")
         print("   • DecisionLLM: ✅")
         print("   • Topic Memory (v2.0): ✅")
         print("=" * 60 + "\n")
 
-    # ---------- TEMEL HAFIZA FONKSİYONLARI ----------
 
     def mesaj_ekle(self, mesaj: str, rol: str = "user"):
         """Yeni mesajı vektörleştirip hafızaya ekler"""
@@ -759,7 +654,6 @@ class HafizaAsistani:
         self.mesaj_ekle(user_message, rol="user")
         self.mesaj_ekle(ai_response, rol="assistant")
 
-        # ConversationContext güncelle (LLM tabanlı özet sistemi)
         if self.conversation_context and chat_history:
             try:
                 result = self.conversation_context.process_message(
@@ -768,22 +662,18 @@ class HafizaAsistani:
                 if result.get("new_session_started"):
                     print("🔄 Yeni konu tespit edildi, session değiştirildi")
 
-                    # 🆕 TAMPON BÖLGE: 12'den eski mesajları özetle ve TopicMemory'ye kaydet
                     if len(self.hafiza) > 12:
                         tampon_bolge = self.hafiza[:-12]  # 12'den eski mesajlar
                         if tampon_bolge and self.topic_memory:
-                            # Tampon bölgeyi metin olarak hazırla
                             tampon_text = "\n".join([
                                 f"[{m['rol'].upper()}]: {m['mesaj']}"
                                 for m in tampon_bolge if m.get('mesaj')
                             ])
-                            # Özet olarak kaydet (conversation_context'ten al)
                             topic_summary = result.get('current_summary', '') or tampon_text[:200]
                             if topic_summary:
                                 print(f"💾 Tampon bölge TopicMemory'ye kaydediliyor ({len(tampon_bolge)} mesaj)")
                                 self.add_closed_topic(topic_summary, chat_history)
 
-                    # Son 4 mesaj kalsın (bağlam kopmasın) - geri kalanı sil
                     if len(self.hafiza) > 4:
                         self.hafiza = self.hafiza[-4:]
                         print("🧹 Hafıza temizlendi (son 4 mesaj kaldı - bağlam korundu)")
@@ -895,24 +785,19 @@ class HafizaAsistani:
             return ""
 
         try:
-            # Mesaj sayacını artır
             self._message_counter += 1
 
-            # Debug: Kategori sayısını göster
             cat_count = len(self.topic_memory.index.get("categories", {}))
             print(f"   🔇 TopicMemory kontrol: {cat_count} kategori mevcut")
 
-            # Hızlı kategori eşleşmesi (TopicMemory'nin get_context_for_query'si)
             context = self.topic_memory.get_context_for_query(query, max_sessions=2)
 
             if context:
-                # Context'ten kategori ID'sini çıkar (format: [kategori_adi])
                 import re
                 category_match = re.search(r'\[([^\]]+)\]', context)
                 if category_match:
                     category_id = category_match.group(1)
 
-                    # Cooldown kontrolü
                     if category_id in self._injected_categories:
                         last_injection = self._injected_categories[category_id]
                         messages_since = self._message_counter - last_injection
@@ -921,7 +806,6 @@ class HafizaAsistani:
                             print(f"   🔇 TopicMemory: '{category_id}' cooldown'da ({messages_since}/{self._injection_cooldown} mesaj)")
                             return ""  # Cooldown'daysa enjekte etme
 
-                    # Cooldown geçti veya ilk kez - enjekte et ve kaydet
                     self._injected_categories[category_id] = self._message_counter
                     print(f"   🔇 Silent long-term context bulundu ({len(context)} karakter) - cooldown başladı")
                     return context
@@ -948,7 +832,6 @@ class HafizaAsistani:
         """
         user_lower = user_input.lower()
 
-        # 1. Açık geçmiş referansları
         past_references = [
             "daha önce", "geçen sefer", "hatırlıyor musun",
             "konuşmuştuk", "sormuştum", "demiştin", "söylemiştin",
@@ -959,8 +842,6 @@ class HafizaAsistani:
             print(f"   📌 Geçmiş referansı tespit edildi")
             return True
 
-        # 2. Kategori eşleşme kontrolü (embedding ile hızlı kontrol)
-        # TopicMemory'de kategori varsa ve soru yeterince uzunsa
         if len(user_input) > 15 and self.topic_memory.index.get("categories"):
             return True
 
@@ -996,13 +877,11 @@ class HafizaAsistani:
         self.hafiza = []
         self.closed_topics = []
 
-        # ConversationContext'i de temizle
         if self.conversation_context:
             self.conversation_context.clear()
 
         print("✅ Hafıza, kapanan konular ve ConversationContext tamamen temizlendi")
 
-    # ---------- KAPANAN KONU YÖNETİMİ ----------
 
     def add_closed_topic(self, topic_summary: str, chat_history: List[Dict] = None):
         """
@@ -1017,7 +896,6 @@ class HafizaAsistani:
         if not topic_summary or len(topic_summary.strip()) < 2:
             return
 
-        # Son mesajlardan bağlam çıkar
         last_context = ""
         if chat_history and len(chat_history) >= 2:
             last_msgs = chat_history[-4:]
@@ -1034,14 +912,9 @@ class HafizaAsistani:
 
         self.closed_topics.append(closed_entry)
 
-        # Limit aşıldıysa eski konuları sil
         if len(self.closed_topics) > self.max_closed_topics:
             self.closed_topics = self.closed_topics[-self.max_closed_topics:]
 
-        # 📚 TOPIC MEMORY'YE KAYDET (kalite kontrolü + kategorizasyon otomatik)
-        # - Yetersiz mesaj varsa otomatik atlar
-        # - Benzer kategori varsa ona ekler (duplicate olmaz)
-        # - Aynı gün aynı kategoriye → günceller
         print(f"📕 Konu kapandı: '{topic_summary}'")
         print(f"   📊 Chat history uzunluğu: {len(chat_history) if chat_history else 0} mesaj")
 
@@ -1106,7 +979,6 @@ class HafizaAsistani:
         """
         user_lower = user_input.lower().strip()
 
-        # Tekrar açma sinyalleri
         reopen_signals = [
             "tekrar",
             "yine",
@@ -1122,25 +994,18 @@ class HafizaAsistani:
             "unuttum",
         ]
 
-        # Açık soru işareti + yeterli uzunluk = yeni soru
         has_question_mark = "?" in user_input
         is_long_enough = len(user_input) > 15
 
-        # Tekrar açma sinyali varsa
         if any(signal in user_lower for signal in reopen_signals):
             return True
 
-        # Uzun ve soru işaretli = muhtemelen yeni detaylı soru
         if has_question_mark and is_long_enough:
             return True
 
         return False
 
-    # ---------- TOOL FONKSİYONLARI ----------
 
-    # ⚠️ KALDIRILDI: _tool_secimi_yap artık kullanılmıyor
-    # _intelligent_decision() aynı işi yapıyor (tek LLM hem kaynak hem tool kararı veriyor)
-    # Eski kod yedekte: hafiza_asistani_YEDEK_20251220_v2.py
 
     async def _tool_calistir(
         self, tool_name: str, tool_param: str, user_input: str
@@ -1180,10 +1045,9 @@ class HafizaAsistani:
                 )
                 return result or None
 
-            if tool_name == "wiki_ara":
-                # Wikipedia'da ara - tool_param netleştirilmiş sorgu olmalı
+            if tool_name == "web_ara" or tool_name == "wiki_ara":
                 query = tool_param or user_input
-                result = await wiki_ara(query)
+                result = await web_ara(query)
                 return result
 
             return None
@@ -1191,11 +1055,15 @@ class HafizaAsistani:
             print(f"❌ Araç hatası ({tool_name}): {e}")
             return None
 
-    # ---------- BAĞLAM TOPLAMA FONKSİYONLARI ----------
 
     def _hafizada_ara(self, user_input: str, chat_history_length: int) -> str:
-        """Hafızada semantik arama (gerekiyorsa)"""
-        if chat_history_length < 1:
+        """Hafızada semantik arama (gerekiyorsa)
+
+        NOT: Telegram session timeout olsa bile HafizaAsistani'nın
+        kendi hafızası (self.hafiza) varsa arama yapılmalı!
+        """
+        # Hem Telegram history hem de kendi hafızamız boşsa atla
+        if chat_history_length < 1 and len(self.hafiza) < 1:
             return ""
         return self.search(user_input)
 
@@ -1210,7 +1078,7 @@ class HafizaAsistani:
                 "needs_faiss": bool,
                 "needs_semantic_memory": bool,
                 "needs_chat_history": bool,
-                "tool_name": "yok|hesapla|zaman_getir|hava_durumu|namaz_vakti|risale_ara|wiki_ara",
+                "tool_name": "yok|hesapla|zaman_getir|hava_durumu|namaz_vakti|risale_ara|web_ara",
                 "tool_param": str,
                 "response_style": "brief|detailed|conversational",
                 "is_farewell": bool,
@@ -1220,12 +1088,12 @@ class HafizaAsistani:
             }
         """
         try:
-            # Chat history'yi formatla - DecisionLLM bağlamı görmeli!
-            # Tüm geçmiş, kısıtlama yok (128K context)
             history_context = ""
+            history_parts = []
+
+            # 1. Telegram chat_history'den al (öncelikli)
             if chat_history:
                 recent = chat_history[-20:]  # Son 20 mesaj
-                history_parts = []
                 for m in recent:
                     is_user = m.get("role") == "user"
                     role = "KULLANICI" if is_user else "AI"
@@ -1233,10 +1101,22 @@ class HafizaAsistani:
                     if content:
                         history_parts.append(f"{role}: {content}")
 
+            # 2. Telegram history boşsa, HafizaAsistani'nın kendi hafızasından al
+            # (Session timeout durumunda kalıcı hafızayı kullan)
+            if not history_parts and self.hafiza:
+                recent_hafiza = self.hafiza[-20:]  # Son 20 mesaj
+                for m in recent_hafiza:
+                    rol = m.get("rol", "user")
+                    role = "KULLANICI" if rol == "user" else "AI"
+                    mesaj = m.get("mesaj", "")
+                    if mesaj:
+                        history_parts.append(f"{role}: {mesaj}")
                 if history_parts:
-                    history_context = "\n".join(history_parts)
+                    print("   📦 Telegram history boş, HafizaAsistani hafızası kullanılıyor")
 
-            # Karar promptu - OPTİMİZE EDİLMİŞ (~%40 daha kısa)
+            if history_parts:
+                history_context = "\n".join(history_parts)
+
             history_section = f"GEÇMİŞ:\n{history_context}\n" if history_context else ""
             decision_prompt = f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
@@ -1251,29 +1131,31 @@ Karar sistemi. ÖNCE <analiz> YAZ, SONRA JSON VER.
 </analiz>
 
 KURALLAR:
-• Selam/merhaba/veda → friend, tool_name="yok"
-• "evet/anladım/ilginç" gibi onaylar → acknowledger, kısa cevap
+• Selam/merhaba/veda/evet/tamam/anladım → friend, tool_name="yok"
 • Dini (Allah/iman/namaz/Kuran) → religious_teacher, risale_ara
 • Matematik → hesapla | Saat → zaman_getir | Hava → hava_durumu
-• Teknik/kod → technical_helper
 • Belirsiz → needs_clarification=true
-• Kişi tanımıyorsan → wiki_ara
-
-ROLLER: friend|teacher|technical_helper|acknowledger|religious_teacher
+• Bilmediğin konu, güncel haber, kişi/yer/olay → web_ara
+• "araştır/güncel bilgi/son haberler/internetten bak" → web_ara (MUTLAKA!)
+• Kullanıcı "eski bilgi" derse → web_ara ile TEKRAR ara
+• ⚠️ GÜNCEL KONU KURALI: Haber/güncel olay konusunda HER SORU için web_ara kullan. "Zaten aradık" deme, her seferinde güncel bilgi getir!
 
 JSON:
-{{"question_type": "greeting|farewell|followup|religious|technical|math|weather|general|ambiguous",
-"role": "...", "needs_faiss": bool, "needs_semantic_memory": bool, "needs_chat_history": bool,
-"needs_clarification": bool, "tool_name": "yok|hesapla|zaman_getir|hava_durumu|namaz_vakti|risale_ara|wiki_ara",
+{{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous",
+"needs_faiss": bool, "needs_semantic_memory": bool, "needs_chat_history": bool,
+"needs_clarification": bool, "tool_name": "yok|hesapla|zaman_getir|hava_durumu|namaz_vakti|risale_ara|web_ara",
 "tool_param": "", "is_farewell": bool, "topic_closed": bool, "confidence": "low|medium|high", "reasoning": ""}}
 
 ÖRNEKLER:
-1) "Selam" → {{"question_type":"greeting","role":"friend","tool_name":"yok","confidence":"high"}}
-2) "Allah'ın kudreti" → {{"question_type":"religious","role":"religious_teacher","tool_name":"risale_ara","needs_faiss":true}}
-3) "evet ilginçmiş" → {{"question_type":"followup","role":"acknowledger","tool_name":"yok"}}
-4) "Python nedir" → {{"question_type":"technical","role":"technical_helper","tool_name":"yok"}}
-5) "Dini sorularım var sana" → {{"question_type":"intent_to_ask","role":"friend","tool_name":"yok","response_style":"brief"}}
-6) "Bir şey soracaktım" → {{"question_type":"intent_to_ask","role":"friend","tool_name":"yok"}}
+1) "Selam" → {{"question_type":"greeting","tool_name":"yok","confidence":"high"}}
+2) "Allah'ın kudreti" → {{"question_type":"religious","tool_name":"risale_ara","needs_faiss":true}}
+3) "evet ilginçmiş" → {{"question_type":"followup","tool_name":"yok"}}
+4) "Python nedir" → {{"question_type":"general","tool_name":"web_ara","tool_param":"Python programlama dili"}}
+5) "Dini sorularım var sana" → {{"question_type":"intent_to_ask","tool_name":"yok","response_style":"brief"}}
+6) "Bir şey soracaktım" → {{"question_type":"intent_to_ask","tool_name":"yok"}}
+7) "iyi araştır/güncel bilgi istiyorum" → {{"question_type":"general","tool_name":"web_ara","tool_param":"[önceki konuyla ilgili arama]"}}
+8) "bu eski bilgi, son haberlere bak" → {{"question_type":"general","tool_name":"web_ara","tool_param":"[konu] son haberler 2026"}}
+9) Takip sorusu (güncel konu): "anlamadım/peki sonra ne oldu/şimdi nerede" → {{"tool_name":"web_ara","tool_param":"[konu] güncel durum"}} (GÜNCEL KONUDA HER ZAMAN web_ara!)
 
 ÖNCE <analiz>, SONRA JSON:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
@@ -1303,7 +1185,6 @@ JSON:
 
             llm_response = response.json()["choices"][0]["text"].strip()
 
-            # <analiz> bloğunu bul ve logla
             analiz_match = re.search(r'<analiz>(.*?)</analiz>', llm_response, re.DOTALL)
             if analiz_match:
                 analiz_text = analiz_match.group(1).strip()
@@ -1313,20 +1194,16 @@ JSON:
                     if line:
                         print(f"   {line}")
 
-            # JSON extract et - markdown code block'ları da destekle
-            # Önce ```json ... ``` formatını dene
             json_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', llm_response, re.DOTALL)
             if json_block_match:
                 json_str = json_block_match.group(1)
             else:
-                # Düz JSON dene
                 json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', llm_response, re.DOTALL)
                 json_str = json_match.group() if json_match else None
 
             if json_str:
                 decision = json.loads(json_str)
 
-                # Eksik alanlar için default değerler
                 defaults = {
                     "question_type": "general",
                     "needs_faiss": False,
@@ -1343,18 +1220,14 @@ JSON:
                     "reasoning": ""
                 }
 
-                # Eksik alanları doldur
                 for key, default_val in defaults.items():
                     if key not in decision:
                         decision[key] = default_val
 
-                # En az question_type veya tool_name olmalı
                 if decision.get("question_type") or decision.get("tool_name"):
-                    # farewell durumunda is_farewell'i düzelt
                     if decision.get('question_type') == 'farewell':
                         decision["is_farewell"] = True
 
-                    # topic_closed hesapla - farewell/is_farewell durumunda ZORLA true yap
                     should_close = (
                         decision.get('question_type') in ['farewell', 'topic_closed'] or
                         decision.get('is_farewell', False)
@@ -1362,16 +1235,12 @@ JSON:
                     if should_close:
                         decision["topic_closed"] = True
 
-                    # ℹ️ closed_topic_summary çıkarma hazirla_ve_prompt_olustur()'da yapılıyor
-                    # (TEKRARı önlemek için buradan kaldırıldı)
 
-                    # ⛔ DİNİ SORULARDA FAISS KULLAN + RELIGIOUS_TEACHER ROLÜ
                     if decision.get('question_type') == 'religious':
                         decision['tool_name'] = 'risale_ara'
                         decision['needs_faiss'] = True  # FAISS her zaman açık
-                        decision['role'] = 'religious_teacher'  # 🆕 Özel dini rol - Risale'den anlat
+                        decision['is_religious'] = True  # Dini konu flag'i
 
-                        # 🆕 TAKİP SORUSU TESPİTİ (Dini sorularda)
                         is_detail_followup, followup_confidence, matched_concepts = self._detect_detail_followup(
                             user_input, chat_history
                         )
@@ -1383,13 +1252,10 @@ JSON:
                         else:
                             decision['is_detail_followup'] = False
 
-                    # ❓ BELİRSİZ SORULARDA ÖNCE NETLEŞTİR
                     if decision.get('question_type') == 'ambiguous' or decision.get('needs_clarification'):
                         decision['tool_name'] = 'yok'
                         decision['needs_clarification'] = True
 
-                    # 🔑 KISA MESAJ KURALI: 4 kelime veya daha az mesajlarda chat_history zorunlu
-                    # Çünkü kısa mesajlar genelde önceki konuya referans içerir ("Bilemedim", "Evet", "Neden?" gibi)
                     word_count = len(user_input.split())
                     if word_count <= 4 and not decision.get('needs_chat_history'):
                         decision['needs_chat_history'] = True
@@ -1418,7 +1284,6 @@ JSON:
 
                     return decision
 
-            # Parse başarısız - debug için ham yanıtı göster
             print("⚠️ JSON parse hatası, fallback karar")
             print(f"   📝 Ham LLM yanıtı (son 500 karakter):")
             print(f"   {llm_response[-500:] if len(llm_response) > 500 else llm_response}")
@@ -1463,10 +1328,8 @@ JSON:
         if not chat_history:
             return ""
 
-        # ✅ SADECE SON 12 MESAJ - Filtreleme YOK, basit ve net
         son_12_mesaj = chat_history[-12:] if len(chat_history) >= 12 else chat_history
 
-        # Özet oluştur
         if len(son_12_mesaj) == 0:
             return ""
 
@@ -1480,74 +1343,38 @@ JSON:
 
         return "\n".join(tmp)
 
-    # ---------- PROMPT OLUŞTURMA ----------
 
-    # 🎭 ROL SYSTEM PROMPT'LARI - Her rol için özel talimatlar
-    ROLE_SYSTEM_PROMPTS = {
-        "friend": """Sen kullanıcının (Murat) olgun ve sıcakkanlı bir arkadaşısın. Şu an onunla konuşuyorsun.
+    # TEK BİRLEŞİK PROMPT - Full Friend Modu
+    SYSTEM_PROMPT = """Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın. Şu an onunla konuşuyorsun.
+
 - Doğal uzunlukta cevap ver, gereksiz uzatma
 - Samimi ama abartısız ol
 - Cevabını ver, sonra doğal şekilde bitir
 - Kullanıcı bir şey sorana kadar bekle
-- Emoji kullanabilirsin (abartmadan)""",
+- Emoji kullanabilirsin (abartmadan)
+- Kısa tepkilere (evet, tamam, anladım) kısa cevap ver
+- Sadece gerektiğinde soru sor. Her cevabın sonuna soru ekleme.
+- Kısa/eksik görünen mesajları bağlama göre yorumla. "umarım inş", "aynen öyle", "bende" gibi kısa cevaplar genelde önceki mesaja yanıttır, yarım kalmış cümle değil.
 
-        "technical_helper": """Sen Murat'ın teknik yardımcısısın. Şu an ona teknik konuda yardım ediyorsun.
-- Net ve açık açıklamalar yap
-- Kod örnekleri ver (gerekirse)
-- Teknik terimleri açıkla
-- Cevabını ver, sonra kullanıcının yanıtını bekle
-- Kod henüz gelmediyse kısa cevap ver, "At bakalım" de""",
+⚠️ ÖNEMLİ: Aşağıda [💬 Önceki Konuşma] bölümü varsa, bu DEVAM EDEN bir sohbettir - tekrar "Merhaba" veya selamlama YAPMA, direkt cevaba geç!
 
-        "teacher": """Sen Murat'ın bilgili bir arkadaşısın. Şu an ona bir şey öğretiyorsun.
-- Samimi ama bilgilendirici ol
-- Kısa tut: 3-4 paragraf yeterli
-- Bilgiyi sohbet havasında paylaş
-- Anlattıktan sonra doğal şekilde bitir""",
+🔴 DİNİ KONULARDA (verilen metin varsa):
+- Cevabı VERİLEN METİNDEN oluştur
+- "Risale'de", "metinde" DEME - gizli kaynak olarak kullan
+- Temsilleri KENDİ sözünmüş gibi anlat
+- Vaaz değil sohbet tonu"""
 
-
-
-        "acknowledger": """Murat onay/tepki verdi. Şu an ona kısa ve doğal cevap veriyorsun.
-- 1-2 cümle yeterli
-- Kısa ve samimi cevap ver
-- Doğal şekilde bitir
-- Emoji kullanabilirsin""",
-
-        "religious_teacher": """Sen dini konularda saygılı, derin ve mütevazi bir arkadaşsın.
-
-⚠️ KRİTİK KURALLAR:
-1. Cevabını %100 VERİLEN METİNDEN oluştur - kendi bilginle DEĞİL!
-2. GİZLİ KAYNAK: Metni gizli kaynak olarak kullan, "Risale'de", "metinde", "kaynakta" DEME
-3. TEMSİLLERİ SIFIRDAN KUR:
-   → "Bunu şöyle düşünebiliriz: Bir ayna hayal et..." diye KENDİ örneğinmiş gibi anlat
-   → "Metindeki ayna", "o örnek", "hatırlarsın" KESİNLİKLE YASAK
-4. Kavramları AÇIKLAYARAK kullan (melekûtiyet ne demek söyle)
-5. Bilmiyorsan "Bu konuda net bir şey söyleyemem" de
-6. 3-4 paragraf maksimum
-
-🚫 TON YASAKLARI:
-- Her cevaba "Sevgili kardeşim" ile BAŞLAMA (bazen olabilir, sürekli değil)
-- "Unutma ki" kalıbını sık KULLANMA
-- Vaaz tonundan kaçın, sohbet et
-
-🔴 TEKRAR YASAĞI:
-- Önceki cevabında kullandığın TEMSİLLERİ YENİDEN KULLANMA
-- Aynı cümle yapılarını TEKRAR ETME
-- Her yeni cevap YENİ bilgi içermeli
-
-❌ YAPMA:
-- Kaynak belirtme (kullanıcı sormadıkça)
-- "O bildiğin örnek", "hatırlarsın" gibi ifadeler KULLANMA
-- Kendi genel İslami bilginle cevap verme
-- Metinde OLMAYAN bilgi EKLEME"""
+    # Geriye uyumluluk için (eski kod hala role parametresi kullanıyorsa)
+    ROLE_SYSTEM_PROMPTS = {
+        "friend": SYSTEM_PROMPT,
+        "religious_teacher": SYSTEM_PROMPT
     }
 
-    # 🔧 YENİ: Kavram Takip Sistemi (Çözüm 4)
     def _extract_used_concepts(self, previous_response: str) -> List[str]:
         """Önceki cevapta kullanılan temsil ve kavramları çıkar"""
         if not previous_response:
             return []
 
-        # Risale-i Nur'da sık kullanılan temsiller
         temsiller = [
             "güneş", "ayna", "damla", "deniz", "zerre", "şems",
             "ışık", "nur", "feyz", "tecelli", "yansıma", "akis",
@@ -1555,7 +1382,6 @@ JSON:
             "sultan", "padişah", "ordu", "asker", "fabrika", "makine"
         ]
 
-        # Risale-i Nur'da sık kullanılan kavramlar
         kavramlar = [
             "şeffafiyet", "mukabele", "müvazene", "intizam",
             "melekûtiyet", "mülk", "taalluk", "vahdet", "kesret",
@@ -1572,7 +1398,6 @@ JSON:
 
         return used
 
-    # 🆕 TAKİP SORUSU TESPİT SİSTEMİ (İki Katmanlı)
     def _detect_detail_followup(self, user_input: str, chat_history: List[Dict[str, Any]]) -> Tuple[bool, float, List[str]]:
         """
         İki katmanlı takip sorusu tespiti
@@ -1591,7 +1416,6 @@ JSON:
 
         user_lower = user_input.lower()
 
-        # Son AI cevabını bul
         last_ai_response = ""
         for msg in reversed(chat_history):
             if msg.get('role') == 'assistant':
@@ -1601,12 +1425,10 @@ JSON:
         if not last_ai_response:
             return False, 0.0, []
 
-        # KATMAN 1: Kavram eşleşmesi
         used_concepts = self._extract_used_concepts(last_ai_response)
         matched_concepts = []
 
         for concept in used_concepts:
-            # Türkçe karakter uyumu (esbab/esbap gibi)
             concept_variants = [concept]
             if 'b' in concept:
                 concept_variants.append(concept.replace('b', 'p'))
@@ -1618,7 +1440,6 @@ JSON:
                     matched_concepts.append(concept)
                     break
 
-        # KATMAN 2: Soru kalıpları
         followup_patterns = [
             "bu ne demek", "nasıl oluyor", "neden böyle",
             "örnek verir misin", "örnek ver", "anlamadım",
@@ -1629,32 +1450,26 @@ JSON:
         ]
         pattern_match = any(p in user_lower for p in followup_patterns)
 
-        # KARAR MANTIĞI
-        # Öncelik: Kavram eşleşmesi > Soru kalıbı
 
         if matched_concepts and pattern_match:
-            # En güçlü sinyal: Hem kavram hem kalıp eşleşti
             confidence = 0.95
             is_followup = True
             print(f"   🎯 TAKİP TESPİT: Kavram + Kalıp eşleşti (güven: %{int(confidence*100)})")
             print(f"      Eşleşen kavramlar: {matched_concepts}")
 
         elif len(matched_concepts) >= 2:
-            # Güçlü sinyal: 2+ kavram eşleşti
             confidence = 0.85
             is_followup = True
             print(f"   🎯 TAKİP TESPİT: 2+ kavram eşleşti (güven: %{int(confidence*100)})")
             print(f"      Eşleşen kavramlar: {matched_concepts}")
 
         elif matched_concepts:
-            # Orta sinyal: 1 kavram eşleşti
             confidence = 0.70
             is_followup = True
             print(f"   🎯 TAKİP TESPİT: 1 kavram eşleşti (güven: %{int(confidence*100)})")
             print(f"      Eşleşen kavram: {matched_concepts}")
 
         elif pattern_match and len(chat_history) >= 2:
-            # Zayıf sinyal: Sadece soru kalıbı (konuşma devam ediyorsa)
             confidence = 0.55
             is_followup = True
             print(f"   🎯 TAKİP TESPİT: Soru kalıbı (güven: %{int(confidence*100)})")
@@ -1676,7 +1491,6 @@ JSON:
 
 Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya FARKLI açıdan anlat.
 """
-        # Prompt'un sonuna ekle (❌ YAPMA bölümünden önce)
         if "❌ YAPMA:" in role_prompt:
             return role_prompt.replace("❌ YAPMA:", f"{exclusion_text}\n❌ YAPMA:")
         else:
@@ -1696,21 +1510,19 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         llm_reasoning: str = "",  # 🧠 DecisionLLM'in ön araştırması
         is_topic_closed: bool = False,  # 🆕 Konu kapandı mı? (kısa cevap ver)
         is_detail_followup: bool = False,  # 🆕 Takip sorusu mu? (FAISS arka plan olarak)
-        tool_name: str = "yok",  # 🆕 Kullanılan araç (wiki_ara için özel mod)
+        tool_name: str = "yok",  # 🆕 Kullanılan araç (web_ara için özel mod)
     ) -> str:
         """Final prompt'u oluştur (rol'e göre)"""
 
-        # ⏰ ZAMAN BİLGİSİ AL (arka plan bilgisi - gerektiğinde kullan)
         zaman = get_current_datetime()
         zaman_satiri = f"[⏰ ZAMAN BİLİNCİ]: {zaman['full']} ({zaman['zaman_dilimi']})"
 
-        # 🎭 ROL SYSTEM PROMPT'U AL
-        role_prompt = self.ROLE_SYSTEM_PROMPTS.get(role, self.ROLE_SYSTEM_PROMPTS["friend"])
+        # Tek birleşik prompt kullan
+        role_prompt = self.SYSTEM_PROMPT
 
-        # 🔧 DÜZELTME (Çözüm 4): Dini sorularda önceki cevapta kullanılan kavramları yasak listesine ekle
-        # ⚠️ TAKİP MODUNDA YASAĞI ATLA - kullanıcı o kavramı soruyor, yasaklarsak açıklayamayız!
-        if role == "religious_teacher" and chat_history and not is_detail_followup:
-            # chat_history string'inden önceki AI cevaplarını çıkar
+        # Dini konularda tekrar yasağı kontrolü
+        is_religious = role in ["religious_teacher", "religious"] or "risale_ara" in str(tool_name)
+        if is_religious and chat_history and not is_detail_followup:
             used_concepts = self._extract_used_concepts(chat_history)
             if used_concepts:
                 role_prompt = self._add_exclusion_to_prompt(role_prompt, used_concepts)
@@ -1720,43 +1532,30 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         combined_sources = []
 
-        # 🧠 llm_reasoning KALDIRILDI - karar açıklaması, bilgi değil
-        # Sadece debug loglarında görünsün yeterli
 
-        # 🆕 Kapanmış konu uyarısı ekle (varsa)
         if closed_topics_warning:
             combined_sources.append(f"[⚠️ KAPANMIŞ KONULAR - TEKRAR AÇMA!]:\n{closed_topics_warning}")
 
-        # 🔧 DÜZELTME: tool_result ÖNCE gelmeli (primacy bias - LLM ilk bilgiye ağırlık verir)
-        # 🆕 HER ARAÇ İÇİN UYGUN ETİKET
         if tool_result:
-            if tool_name == "wiki_ara":
-                # 🌐 WIKI MODU: LLM önce kendi bilgisiyle cevaplar, Wiki sadece doğrulama/tamamlama için
-                combined_sources.append(f"[🌐 WIKIPEDIA DOĞRULAMA - ÖNCE KENDİ BİLGİNLE CEVAPLA!]:\n{tool_result}")
+            if tool_name == "web_ara" or tool_name == "wiki_ara":
+                combined_sources.append(f"[🌐 İNTERNET ARAŞTIRMASI]:\n{tool_result}\n\n⚠️ Bu bilgi soruyla alakalı mı? Alakasız veya yanlış ise HİÇ KULLANMA, kendi bilginle cevap ver.")
             elif tool_name == "risale_ara":
-                # 📚 RİSALE MODU
-                if is_detail_followup and role == "religious_teacher":
-                    # TAKİP MODU: FAISS sonuçları arka plan bilgisi olarak
+                if is_detail_followup:
                     combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - Doğrudan verme, kendi yorumunla açıkla!]:\n{tool_result}")
                 else:
-                    # İLK SORU MODU: FAISS sonuçları direkt kullanılacak
                     combined_sources.append(f"[📚 RİSALE-İ NUR'DAN - BU BİLGİYİ KULLAN!]:\n{tool_result}")
             else:
-                # 🔧 DİĞER ARAÇLAR (hava_durumu, hesapla, zaman_getir, namaz_vakti)
                 combined_sources.append(f"[🔧 ARAÇ SONUCU]:\n{tool_result}")
 
-        # Chat history SONRA (sadece bağlam için, tekrar önleme)
         if chat_history:
-            combined_sources.append(f"[💬 Önceki Konuşma (sadece bağlam için)]:\n{chat_history}")
+            combined_sources.append(f"[💬 Önceki Konuşma (DEVAM EDEN SOHBET - tekrar selamlama YAPMA!)]:\n{chat_history}")
 
         if semantic_context:
             combined_sources.append(f"[HAFIZA]:\n{semantic_context}")
 
-        # ⚠️ FAISS sadece tool_result YOKSA ekle (çift gönderim önleme)
         if faiss_context and not tool_result:
             combined_sources.append(f"[BİLGİ TABANI]:\n{faiss_context}")
 
-        # 🔇 SILENT LONG-TERM CONTEXT (sessiz arka plan bilgisi)
         if silent_long_term_context:
             combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:\n{silent_long_term_context}")
 
@@ -1778,55 +1577,50 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 4. ✅ Rolüne uygun davran
 
 {sep}
-📩 YENİ MESAJ (sohbeti devam ettir):
+📩 YENİ MESAJ:
 {sep}
-{user_input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+{user_input}
+
+🧠 CEVAPLAMADAN ÖNCE KENDİNE SOR:
+• Kullanıcı gerçekten ne soruyor?
+• Bağlamdaki bilgiyi doğru anladım mı?
+• Doğru ve tutarlı cevap ne olmalı?
+• Emin değilsem → tekrar düşün, acele etme
+• Emin olunca → rolüne uygun, samimi cevap ver<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
 
         combined_str = "\n\n".join(combined_sources)
 
-        role_config = self.multi_role.ROLES.get(
-            role, self.multi_role.ROLES["friend"]
-        )
-        max_length = role_config.get("max_length", 2000)
+        # Tek tutarlı yapılandırma
+        max_length = 2000  # Sabit maksimum uzunluk
 
-        # 📋 DİNAMİK KURALLAR (sadece gerektiğinde eklenir)
         dynamic_rules = []
 
-        # Kapanmış konu kuralı
         if closed_topics_warning:
             dynamic_rules.append(f"⚠️ KAPANMIŞ KONU: \"{closed_topics_warning}\" konusu kapandı, tekrar AÇMA!")
 
-        # Silent context kuralı
         if silent_long_term_context:
             dynamic_rules.append("🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma")
 
-        # Tool result kuralı - Wiki için özel mod
         if tool_result:
-            if tool_name == "wiki_ara":
-                # 🌐 WIKI: LLM önce kendi bilgisiyle cevaplar, eksik/yanlış varsa Wiki'den tamamlar
-                dynamic_rules.append("🌐 ÖNCE KENDİ BİLGİNLE CEVAPLA! Wikipedia sadece doğrulama ve eksik bilgi tamamlama için. Kopyala-yapıştır YAPMA!")
+            if tool_name == "web_ara" or tool_name == "wiki_ara":
+                dynamic_rules.append("🌐 İnternet bilgisi geldi - alakalıysa kullan, alakasız veya yanlış ise HİÇ KULLANMA!")
             else:
                 dynamic_rules.append("🔍 ARAÇ SONUCU verildi - bu bilgiyi MUTLAKA kullan, kendi tahminini yapma!")
 
-        # Netleştirme kuralı
         if needs_clarification:
             dynamic_rules.append("❓ BELİRSİZ SORU - önce netleştirici soru sor, tahmin etme!")
 
-        # Konu kapandı kuralı
         if is_topic_closed:
             dynamic_rules.append("📕 KONU KAPANDI - sadece 1-2 cümle ile kapat")
 
-        # Dinamik kuralları birleştir
         dynamic_rules_str = ""
         if dynamic_rules:
             dynamic_rules_str = "\n" + "\n".join([f"• {r}" for r in dynamic_rules])
 
-        # Bağlam başlığını tool_result ve takip moduna göre ayarla
-        if tool_name == "wiki_ara" and tool_result:
-            # 🌐 WIKI MODU: Doğrulama/tamamlama için
-            context_header = "Bağlam (SADECE DOĞRULAMA - Önce kendi bilginle cevapla!):"
+        if (tool_name == "web_ara" or tool_name == "wiki_ara") and tool_result:
+            context_header = "Bağlam (İNTERNET BİLGİSİ - alakalıysa kullan, değilse kullanma!):"
         elif is_detail_followup and tool_result:
             context_header = "Bağlam (Arka plan - kendi yorumunla açıkla):"
         elif tool_result:
@@ -1834,10 +1628,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         else:
             context_header = "Bağlam (Kullan, ama sadece GERÇEKTEN alakalıysa):"
 
-        # 🔑 ROL BAZLI KURALLAR
-        if role == "religious_teacher":
+        # Dini konularda mı belirleme
+        is_religious_topic = is_religious or tool_name == "risale_ara"
+
+        if is_religious_topic:
             if is_detail_followup:
-                # 🆕 TAKİP SORUSU MODU: Kendi yorumla açıkla
                 rules_text = """KURALLAR (TAKİP SORUSU - AÇIKLAMA MODU):
 1. 🔇 ARKA PLAN bilgisini DOĞRUDAN VERME, referans olarak kullan
 2. ✅ KENDİ YORUMUNLA ve ÖRNEKLERLE açıkla
@@ -1847,14 +1642,12 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 6. ❌ Metni kopyala-yapıştır YAPMA, sindirerek anlat
 7. 🎭 Bir arkadaşına anlatır gibi açıkla"""
             else:
-                # İLK SORU MODU: Metne sadık kal
                 rules_text = """KURALLAR:
 1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
 2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
 3. ✅ VERİLEN METİNDEN anlat - metindeki kavramları MUTLAKA kullan
 4. ✅ Samimi Türkçe, SEN hitabı
-5. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
-6. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy"""
+5. 🔄 Kendini tekrar etme, sohbeti ilerlet"""
         else:
             rules_text = """KURALLAR:
 1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
@@ -1862,18 +1655,14 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 3. ❌ KAYNAK BELİRTME YASAK: "Kaynaklara göre" gibi ifadeler KULLANMA
 4. ✅ Kendi bilgin gibi özgüvenle sun
 5. ✅ Samimi Türkçe, SEN hitabı
-6. 🔄 Cevabının arkasında dur, somutlaştır
-7. 🔁 TEKRAR YASAK: Önceki cevapları tekrarlama
-8. 🎭 ROLÜNE UYGUN DAVRAN: Yukarıdaki rol talimatlarına uy"""
+6. 🔄 Aynı şeyleri döngüye sokma, her cevap taze olsun"""
 
-        # 🔑 SEPARATOR
         sep = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         prompt = f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
 {zaman_satiri}
 
-[🎭 ROL]: {role.upper()}
 {role_prompt}
 
 {sep}
@@ -1887,15 +1676,21 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 {rules_text}{dynamic_rules_str}
 
 {sep}
-📩 YENİ MESAJ (sohbeti devam ettir):
+📩 YENİ MESAJ:
 {sep}
-{user_input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+{user_input}
+
+🧠 CEVAPLAMADAN ÖNCE KENDİNE SOR:
+• Kullanıcı gerçekten ne soruyor?
+• Bağlamdaki bilgiyi doğru anladım mı?
+• Doğru ve tutarlı cevap ne olmalı?
+• Emin değilsem → tekrar düşün, acele etme
+• Emin olunca → rolüne uygun, samimi cevap ver<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
 
         return prompt
 
-    # ---------- ANA SEKRETER FONKSİYONU ----------
 
     async def hazirla_ve_prompt_olustur(
         self, user_input: str, chat_history: List[Dict[str, Any]]
@@ -1914,23 +1709,18 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         print("=" * 60)
         print(f"📝 Kullanıcı: {user_input}")
 
-        # 0. 🔍 KAPANMIŞ KONU KONTROLÜ (yeni soruda aynı konuya dönmemek için)
         is_closed, closed_summary = self.is_topic_closed(user_input)
         if is_closed:
             print(f"⚠️ UYARI: Bu soru kapanmış bir konuya benziyor: '{closed_summary}'")
             print("   AI'a bu konuyu tekrar açmaması söylenecek.")
 
-        # 1. 🧠 LLM'E KARAR VERDİR (HEM KAYNAK HEM TOOL!)
         print("\n🧠 1. LLM tek karar veriyor (hem kaynak hem tool)...")
         decision = self._intelligent_decision(user_input, chat_history)
 
-        # 1.5 🆕 KONU KAPANDI MI? KAYDET!
         if decision.get('topic_closed', False):
             topic_summary = decision.get('closed_topic_summary', '')
 
-            # Özet yoksa farklı kaynaklardan çıkarmayı dene
             if not topic_summary:
-                # 1. Son AI mesajından konu çıkar
                 if chat_history:
                     for msg in reversed(chat_history):
                         if msg.get('role') == 'assistant':
@@ -1939,41 +1729,33 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                                 topic_summary = content
                                 break
 
-                # 2. Hala yoksa - son user sorusundan çıkar (teşekkür hariç)
                 if not topic_summary and chat_history:
                     for msg in reversed(chat_history):
                         if msg.get('role') == 'user':
                             content = (msg.get('content') or '').strip()
-                            # "teşekkürler", "sağol" gibi kapanış mesajlarını atla
                             if content and len(content) > 10 and not any(
                                 w in content.lower() for w in ['teşekkür', 'sağol', 'eyvallah', 'görüşürüz', 'bye', 'hoşça']
                             ):
                                 topic_summary = content[:100]
                                 break
 
-                # 3. Hala yoksa LLM reasoning'den çıkar
                 if not topic_summary and decision.get('reasoning'):
                     topic_summary = decision['reasoning'][:100]
 
-            # Özet varsa kaydet
             if topic_summary:
                 print(f"💾 Konu kaydediliyor: '{topic_summary[:50]}...'")
                 self.add_closed_topic(topic_summary, chat_history)
             else:
                 print("⚠️ topic_closed=true ama özet çıkarılamadı, kayıt atlandı")
 
-        # 2. LLM'in seçtiği tool'u al
         tool_name = decision.get('tool_name', 'yok')
         tool_param = decision.get('tool_param', '')
 
-        # 3. Araç çalıştır (LLM'in kararına göre)
         print(f"\n🛠️ 2. Araç çalıştırılıyor (LLM kararı: {tool_name})...")
         tool_result = await self._tool_calistir(tool_name, tool_param, user_input)
 
-        # 4. Bağlam toplama (LLM'in KARARLARINI KULLAN!)
         print("\n📚 3. Bağlam toplanıyor (LLM kararına göre)...")
 
-        # Semantic Memory (LLM karar verdi)
         if decision['needs_semantic_memory']:
             semantic_context = self._hafizada_ara(user_input, len(chat_history))
             print(f"   • Semantic Hafıza: {'✅ bulundu' if semantic_context else '❌ bulunamadı'} (LLM kararı)")
@@ -1981,8 +1763,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             semantic_context = ""
             print("   • Semantic Hafıza: ⏩ atlandı (LLM: gereksiz)")
 
-        # FAISS KB (LLM karar verdi)
-        # ⚠️ Eğer risale_ara tool'u zaten çalıştıysa, FAISS'i tekrar çağırma!
         if decision['needs_faiss'] and tool_name != "risale_ara":
             faiss_context = self._faiss_ara(user_input)
             print(f"   • FAISS KB: {'✅ bulundu' if faiss_context else '❌ bulunamadı'} (LLM kararı)")
@@ -1993,10 +1773,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             faiss_context = ""
             print("   • FAISS KB: ⏩ atlandı (LLM: gereksiz)")
 
-        # 🧠 CONVERSATION CONTEXT (LLM tabanlı özet) - ÖNCELİKLİ
-        # Konu derinleştiğinde bağlamı koruyan akıllı özet sistemi
 
-        # 🔑 ÖNCELİKLE: Konu değişimi kontrolü (context almadan ÖNCE!)
         if self.conversation_context:
             topic_changed = self.conversation_context.check_topic_before_response(
                 user_input, chat_history
@@ -2010,8 +1787,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         else:
             print(f"   • 🧠 ConversationContext: ⏩ henüz özet yok")
 
-        # 🔇 UZUN DÖNEM HAFIZA (TopicMemory) - Silent Context Injection
-        # Sadece gerektiğinde kontrol et, sessizce enjekte et
         silent_long_term_context = ""
         if self.should_check_long_term_memory(user_input):
             silent_long_term_context = self.get_silent_long_term_context(user_input)
@@ -2022,7 +1797,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         else:
             print("   • 🔇 TopicMemory: ⏩ atlandı (geçmiş referansı yok)")
 
-        # Context'leri birleştir (ConversationContext öncelikli)
         combined_silent_context = ""
         if conversation_context:
             combined_silent_context = conversation_context
@@ -2032,72 +1806,69 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             else:
                 combined_silent_context = silent_long_term_context
 
-        # Chat History - SORU TİPİNE GÖRE DİNAMİK BOYUT
-        # Basit sorularda az context, derin konularda çok context
+        question_type = decision['question_type']
+
+        if question_type in ['greeting', 'farewell', 'topic_closed']:
+            max_history_msgs = 3  # Basit: son 3 mesaj yeter
+        elif question_type in ['math', 'weather', 'prayer']:
+            max_history_msgs = 4  # Tool-based: son 4 mesaj
+        elif question_type in ['followup', 'general', 'ambiguous']:
+            max_history_msgs = 6  # Orta: son 6 mesaj
+        else:
+            max_history_msgs = 10  # Derin konu (religious, technical): tam context
+
+        # Telegram history varsa onu kullan
         if chat_history and len(chat_history) > 0:
-            question_type = decision['question_type']
-
-            # Soru tipine göre max mesaj sayısı belirle
-            if question_type in ['greeting', 'farewell', 'topic_closed']:
-                max_history_msgs = 3  # Basit: son 3 mesaj yeter
-            elif question_type in ['math', 'weather', 'prayer']:
-                max_history_msgs = 4  # Tool-based: son 4 mesaj
-            elif question_type in ['followup', 'general', 'ambiguous']:
-                max_history_msgs = 6  # Orta: son 6 mesaj
-            else:
-                max_history_msgs = 10  # Derin konu (religious, technical): tam context
-
-            # History'yi kısıtla
             limited_history = chat_history[-max_history_msgs:] if len(chat_history) > max_history_msgs else chat_history
 
-            # Chat history'yi özetle
             chat_history_summary = self._history_summary(
                 limited_history,
                 current_question_type=question_type
             )
-            print(f"   • Chat History: ✅ son 12 mesaj dahil edildi ({min(12, len(limited_history))}/{len(chat_history)} toplam)")
+            print(f"   • Chat History: ✅ son {len(limited_history)} mesaj dahil edildi ({len(limited_history)}/{len(chat_history)} toplam)")
+
+        # Telegram history boşsa ama self.hafiza doluysa, oradan özet oluştur
+        elif self.hafiza and len(self.hafiza) > 0:
+            # self.hafiza formatını chat_history formatına çevir
+            hafiza_as_history = []
+            for m in self.hafiza[-max_history_msgs:]:
+                hafiza_as_history.append({
+                    "role": m.get("rol", "user"),
+                    "content": m.get("mesaj", "")
+                })
+
+            chat_history_summary = self._history_summary(
+                hafiza_as_history,
+                current_question_type=question_type
+            )
+            print(f"   • Chat History: ✅ HafizaAsistani'dan {len(hafiza_as_history)} mesaj kullanıldı (Telegram session timeout)")
         else:
             chat_history_summary = ""
             print("   • Chat History: ⏩ henüz yok")
 
-        # 5. Rol tespiti (LLM kararından al)
-        print("\n🎭 4. Rol belirleniyor...")
-        # LLM'in seçtiği rolü al, yoksa fallback olarak friend
-        role = decision.get('role', 'friend')
-        # Geçerli rol kontrolü
-        valid_roles = ['friend', 'teacher', 'technical_helper', 'acknowledger', 'religious_teacher']
-        if role not in valid_roles:
-            role = 'friend'
-        print(f"   • Rol: {role} (LLM kararı)")
+        print("\n🎭 4. Tek kişilik kullanılıyor...")
+        # Artık ayrı roller yok, tek tutarlı kişilik
+        role = "default"
+        print(f"   • Mod: unified (tek kişilik)")
 
-        # 5.5 🆕 KAPANMIŞ KONU FİLTRELEME (AKILLI SİSTEM)
-        # Sadece yeni soru kapanmış konuya benziyorsa uyarı ver
-        # Değilse hiç gönderme (token israfı yapma)
         closed_topics_warning = ""
         if is_closed and closed_summary:
-            # Kullanıcı kapanmış konuya benzer bir şey sordu
-            # Ama AYNI konuyu tekrar mı açmak istiyor kontrol et
             user_wants_reopen = self._user_wants_to_reopen_topic(user_input)
 
             if user_wants_reopen:
-                # Kullanıcı konuyu tekrar açmak istiyor, izin ver
                 print(f"   • Kapanmış Konu: '{closed_summary}' - Kullanıcı tekrar açmak istiyor ✅")
             else:
-                # Kullanıcı farklı bir şey soruyor ama benzer konu
-                # Sadece bu durumda uyarı ekle
                 closed_topics_warning = closed_summary
                 print(f"   • Kapanmış Konu Uyarısı: '{closed_summary}' - AI'a bildirildi")
         else:
             print("   • Kapanmış Konu: Yok veya ilgisiz ⏩")
 
-        # 6. Prompt hazırla
         print("\n📝 6. Prompt hazırlanıyor...")
         needs_clarification = decision.get('needs_clarification', False)
         llm_reasoning = decision.get('reasoning', '')  # 🧠 DecisionLLM'in ön araştırması
         is_topic_closed = decision.get('topic_closed', False)  # 📕 Konu kapandı mı?
         is_detail_followup = decision.get('is_detail_followup', False)  # 🆕 Takip sorusu mu?
 
-        # 🆕 Takip modu log
         if is_detail_followup:
             print(f"   • 🔄 TAKİP MODU: FAISS arka plan olarak kullanılacak")
             print(f"   • 📊 Güven: %{int(decision.get('followup_confidence', 0) * 100)}")
@@ -2115,7 +1886,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             llm_reasoning,  # 🧠 DecisionLLM'in ön araştırması - KOPUKLUK DÜZELTMESİ!
             is_topic_closed,  # 📕 Konu kapandı mı? (kısa cevap ver)
             is_detail_followup,  # 🆕 Takip sorusu mu? (FAISS arka plan olarak)
-            tool_name,  # 🌐 Kullanılan araç (wiki_ara için özel mod)
+            tool_name,  # 🌐 Kullanılan araç (web_ara için özel mod)
         )
         print(f"   • Prompt uzunluğu: {len(final_prompt)} karakter")
 
@@ -2141,7 +1912,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         return paket
 
-    # ---------- FAISS INJECT & GERİYE UYUMLULUK ----------
 
     def set_faiss_kb(self, faiss_kb):
         """FAISS KB'yi inject et"""
@@ -2205,9 +1975,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         return [{"rol": m["rol"], "mesaj": m["mesaj"]} for m in son_mesajlar]
 
 
-# ============================================================
-# TEST KODLARI (opsiyonel)
-# ============================================================
 
 async def test_sekreter():
     print("\n" + "=" * 60)

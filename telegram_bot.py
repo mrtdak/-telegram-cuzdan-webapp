@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 import sys
 import os
 import io
 
-# Fix Windows console encoding for emoji support
 if sys.platform == 'win32':
     try:
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -27,13 +25,9 @@ from collections import Counter, defaultdict
 import numpy as np 
 from neo4j import GraphDatabase
 
-# =========================================================
-# PERSONAI IMPORT - YENİ TEK DOSYA YAPISI
-# =========================================================
 try:
     from personal_ai import PersonalAI, ResponseCodes, SystemConfig
 
-    # Alias for compatibility
     AIResponseCodes = ResponseCodes
 
     logger = logging.getLogger(__name__)
@@ -43,7 +37,6 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     print(f"❌ PersonalAI modülü yüklenemedi: {e}")
     
-    # Fallback classes
     class PersonalAI:
         def __init__(self, user_id="murat"):
             self.user_id = user_id
@@ -66,9 +59,6 @@ except ImportError as e:
     
     AIResponseCodes = ResponseCodes
 
-# =========================================================
-# QUANTUM TREE IMPORT (OPTIONAL)
-# =========================================================
 try:
     from quantum_agac import QuantumTree
     quantum_available = True
@@ -79,9 +69,6 @@ except ImportError:
         def truth_filter(self, query): return {"final_response": "QuantumTree mevcut değil"}
         def stop_background(self): pass
 
-# =========================================================
-# RISALE ARAMA SİSTEMİ IMPORT
-# =========================================================
 try:
     from rısale import RisaleSearchEngine, RisaleTelegramInterface
     risale_available = True
@@ -90,17 +77,11 @@ except ImportError as e:
     risale_available = False
     print(f"⚠️ Risale modülü yüklenemedi: {e}")
 
-# =========================================================
-# SES İŞLEME
-# =========================================================
 import speech_recognition as sr
 from pydub import AudioSegment
 import gtts
 import io
 
-# =========================================================
-# TEMEL YAPILANDIRMA
-# =========================================================
 load_dotenv()
 logging.basicConfig(
     level=logging.WARNING,  # Sadece uyarı ve hatalar
@@ -108,12 +89,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Harici kütüphanelerin loglarını kapat
 logging.getLogger("telegram").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("httpcore").setLevel(logging.ERROR)
 
-# Global değişkenler
 ai_instances: Dict[int, "PersonalAIWrapperEnhanced"] = {}
 quantum_tree: Optional[QuantumTree] = None
 chat_manager: Optional["ChatHistoryManager"] = None
@@ -121,18 +100,11 @@ chat_analyzer: Optional["ChatDataAnalyzer"] = None
 risale_engine = None
 risale_interface = None
 
-# Kullanıcı ayarları
 user_voice_modes = {}
 user_voice_speeds = {}
 
-# =========================================================
-# ⚠️ TIMEOUT AYARLARI - YENİ!
-# =========================================================
 PROCESS_TIMEOUT = 120  # PersonalAI için maksimum bekleme süresi (saniye)
 
-# =========================================================
-# YAPILANDIRMA MESAJLARI
-# =========================================================
 USER_MESSAGES_TR = {
     "error": "Bir sorun oluştu, lütfen tekrar deneyin",
     "no_data": "Bu konuda bilgi bulamadım, başka nasıl yardımcı olabilirim?",
@@ -177,56 +149,9 @@ VOICE_CONFIG = {
     }
 }
 
-# =========================================================
-# YARDIMCI FONKSİYONLAR
-# =========================================================
 def get_system_user_id(telegram_user_id: int) -> str:
     """Telegram ID'den PersonalAI için sistem user ID'si oluştur"""
     return f"user_{telegram_user_id}"
-
-# =========================================================
-# TOKEN YÖNETİMİ - SLIDING WINDOW SİSTEMİ
-# =========================================================
-def calculate_tokens(history: List[Dict]) -> int:
-    """Chat history'nin yaklaşık token sayısını hesapla"""
-    if not history:
-        return 0
-    
-    total_tokens = 0
-    for msg in history:
-        content = msg.get('content', '')
-        # Türkçe için: 1 token ≈ 4 karakter
-        total_tokens += len(content) // 4
-    
-    return total_tokens
-
-def manage_history_tokens(context) -> bool:
-    """
-    Token limiti kontrolü ve otomatik temizleme (Sliding Window)
-    
-    Returns:
-        bool: Temizlik yapıldı mı?
-    """
-    history = context.chat_data.get('history', [])
-    
-    if not history:
-        return False
-    
-    # Token sayısını hesapla
-    current_tokens = calculate_tokens(history)
-    
-    # Limitler
-    MAX_TOKENS = 5000  # Maksimum token eşiği
-    REMOVE_COUNT = 10  # Kaç mesaj silinecek (5 soru-cevap çifti)
-    
-    if current_tokens > MAX_TOKENS:
-        # Token limiti aşıldı - eski mesajları sil
-        context.chat_data['history'] = history[REMOVE_COUNT:]
-        new_tokens = calculate_tokens(context.chat_data['history'])
-        print(f"🔄 Token optimizasyonu: {current_tokens} → {new_tokens} ({len(history)} → {len(context.chat_data['history'])} mesaj)")
-        return True
-    
-    return False
 
 def smart_text_splitter(text: str, max_length: int = 3800, is_deep_mode: bool = False) -> list:
     """Metni akıllıca parçalara böler"""
@@ -254,7 +179,6 @@ def clean_markdown(text: str) -> str:
     if not text:
         return text
 
-    # Markdown'ı KORUYORUZ artık! Sadece çok uzun satırları böl
     lines = text.split('\n')
     cleaned_lines = []
     for line in lines:
@@ -308,7 +232,6 @@ def format_response_for_telegram(text: str) -> str:
         formatted_text += sentence + " "
         sentence_count += 1
         
-        # Her 3 cümleden sonra paragraf boşluğu
         if sentence_count >= 3 and i + 2 < len(sentences):
             formatted_text += "\n\n"
             sentence_count = 0
@@ -317,20 +240,15 @@ def format_response_for_telegram(text: str) -> str:
 
 def should_send_voice_response(user_id: int, user_input: str) -> bool:
     """Sesli yanıt verilmeli mi?"""
-    # Kullanıcı kaydettiği modu kullanır.
     user_voice_mode = user_voice_modes.get(user_id, False)
     if user_voice_mode:
         return True
-    # Sadece "sesli" komutu ile tetiklenir ("ses" kelimesi kaldırıldı)
     return "sesli" in user_input.lower()
 
 def should_send_text_response(user_id: int) -> bool:
     """Metin yanıtı verilmeli mi? (Şimdilik hep True, ileride seçenek olabilir)"""
     return True
 
-# =========================================================
-# NEO4J CHAT HAFIZA SİSTEMİ
-# =========================================================
 class ChatHistoryManager:
     """Neo4j tabanlı chat hafıza yöneticisi"""
 
@@ -510,9 +428,6 @@ class ChatDataAnalyzer:
         if self.driver:
             self.driver.close()
 
-# =========================================================
-# SES İŞLEME SINIFI
-# =========================================================
 class VoiceProcessor:
     """Ses tanıma ve sentezleme"""
     
@@ -597,18 +512,13 @@ class VoiceProcessor:
 
 voice_processor = VoiceProcessor()
 
-# =========================================================
-# PERSONAI WRAPPER - YENİ TEK DOSYA YAPISI
-# =========================================================
 class PersonalAIWrapper:
     """PersonalAI sistemine direkt bağlanan wrapper"""
     
     def __init__(self, user_id="murat"):
         self.user_id = user_id
         
-        # PersonalAI'ı direkt başlat
         self.ai_core_instance = PersonalAI(user_id=user_id)
-        # KULLANICI TALİMATI: Her zaman basit modda başla
         self.current_mode = "simple"
     
     def validate_and_format_chat_history(self, telegram_history: List[Dict]) -> List[Dict[str, Any]]:
@@ -646,7 +556,6 @@ class PersonalAIWrapper:
         try:
             formatted_history = self.validate_and_format_chat_history(chat_history)
 
-            # Deep mode kontrolü
             if self.current_mode == "deep" and quantum_tree:
                 
                 try:
@@ -666,7 +575,6 @@ class PersonalAIWrapper:
                 }, user_input, final_response_text
 
             else:
-                # TIMEOUT İLE PERSONAI ÇAĞIR
                 ai_response_tr, processed_input, final_response = await asyncio.wait_for(
                     self.ai_core_instance.process(
                         user_input=user_input,
@@ -723,9 +631,6 @@ class PersonalAIWrapperEnhanced(PersonalAIWrapper):
         
         return await super().process(user_input, chat_history, image_data)
 
-# =========================================================
-# TELEGRAM BOT FONKSİYONLARI
-# =========================================================
 def get_user_ai(telegram_user_id):
     """Her Telegram kullanıcısı için ayrı PersonalAI instance oluştur"""
     telegram_id = int(telegram_user_id)
@@ -735,39 +640,6 @@ def get_user_ai(telegram_user_id):
         ai_instances[telegram_id] = PersonalAIWrapperEnhanced(user_id=system_user_id)
 
     return ai_instances[telegram_id]
-
-def initialize_chat_history(context):
-    """Chat history'yi initialize et"""
-    if 'history' not in context.chat_data:
-        context.chat_data['history'] = []
-    if 'mode_asked' not in context.user_data:
-        context.user_data['mode_asked'] = False
-    return context.chat_data['history']
-
-def add_to_chat_history(context, user_message: str, ai_response: str):
-    """Chat history'e mesaj ekle - PersonalAI formatında"""
-    current_time = time.time()
-    history = context.chat_data.get('history', [])
-    
-    # User message ekle (PersonalAI formatı)
-    history.append({
-        'role': 'user',
-        'content': user_message,
-        'timestamp': current_time
-    })
-    
-    # AI response ekle (PersonalAI formatı)
-    history.append({
-        'role': 'ai',
-        'content': ai_response,
-        'timestamp': current_time
-    })
-    
-    # History limitini koru (son 30 mesaj = 15 çift)
-    if len(history) > 30:
-        context.chat_data['history'] = history[-30:]
-    else:
-        context.chat_data['history'] = history
 
 def initialize_quantum_tree():
     """QuantumTree'yi başlat"""
@@ -827,14 +699,10 @@ def start_cleanup_timer():
     cleanup_thread = threading.Thread(target=cleanup_timer, daemon=True)
     cleanup_thread.start()
 
-# =========================================================
-# TELEGRAM KOMUT HANDLERs
-# =========================================================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start komutu"""
     user_id = update.effective_user.id
-    initialize_chat_history(context)
-    
+
     try:
         user_ai = get_user_ai(user_id)
         user_ai.set_mode("simple") 
@@ -881,21 +749,17 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Başlatırken sorun oluştu, tekrar deneyin.")
 
 async def new_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sohbeti sıfırla - DeepThinker dahil!"""
+    """Sohbeti sıfırla - HafizaAsistani dahil!"""
     user_id = update.effective_user.id
     try:
-        if 'history' in context.chat_data:
-            context.chat_data['history'].clear()
-
         user_ai = get_user_ai(user_id)
         user_ai.reset_conversation()
 
         await update.message.reply_text(
             "✅ **Sohbet Tamamen Sıfırlandı!**\n\n"
             "🆕 Yeni başlangıç yapabiliriz\n"
-            "🧠 PersonalAI hafızası temizlendi\n"
-            "🔄 DeepThinker bağlamı temizlendi\n"
-            "📊 Neo4j kalıcı hafıza korunuyor",
+            "🧠 HafizaAsistani hafızası temizlendi\n"
+            "📊 TopicMemory korunuyor",
             parse_mode='Markdown'
         )
 
@@ -905,19 +769,25 @@ async def new_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def gecmis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Chat geçmişi özeti"""
     user_id = update.effective_user.id
-    
+
+    # HafizaAsistani'dan hafıza bilgisi al
+    user_ai = get_user_ai(user_id)
+    hafiza_count = 0
+    if hasattr(user_ai, 'ai_core_instance') and hasattr(user_ai.ai_core_instance, 'memory'):
+        memory = user_ai.ai_core_instance.memory
+        if hasattr(memory, 'hafiza'):
+            hafiza_count = len(memory.hafiza)
+
     if chat_manager and chat_manager.driver:
         summary = chat_manager.get_chat_summary(get_system_user_id(user_id), 7)
     else:
-        summary = "❌ Chat hafızası aktif değil"
-    
-    history_count = len(context.chat_data.get('history', []))
-    
+        summary = "Neo4j bağlantısı yok"
+
     await update.message.reply_text(
-        f"📊 **Sohbet Özeti (Son 7 Gün)**\n\n"
+        f"📊 **Sohbet Özeti**\n\n"
         f"{summary}\n\n"
-        f"📱 Telegram Oturum: {history_count} mesaj\n"
-        f"🧠 PersonalAI Hafıza: Aktif",
+        f"🧠 HafizaAsistani: {hafiza_count} mesaj\n"
+        f"📦 TopicMemory: Aktif",
         parse_mode='Markdown'
     )
 
@@ -983,7 +853,6 @@ async def hizli_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def derin_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Derin AI modu - devre dışı, her zaman hızlı mod aktif"""
-    # Her zaman hızlı modda kal
     await update.message.reply_text(
         "⚡ **Hızlı AI aktif!**\n"
         "Sistem her zaman hızlı modda çalışıyor.",
@@ -1016,9 +885,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(stats, parse_mode='Markdown')
 
-# =========================================================
-# MENÜ VE BİLGİSAYAR KONTROL KOMUTLARI
-# =========================================================
 ADMIN_USER_ID = 6505503887  # Sadece admin kullanabilir
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1049,13 +915,11 @@ async def handle_pc_control_callbacks(update: Update, context: ContextTypes.DEFA
     user_id = update.effective_user.id
     callback_data = query.data
 
-    # Admin kontrolü
     if user_id != ADMIN_USER_ID:
         await query.edit_message_text("❌ Bu işlem sadece admin tarafından yapılabilir.")
         return
 
     if callback_data == "pc_shutdown":
-        # Onay iste
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✅ Evet, Kapat", callback_data="pc_shutdown_confirm"),
@@ -1070,7 +934,6 @@ async def handle_pc_control_callbacks(update: Update, context: ContextTypes.DEFA
         )
 
     elif callback_data == "pc_restart":
-        # Onay iste
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✅ Evet, Yeniden Başlat", callback_data="pc_restart_confirm"),
@@ -1086,20 +949,15 @@ async def handle_pc_control_callbacks(update: Update, context: ContextTypes.DEFA
 
     elif callback_data == "pc_shutdown_confirm":
         await query.edit_message_text("⏻ **Bilgisayar 10 saniye içinde kapanacak...**", parse_mode='Markdown')
-        # Windows shutdown komutu (10 saniye gecikme)
         os.system("shutdown /s /t 10")
 
     elif callback_data == "pc_restart_confirm":
         await query.edit_message_text("🔁 **Bilgisayar 10 saniye içinde yeniden başlayacak...**\n\nBot otomatik olarak açılacak.", parse_mode='Markdown')
-        # Windows restart komutu (10 saniye gecikme)
         os.system("shutdown /r /t 10")
 
     elif callback_data == "pc_cancel":
         await query.edit_message_text("❌ İşlem iptal edildi.")
 
-# =========================================================
-# RISALE ARAMA HANDLERS
-# =========================================================
 async def risale_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ana Risale arama komutu"""
     if not risale_interface:
@@ -1150,16 +1008,13 @@ async def handle_risale_callbacks(update: Update, context: ContextTypes.DEFAULT_
             return
 
         if callback_data == "reset_chat":
-            if 'history' in context.chat_data:
-                context.chat_data['history'].clear()
-
             user_ai = get_user_ai(user_id)
             user_ai.reset_conversation()
 
             await query.edit_message_text(
                 "✅ **Sohbet Sıfırlandı!**\n\n"
                 "🆕 Yeni bir sohbet başlatabilirsin.\n"
-                "🧠 Hafıza temizlendi.",
+                "🧠 HafizaAsistani hafızası temizlendi.",
                 parse_mode='Markdown'
             )
             return
@@ -1306,9 +1161,6 @@ async def iptal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Aktif bir arama modu bulunmuyor.")
 
-# =========================================================
-# MESAJ HANDLERs
-# =========================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ana mesaj handler - PersonalAI full integration + TIMEOUT"""
     user_input = update.message.text
@@ -1319,55 +1171,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_risale_search(update, context, user_input)
         return
 
-    chat_history = initialize_chat_history(context)
-
-    was_cleaned = manage_history_tokens(context)
-    if was_cleaned:
-        chat_history = context.chat_data.get('history', [])
-    
     status_message = None
-    
+
     try:
         user_ai = get_user_ai(user_id)
         current_mode = getattr(user_ai, 'current_mode', 'simple')
         is_deep_mode = current_mode == "deep"
-        
+
         wants_voice_reply = should_send_voice_response(user_id, user_input)
         send_text = should_send_text_response(user_id)
-        
+
         status_message = await context.bot.send_message(
             chat_id=chat_id,
             text="☁️ Düşünüyorum...",
             parse_mode=None
         )
-        
+
         await context.bot.send_chat_action(chat_id=chat_id, action='typing')
 
+        # Hafıza yönetimi PersonalAI/HafizaAsistani tarafında
+        # Telegram sadece arayüz - boş history gönder
         ai_response, mode, status = await user_ai.process(
             user_input=user_input,
-            chat_history=chat_history,
+            chat_history=[],
             image_data=None
         )
-        
+
         if isinstance(ai_response, dict):
             processed_response = ai_response.get('chat_response', status)
         else:
             processed_response = ai_response
-        
-        # Status mesajını sil
+
         if status_message:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
             except Exception:
                 pass
-        
+
         raw_response = clean_response_for_user(processed_response)
         raw_response = format_response_for_telegram(raw_response)
-        
+
         message_chunks = smart_text_splitter(raw_response, MESSAGE_FORMATTING["max_chunk_length"], is_deep_mode=False)
-        
-        add_to_chat_history(context, user_input, raw_response)
-        
+
         voice_response = None
         if wants_voice_reply:
             voice_response = await voice_processor.text_to_speech(raw_response, user_id)
@@ -1398,7 +1243,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception:
         
-        # Status mesajını sil
         if status_message:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
@@ -1411,26 +1255,24 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
     """Sesli mesaj handler"""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
-    
-    chat_history = initialize_chat_history(context)
     status_message = None
-    
+
     try:
         user_ai = get_user_ai(user_id)
         current_mode = getattr(user_ai, 'current_mode', 'simple')
         is_deep_mode = current_mode == "deep"
-        
+
         status_message = await context.bot.send_message(
             chat_id=chat_id,
             text="☁️ Düşünüyorum...",
             parse_mode=None
         )
         await context.bot.send_chat_action(chat_id=chat_id, action='typing')
-        
+
         voice_file = await context.bot.get_file(update.message.voice.file_id)
         voice_data = await voice_file.download_as_bytearray()
         user_input = await voice_processor.speech_to_text(bytes(voice_data))
-        
+
         if user_input.startswith("❌"):
             await context.bot.edit_message_text(
                 text=user_input + "\n🔄 Tekrar dener misiniz?",
@@ -1439,36 +1281,35 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 parse_mode='Markdown'
             )
             return
-        
+
         await context.bot.edit_message_text(
             text=f"🎧 Duyduğum: {user_input[:60]}...\n☁️ Düşünüyorum...",
             chat_id=chat_id,
             message_id=status_message.message_id,
             parse_mode=None
         )
-        
+
+        # Hafıza yönetimi PersonalAI/HafizaAsistani tarafında
         ai_response, mode, status = await user_ai.process(
             user_input=user_input,
-            chat_history=chat_history,
+            chat_history=[],
             image_data=None
         )
-        
+
         if isinstance(ai_response, dict):
             processed_response = ai_response.get('chat_response', status)
         else:
             processed_response = ai_response
-        
+
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
         except Exception:
             pass
-        
+
         raw_response = clean_response_for_user(processed_response)
         raw_response = format_response_for_telegram(raw_response)
         message_chunks = smart_text_splitter(raw_response, MESSAGE_FORMATTING["max_chunk_length"], is_deep_mode=False)
-        
-        add_to_chat_history(context, user_input, raw_response)
-        
+
         voice_response = await voice_processor.text_to_speech(raw_response, user_id)
         
         for i, chunk in enumerate(message_chunks):
@@ -1505,20 +1346,18 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
     """Fotoğraf handler"""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
-    
-    chat_history = initialize_chat_history(context)
     status_message = None
-    
+
     try:
         user_ai = get_user_ai(user_id)
         is_deep_mode = getattr(user_ai, 'current_mode', 'simple') == "deep"
-        
+
         status_message = await context.bot.send_message(
             chat_id=chat_id,
             text="☁️ Düşünüyorum...",
             parse_mode=None
         )
-        
+
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
         image_data = await file.download_as_bytearray()
@@ -1526,28 +1365,27 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         image_base64 = base64.b64encode(bytes(image_data)).decode('utf-8')
 
+        # Hafıza yönetimi PersonalAI/HafizaAsistani tarafında
         ai_response, mode, status = await user_ai.process(
             user_input=user_input,
-            chat_history=chat_history,
+            chat_history=[],
             image_data=image_base64
         )
-        
+
         if isinstance(ai_response, dict):
             processed_response = ai_response.get('chat_response', status)
         else:
-            processed_response = ai_response 
+            processed_response = ai_response
 
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
         except Exception:
             pass
-        
+
         raw_response = clean_response_for_user(processed_response)
         raw_response = format_response_for_telegram(raw_response)
         message_chunks = smart_text_splitter(raw_response, MESSAGE_FORMATTING["max_chunk_length"], is_deep_mode=False)
-        
-        add_to_chat_history(context, f"[Görsel] {user_input}", raw_response)
-        
+
         for i, chunk in enumerate(message_chunks):
             cleaned_chunk = clean_markdown(chunk)
             await context.bot.send_message(chat_id=chat_id, text=cleaned_chunk, parse_mode=None)
@@ -1597,9 +1435,6 @@ async def speed_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode='Markdown'
         )
 
-# =========================================================
-# BOT BAŞLATMA
-# =========================================================
 async def post_init(application: Application):
     """Bot komutlarını ayarla"""
     commands = [
@@ -1624,9 +1459,6 @@ def load_risale_system():
             return False
     return False
 
-# =========================================================
-# MAIN FONKSİYON
-# =========================================================
 def main():
     """Ana fonksiyon"""
     print("=" * 70)
@@ -1638,7 +1470,6 @@ def main():
     
     global chat_manager, chat_analyzer
     try:
-        # Config'den Neo4j enabled durumunu oku
         try:
             with open('config.json', 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
@@ -1679,7 +1510,15 @@ def main():
         sys.exit(1)
     
     try:
-        application = Application.builder().token(telegram_token).post_init(post_init).build()
+        application = (
+            Application.builder()
+            .token(telegram_token)
+            .post_init(post_init)
+            .connect_timeout(30)
+            .read_timeout(30)
+            .write_timeout(30)
+            .build()
+        )
         
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("yazili", yazili_mod_command))
@@ -1711,34 +1550,17 @@ def main():
         print("=" * 70)
         print()
         print("🤖 ANA ÖZELLİKLER:")
-        print("  • PersonalAI Full Integration (personal_ai.py)")
-        print("  • Multi-modal Support (Text + Voice + Images)")
-        print("  • Kullanıcı Yalıtımı (Her kullanıcı için ayrı instance)")
-        print("  • Persistent Memory System")
-        print(f"  • ⏰ TIMEOUT: {PROCESS_TIMEOUT} saniye")
-        if risale_loaded:
-            print("  • Risale-i Nur Arama Sistemi ✅")
-        else:
-            print("  • Risale-i Nur Arama Sistemi ❌")
+        print("  • PersonalAI + HafizaAsistani")
+        print("  • Multi-modal (Text + Voice + Images)")
+        print(f"  • Timeout: {PROCESS_TIMEOUT}s")
         print()
-        print("🧠 HAFIZA SİSTEMİ:")
-        print("  • Telegram Session Memory (Chat History)")
-        print("  • PersonalAI Internal Memory (Smart Context)")
-        print("  • Neo4j GraphRAG (Long-term Memory)")
-        print("  • Pasif Kullanıcı Temizliği (Her 6 saatte)")
+        print("🧠 HAFIZA:")
+        print("  • HafizaAsistani (RAM)")
+        print("  • TopicMemory (Dosya)")
+        print("  • ConversationContext (Dosya)")
+        print("  • FAISS KB (Bilgi Tabanı)")
         print()
-        print("📱 KOMUTLAR:")
-        print("  • /start - Bot'u başlat")
-        print("  • /yazili / /sesli - Mod değiştir")
-        print("  • /hizli_ai - Hızlı mod (PersonalAI)")
-        print("  • /derin_ai - Derin analiz (QuantumTree)")
-        print("  • /risale - Risale-i Nur arama")
-        print("  • /yeni - Konuşmayı sıfırla")
-        print("  • /gecmis - Sohbet özeti")
-        print("  • /ara - Geçmişte arama")
-        print("  • /stats - Admin istatistikleri")
-        print()
-        print("🛑 Durdurmak için Ctrl+C tuşuna basın.")
+        print("🛑 Durdurmak için Ctrl+C")
         print("=" * 70)
         print()
         
