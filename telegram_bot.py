@@ -1,525 +1,49 @@
+"""
+Telegram Bot - Basit Arayüz
+Kullanıcı mesaj yazar → HafizaAsistani/QuantumTree → Cevap
+"""
+
 import sys
 import os
-import io
-
-if sys.platform == 'win32':
-    try:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except (AttributeError, OSError):
-        pass  # Console encoding değiştirilemedi, varsayılan kullanılacak
 import asyncio
-import logging
-import json
-import re
-import time
-import threading
-import base64
 from dotenv import load_dotenv
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from typing import List, Dict, Optional, Tuple, Any
-from deep_translator import GoogleTranslator
-from datetime import datetime, timedelta
-from collections import Counter, defaultdict
-import numpy as np 
-from neo4j import GraphDatabase
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from typing import Dict, Optional
 
+# Modülleri yükle
 try:
-    from personal_ai import LocalLLM, SystemConfig
+    from personal_ai import LocalLLM
     from hafiza_asistani import HafizaAsistani
-
-    logger = logging.getLogger(__name__)
-    print("✅ LocalLLM + HafizaAsistani yüklendi")
-
+    print("✅ HafizaAsistani yüklendi")
 except ImportError as e:
-    logger = logging.getLogger(__name__)
-    print(f"❌ Modüller yüklenemedi: {e}")
-
-    class LocalLLM:
-        def __init__(self, user_id="murat"):
-            self.user_id = user_id
-        async def generate(self, prompt, image_data=None):
-            return "LLM bağlantı hatası"
-
-    class HafizaAsistani:
-        def __init__(self, **kwargs):
-            pass
-        def set_llm(self, llm): pass
-        async def process(self, user_input, chat_history=None, image_data=None):
-            return "HafizaAsistani bağlantı hatası"
-        def clear(self): pass
-
-    class SystemConfig:
-        DEFAULT_USER_ID = "murat"
+    print(f"❌ HafizaAsistani yüklenemedi: {e}")
+    sys.exit(1)
 
 try:
     from quantum_agac import QuantumTree
     quantum_available = True
+    print("✅ QuantumTree yüklendi")
 except ImportError:
     quantum_available = False
-    class QuantumTree:
-        def __init__(self, *args, **kwargs): pass
-        def truth_filter(self, query): return {"final_response": "QuantumTree mevcut değil"}
-        def stop_background(self): pass
-
-try:
-    from rısale import RisaleSearchEngine, RisaleTelegramInterface
-    risale_available = True
-    print("✅ Risale modülü yüklendi")
-except ImportError as e:
-    risale_available = False
-    print(f"⚠️ Risale modülü yüklenemedi: {e}")
-
-import speech_recognition as sr
-from pydub import AudioSegment
-import gtts
-import io
+    print("⚠️ QuantumTree yüklenemedi - sadece basit mod aktif")
 
 load_dotenv()
-logging.basicConfig(
-    level=logging.WARNING,  # Sadece uyarı ve hatalar
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
-logging.getLogger("telegram").setLevel(logging.ERROR)
-logging.getLogger("httpx").setLevel(logging.ERROR)
-logging.getLogger("httpcore").setLevel(logging.ERROR)
-
+# Global
 ai_instances: Dict[int, "AIWrapper"] = {}
-quantum_tree: Optional[QuantumTree] = None
-chat_manager: Optional["ChatHistoryManager"] = None
-chat_analyzer: Optional["ChatDataAnalyzer"] = None
-risale_engine = None
-risale_interface = None
+TIMEOUT = 120
 
-user_voice_modes = {}
-user_voice_speeds = {}
-
-PROCESS_TIMEOUT = 120  # PersonalAI için maksimum bekleme süresi (saniye)
-
-USER_MESSAGES_TR = {
-    "error": "Bir sorun oluştu, lütfen tekrar deneyin",
-    "no_data": "Bu konuda bilgi bulamadım, başka nasıl yardımcı olabilirim?",
-    "processing_error": "Şu anda teknik bir sorun var, biraz sonra tekrar dener misin?",
-    "image_error": "Görseli analiz edemedim, tekrar yükler misin?",
-    "search_failed": "Arama yaparken sorun yaşadım, tekrar deneyebilir misin?",
-    "cant_understand": "Anlayamadım, farklı bir şekilde sorabilirim misin?",
-    "timeout_error": "Yanıt süresi aşıldı, tekrar dener misin? 🔄"
-}
-
-MESSAGE_FORMATTING = {
-    "max_chunk_length": 3800,
-    "preferred_chunk_length": 2000,
-    "min_chunk_length": 500,
-    "chunk_delay": 1.5,
-    "add_formatting": True,
-    "smart_breaking": True,
-}
-
-VOICE_CONFIG = {
-    "speech_recognition": {
-        "language": "tr-TR",
-        "timeout": 10,
-        "phrase_time_limit": 30,
-        "energy_threshold": 300
-    },
-    "text_to_speech": {
-        "language": "tr",
-        "slow": False,
-        "tld": "com.tr",
-        "speed_settings": {
-            "yavaş": {"slow": True, "speed": 0.8},
-            "normal": {"slow": False, "speed": 1.0},
-            "hızlı": {"slow": False, "speed": 1.25},
-            "çok_hızlı": {"slow": False, "speed": 1.5}
-        }
-    },
-    "voice_response": {
-        "auto_voice_reply": True,
-        "voice_command": "sesli",
-        "max_tts_length": 500
-    }
-}
-
-def get_system_user_id(telegram_user_id: int) -> str:
-    """Telegram ID'den PersonalAI için sistem user ID'si oluştur"""
-    return f"user_{telegram_user_id}"
-
-def smart_text_splitter(text: str, max_length: int = 3800, is_deep_mode: bool = False) -> list:
-    """Metni akıllıca parçalara böler"""
-    if not text or len(text) <= max_length:
-        return [text] if text else ["Yanıt boş"]
-    
-    chunks = []
-    current_chunk = ""
-    sentences = text.split('. ')
-    
-    for sentence in sentences:
-        if len(current_chunk + sentence + '. ') > max_length:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-                current_chunk = ""
-        current_chunk += sentence + '. '
-    
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-        
-    return chunks if chunks else [text]
-
-def clean_markdown(text: str) -> str:
-    """Telegram Markdown'ı KORUYARAK sadece tehlikeli karakterleri temizle"""
-    if not text:
-        return text
-
-    lines = text.split('\n')
-    cleaned_lines = []
-    for line in lines:
-        if len(line) > 4000:
-            while len(line) > 4000:
-                split_point = line.rfind(' ', 0, 4000)
-                if split_point == -1:
-                    split_point = 4000
-                cleaned_lines.append(line[:split_point])
-                line = line[split_point:].strip()
-            if line:
-                cleaned_lines.append(line)
-        else:
-            cleaned_lines.append(line)
-
-    return '\n'.join(cleaned_lines)
-
-def clean_response_for_user(response):
-    """Yanıtı kullanıcı dostu hale getir"""
-    if not response or not isinstance(response, str) or len(response.strip()) < 3:
-        return USER_MESSAGES_TR["cant_understand"]
-    
-    error_mappings = {
-        "API_ERROR": USER_MESSAGES_TR["processing_error"],
-        "NO_DATA": USER_MESSAGES_TR["no_data"],
-        "SEARCH_FAILED": USER_MESSAGES_TR["search_failed"],
-        "IMAGE_PROCESSING_ERROR": USER_MESSAGES_TR["image_error"],
-        "processing_error": USER_MESSAGES_TR["processing_error"]
-    }
-    
-    for error_code, user_message in error_mappings.items():
-        if error_code in response:
-            return user_message
-    
-    return response.strip()
-
-def format_response_for_telegram(text: str) -> str:
-    """LLM yanıtını Telegram için paragraflara böl"""
-    if not text:
-        return text
-    
-    sentences = re.split(r'([.!?])\s+', text.strip())
-    formatted_text = ""
-    sentence_count = 0
-    
-    for i in range(0, len(sentences), 2):
-        sentence = sentences[i]
-        if i + 1 < len(sentences):
-            sentence += sentences[i + 1]
-        
-        formatted_text += sentence + " "
-        sentence_count += 1
-        
-        if sentence_count >= 3 and i + 2 < len(sentences):
-            formatted_text += "\n\n"
-            sentence_count = 0
-    
-    return formatted_text.strip()
-
-def should_send_voice_response(user_id: int, user_input: str) -> bool:
-    """Sesli yanıt verilmeli mi?"""
-    user_voice_mode = user_voice_modes.get(user_id, False)
-    if user_voice_mode:
-        return True
-    return "sesli" in user_input.lower()
-
-def should_send_text_response(user_id: int) -> bool:
-    """Metin yanıtı verilmeli mi? (Şimdilik hep True, ileride seçenek olabilir)"""
-    return True
-
-class ChatHistoryManager:
-    """Neo4j tabanlı chat hafıza yöneticisi"""
-
-    def __init__(self, neo4j_uri="bolt://localhost:7687", user="neo4j", password="senegal5454", enabled=False):
-        self.driver = None
-        if not enabled:
-            print("ℹ️ Neo4j chat hafızası devre dışı")
-            return
-        try:
-            self.driver = GraphDatabase.driver(neo4j_uri, auth=(user, password))
-            with self.driver.session() as session:
-                session.run("RETURN 1")
-            print("✅ Neo4j chat hafızası bağlandı")
-        except Exception as e:
-            print(f"❌ Neo4j bağlantı hatası: {e}")
-            self.driver = None
-    
-    def get_most_relevant_chat(self, user_id: str, keyword: str) -> Optional[Tuple[str, str]]:
-        """Anahtar kelimeye en alakalı sohbeti getir"""
-        if not self.driver:
-            return None
-        try:
-            with self.driver.session() as session:
-                result = session.run("""
-                    MATCH (c:Conversation {user_id: $user_id})
-                    WHERE toLower(c.user_input) CONTAINS toLower($keyword) OR 
-                          toLower(c.ai_response) CONTAINS toLower($keyword)
-                    RETURN c.user_input, c.ai_response
-                    ORDER BY c.timestamp DESC LIMIT 1
-                """, user_id=str(user_id), keyword=keyword)
-                
-                record = result.single()
-                if record:
-                    return (record["c.user_input"], record["c.ai_response"])
-                return None
-        except Exception:
-            return None
-    
-    def get_recent_context(self, user_id, limit=10):
-        """Son konuşmaları getir"""
-        if not self.driver:
-            return []
-        try:
-            with self.driver.session() as session:
-                result = session.run(
-                    "MATCH (c:Conversation {user_id: $user_id}) "
-                    "RETURN c.user_input, c.ai_response, c.timestamp "
-                    "ORDER BY c.timestamp DESC LIMIT $limit",
-                    user_id=str(user_id), limit=limit
-                )
-                contexts = []
-                for record in result:
-                    contexts.append((
-                        record["c.user_input"],
-                        record["c.ai_response"],
-                        record["c.timestamp"]
-                    ))
-                return contexts[::-1]
-        except Exception:
-            return []
-    
-    def get_chat_summary(self, user_id, days=7):
-        """Chat özetini getir"""
-        if not self.driver:
-            return "Chat hafızası mevcut değil"
-        try:
-            with self.driver.session() as session:
-                result = session.run(
-                    "MATCH (c:Conversation {user_id: $user_id}) "
-                    "WHERE c.date >= date() - duration({days: $days}) "
-                    "RETURN count(c) as total_chats, "
-                    "collect(c.user_input)[..3] as recent_topics "
-                    "ORDER BY c.timestamp DESC",
-                    user_id=str(user_id), days=days
-                )
-                record = result.single()
-                if record:
-                    total = record["total_chats"]
-                    topics = record["recent_topics"]
-                    return f"Son {days} günde {total} sohbet. Son konular: {', '.join(topics[:3])}"
-                return "Henüz sohbet yok"
-        except Exception:
-            return "Chat özeti alınamadı"
-    
-    def search_chats(self, user_id, keyword, limit=3):
-        """Konuşmalarda arama yap"""
-        if not self.driver:
-            return []
-        try:
-            with self.driver.session() as session:
-                result = session.run(
-                    "MATCH (c:Conversation {user_id: $user_id}) "
-                    "WHERE toLower(c.user_input) CONTAINS toLower($keyword) OR "
-                    "toLower(c.ai_response) CONTAINS toLower($keyword) "
-                    "RETURN c.user_input, c.ai_response, c.timestamp "
-                    "ORDER BY c.timestamp DESC LIMIT $limit",
-                    user_id=str(user_id), keyword=keyword, limit=limit
-                )
-                return [
-                    (record["c.user_input"], record["c.ai_response"], record["c.timestamp"])
-                    for record in result
-                ]
-        except Exception:
-            return []
-
-class ChatDataAnalyzer:
-    """Neo4j tabanlı chat veri analizi"""
-
-    def __init__(self, neo4j_uri="bolt://localhost:7687", user="neo4j", password="senegal5454", enabled=False):
-        self.driver = None
-        if not enabled:
-            return
-        try:
-            self.driver = GraphDatabase.driver(neo4j_uri, auth=(user, password))
-            with self.driver.session() as session:
-                session.run("RETURN 1")
-        except Exception as e:
-            print(f"⚠️ Chat analiz Neo4j hatası: {e}")
-            self.driver = None
-    
-    def get_user_chat_stats(self, user_id: str) -> Dict[str, Any]:
-        """Kullanucu chat istatistikleri"""
-        if not self.driver:
-            return {"error": "Neo4j bağlantısı yok"}
-        try:
-            with self.driver.session() as session:
-                result = session.run(
-                    "MATCH (c:Conversation {user_id: $user_id}) "
-                    "RETURN count(c) as total_chats, "
-                    "min(c.timestamp) as first_chat, "
-                    "max(c.timestamp) as last_chat",
-                    user_id=str(user_id)
-                )
-                record = result.single()
-                
-                if not record:
-                    return {
-                        "total_chats": 0,
-                        "first_chat_date": "Henüz yok",
-                        "last_chat_date": "Henüz yok",
-                        "daily_average": 0,
-                        "recent_chats_7days": 0
-                    }
-                
-                total_chats = record["total_chats"] or 0
-                first_chat = record["first_chat"]
-                last_chat = record["last_chat"]
-                
-                daily_avg = 0
-                if first_chat and last_chat and total_chats > 0:
-                    days_diff = max(1, (last_chat - first_chat) / (1000 * 86400))
-                    daily_avg = total_chats / days_diff
-                
-                seven_days_ago = datetime.now() - timedelta(days=7)
-                result = session.run(
-                    "MATCH (c:Conversation {user_id: $user_id}) "
-                    "WHERE c.date >= date($seven_days_ago) "
-                    "RETURN count(c) as recent_chats",
-                    user_id=str(user_id),
-                    seven_days_ago=seven_days_ago.strftime("%Y-%m-%d")
-                )
-                recent_record = result.single()
-                recent_chats = recent_record["recent_chats"] if recent_record else 0
-                
-                return {
-                    "total_chats": total_chats,
-                    "first_chat_date": datetime.fromtimestamp(first_chat/1000).strftime("%Y-%m-%d %H:%M") if first_chat else "Henüz yok",
-                    "last_chat_date": datetime.fromtimestamp(last_chat/1000).strftime("%Y-%m-%d %H:%M") if last_chat else "Henüz yok",
-                    "daily_average": round(daily_avg, 2),
-                    "recent_chats_7days": recent_chats
-                }
-        except Exception as e:
-            return {"error": str(e)}
-    
-    def close(self):
-        """Neo4j bağlantısını kapat"""
-        if self.driver:
-            self.driver.close()
-
-class VoiceProcessor:
-    """Ses tanıma ve sentezleme"""
-    
-    def __init__(self):
-        self.recognizer = sr.Recognizer()
-        self.recognizer.energy_threshold = VOICE_CONFIG["speech_recognition"]["energy_threshold"]
-    
-    async def speech_to_text(self, voice_data: bytes) -> str:
-        """Sesi metne çevir"""
-        try:
-            audio_segment = AudioSegment.from_ogg(io.BytesIO(voice_data))
-            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
-            
-            wav_buffer = io.BytesIO()
-            audio_segment.export(wav_buffer, format="wav")
-            wav_buffer.seek(0)
-            
-            with sr.AudioFile(wav_buffer) as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                audio_data = self.recognizer.record(source)
-            
-            text = self.recognizer.recognize_google(
-                audio_data,
-                language=VOICE_CONFIG["speech_recognition"]["language"]
-            )
-            return text.strip()
-            
-        except sr.UnknownValueError:
-            return "❌ Ses anlaşılamadı"
-        except sr.RequestError:
-            return "❌ Ses tanıma servisi hatası"
-        except Exception:
-            return "❌ Ses işlenirken hata oluştu"
-    
-    async def text_to_speech(self, text: str, user_id: int) -> io.BytesIO:
-        """Metni sese çevir"""
-        try:
-            if len(text) > VOICE_CONFIG["voice_response"]["max_tts_length"]:
-                text = text[:VOICE_CONFIG["voice_response"]["max_tts_length"]] + "..."
-            
-            user_speed = user_voice_speeds.get(user_id, "normal")
-            speed_settings = VOICE_CONFIG["text_to_speech"]["speed_settings"][user_speed]
-            
-            tts = gtts.gTTS(
-                text=text,
-                lang=VOICE_CONFIG["text_to_speech"]["language"],
-                slow=speed_settings["slow"],
-                tld=VOICE_CONFIG["text_to_speech"]["tld"]
-            )
-            
-            audio_buffer = io.BytesIO()
-            tts.write_to_fp(audio_buffer)
-            audio_buffer.seek(0)
-            
-            if speed_settings["speed"] != 1.0:
-                try:
-                    audio_segment = AudioSegment.from_mp3(audio_buffer)
-                    
-                    if speed_settings["speed"] > 1.0:
-                        faster_audio = audio_segment.speedup(
-                            playback_speed=speed_settings["speed"]
-                        )
-                    else:
-                        slower_speed = 1.0 / speed_settings["speed"]
-                        faster_audio = audio_segment.speedup(
-                            playback_speed=1.0 / slower_speed
-                        )
-                    
-                    final_buffer = io.BytesIO()
-                    faster_audio.export(final_buffer, format="mp3") 
-                    final_buffer.seek(0)
-                    return final_buffer
-                    
-                except Exception:
-                    audio_buffer.seek(0)
-                    return audio_buffer
-
-            return audio_buffer
-
-        except Exception:
-            return None
-
-voice_processor = VoiceProcessor()
 
 class AIWrapper:
-    """
-    Basit AI Wrapper - Telegram → HafizaAsistani → LLM
-    """
+    """Basit AI Wrapper - İki mod: basit ve derin"""
 
-    def __init__(self, user_id="murat"):
+    def __init__(self, user_id: str):
         self.user_id = user_id
-        self.last_used = time.time()
-        self.message_count = 0
+        self.mode = "basit"  # varsayılan
 
-        # 1. LLM oluştur
+        # Basit mod: HafizaAsistani + LLM
         self.llm = LocalLLM(user_id)
-
-        # 2. HafizaAsistani oluştur
         self.hafiza = HafizaAsistani(
             saat_limiti=48,
             esik=0.50,
@@ -528,1030 +52,165 @@ class AIWrapper:
             use_decision_llm=True,
             decision_model="meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
         )
-
-        # 3. LLM'i HafizaAsistani'ya ver
         self.hafiza.set_llm(self.llm)
+
+        # Derin mod: QuantumTree
+        self.quantum = None
+        if quantum_available:
+            try:
+                self.quantum = QuantumTree(
+                    neo4j_uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+                    neo4j_user=os.getenv("NEO4J_USER", "neo4j"),
+                    neo4j_password=os.getenv("NEO4J_PASS", ""),
+                    thinking_framework_path="thinking_framework.json"
+                )
+            except Exception as e:
+                print(f"⚠️ QuantumTree başlatılamadı: {e}")
 
         print(f"✅ AIWrapper hazır (user: {user_id})")
 
-    async def process(self, user_input: str, chat_history: List[Dict] = None,
-                      image_data: Optional[bytes] = None) -> Tuple[Any, str, str]:
-        """
-        Ana process - Telegram → HafizaAsistani → LLM → Telegram
-        """
-        self.last_used = time.time()
-        self.message_count += 1
-
+    async def process(self, user_input: str) -> str:
+        """Mesajı işle - moda göre"""
         try:
-            chat_history = chat_history or []
-
-            # Direkt HafizaAsistani'ya gönder!
-            ai_response = await asyncio.wait_for(
-                self.hafiza.process(
-                    user_input=user_input,
-                    chat_history=chat_history,
-                    image_data=image_data
-                ),
-                timeout=PROCESS_TIMEOUT
-            )
-
-            return {"chat_response": ai_response}, user_input, ai_response
+            if self.mode == "derin" and self.quantum:
+                # Derin mod: QuantumTree
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None, self.quantum.truth_filter, user_input
+                )
+                return result.get("final_response", "QuantumTree yanıt üretemedi.")
+            else:
+                # Basit mod: HafizaAsistani
+                response = await asyncio.wait_for(
+                    self.hafiza.process(user_input, []),
+                    timeout=TIMEOUT
+                )
+                return response
 
         except asyncio.TimeoutError:
-            error_msg = USER_MESSAGES_TR["timeout_error"]
-            return {"chat_response": error_msg, "error": "timeout"}, user_input, error_msg
-
+            return "⏱️ Zaman aşımı, tekrar dene."
         except Exception as e:
-            error_msg = USER_MESSAGES_TR["processing_error"]
-            print(f"❌ Process hatası: {e}")
-            return {"chat_response": error_msg, "error": str(e)}, user_input, error_msg
+            print(f"❌ Hata: {e}")
+            return "❌ Bir sorun oluştu."
 
-    def reset_conversation(self):
-        """Konuşmayı sıfırla"""
-        if hasattr(self.hafiza, 'clear'):
-            self.hafiza.clear()
-        return "✅ Konuşma sıfırlandı"
+    def reset(self):
+        """Hafızayı sıfırla"""
+        if hasattr(self.hafiza, 'hafiza'):
+            self.hafiza.hafiza = []
+        return "✅ Sıfırlandı"
 
-    def set_mode(self, mode: str):
-        """Mode ayarla (şimdilik kullanılmıyor)"""
-        pass
 
-def get_user_ai(telegram_user_id):
-    """Her Telegram kullanıcısı için ayrı AI instance oluştur"""
-    telegram_id = int(telegram_user_id)
+def get_ai(user_id: int) -> AIWrapper:
+    """Kullanıcı için AI instance al"""
+    if user_id not in ai_instances:
+        ai_instances[user_id] = AIWrapper(f"user_{user_id}")
+    return ai_instances[user_id]
 
-    if telegram_id not in ai_instances:
-        system_user_id = get_system_user_id(telegram_id)
-        ai_instances[telegram_id] = AIWrapper(user_id=system_user_id)
 
-    return ai_instances[telegram_id]
-
-def initialize_quantum_tree():
-    """QuantumTree'yi başlat"""
-    global quantum_tree
-
-    if not quantum_available:
-        return False
-
-    try:
-        neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        neo4j_user = os.getenv("NEO4J_USER", "neo4j")
-        neo4j_password = os.getenv("NEO4J_PASS") or os.getenv("NEO4J_PASSWORD") or ""
-
-        quantum_tree = QuantumTree(
-            neo4j_uri=neo4j_uri,
-            neo4j_user=neo4j_user,
-            neo4j_password=neo4j_password,
-            thinking_framework_path="thinking_framework.json"
-        )
-        return True
-
-    except Exception as e:
-        print(f"❌ QuantumTree başlatma hatası: {e}")
-        return False
-
-def cleanup_inactive_users():
-    """Pasif kullanıcıları temizle (24 saat)"""
-    current_time = time.time()
-    inactive_users = []
-
-    for telegram_id, ai_instance in list(ai_instances.items()):
-        if hasattr(ai_instance, 'last_used'):
-            if current_time - ai_instance.last_used > 86400:
-                inactive_users.append(telegram_id)
-
-    for telegram_id in inactive_users:
-        try:
-            del ai_instances[telegram_id]
-        except Exception:
-            pass
-
-def start_cleanup_timer():
-    """Her 6 saatte bir cleanup çalıştır"""
-    def cleanup_timer():
-        time.sleep(300)
-        while True:
-            time.sleep(21600)
-            try:
-                cleanup_inactive_users()
-            except Exception:
-                pass
-
-    cleanup_thread = threading.Thread(target=cleanup_timer, daemon=True)
-    cleanup_thread.start()
+# === KOMUTLAR ===
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start komutu"""
+    """/start"""
     user_id = update.effective_user.id
+    ai = get_ai(user_id)
 
-    try:
-        user_ai = get_user_ai(user_id)
-        user_ai.set_mode("simple") 
-        ai_mode = getattr(user_ai, 'current_mode', 'simple')
-        voice_mode = user_voice_modes.get(user_id, False)
-        
-        ai_icon = "🔍" if ai_mode == "deep" else "⚡"
-        ai_text = "Derin" if ai_mode == "deep" else "Hızlı"
-        voice_icon = "🔊" if voice_mode else "📝"
-        voice_text = "Sesli" if voice_mode else "Yazılı"
-        
-        risale_status = "✅ Aktif" if risale_interface else "❌ Kapalı"
-        
-        response_text = (
-            f"🤖 **PersonalAI Telegram Bot Hazır!**\n\n"
-            f"{ai_icon} **{ai_text} AI** | {voice_icon} **{voice_text} Mod**\n\n"
-            f"🧠 Kalıcı Hafıza Aktif!\n"
-            f"📖 Risale Arama: {risale_status}\n\n"
-            f"Komutlar:\n"
-            f"• /yazili - Yazılı mod\n"
-            f"• /sesli - Sesli mod\n"
-            f"• /hizli_ai - Hızlı AI\n"
-            f"• /risale - Risale-i Nur arama\n"
-            f"• /yeni - Sohbeti sıfırla\n"
-            f"• /gecmis - Chat özeti\n"
-            f"• /ara [kelime] - Sohbet arama\n\n"
-            f"💬 Mesaj yaz veya sesli mesaj gönder!"
-        )
-        
-        await update.message.reply_text(response_text, parse_mode='Markdown')
-        
-        if not context.user_data.get('mode_asked', False):
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔄 Sohbeti Yeniden Başlat", callback_data="reset_chat")]
-            ])
-            await update.message.reply_text(
-                "🔄 **Sohbeti sıfırlamak için butona bas:**",
-                reply_markup=keyboard,
-                parse_mode='Markdown'
-            )
-            context.user_data['mode_asked'] = True
-
-    except Exception:
-        await update.message.reply_text("❌ Başlatırken sorun oluştu, tekrar deneyin.")
-
-async def new_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sohbeti sıfırla - HafizaAsistani dahil!"""
-    user_id = update.effective_user.id
-    try:
-        user_ai = get_user_ai(user_id)
-        user_ai.reset_conversation()
-
-        await update.message.reply_text(
-            "✅ **Sohbet Tamamen Sıfırlandı!**\n\n"
-            "🆕 Yeni başlangıç yapabiliriz\n"
-            "🧠 HafizaAsistani hafızası temizlendi\n"
-            "📊 TopicMemory korunuyor",
-            parse_mode='Markdown'
-        )
-
-    except Exception:
-        await update.message.reply_text("❌ Sıfırlarken sorun oluştu, tekrar dener misin?")
-
-async def gecmis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Chat geçmişi özeti"""
-    user_id = update.effective_user.id
-
-    # HafizaAsistani'dan hafıza bilgisi al
-    user_ai = get_user_ai(user_id)
-    hafiza_count = 0
-    if hasattr(user_ai, 'hafiza') and hasattr(user_ai.hafiza, 'hafiza'):
-        hafiza_count = len(user_ai.hafiza.hafiza)
-
-    if chat_manager and chat_manager.driver:
-        summary = chat_manager.get_chat_summary(get_system_user_id(user_id), 7)
-    else:
-        summary = "Neo4j bağlantısı yok"
+    mode_text = "🧠 Derin (QuantumTree)" if ai.mode == "derin" else "⚡ Basit (HafizaAsistani)"
+    quantum_status = "✅" if ai.quantum else "❌"
 
     await update.message.reply_text(
-        f"📊 **Sohbet Özeti**\n\n"
-        f"{summary}\n\n"
-        f"🧠 HafizaAsistani: {hafiza_count} mesaj\n"
-        f"📦 TopicMemory: Aktif",
-        parse_mode='Markdown'
+        f"🤖 Bot Hazır!\n\n"
+        f"Mod: {mode_text}\n"
+        f"QuantumTree: {quantum_status}\n\n"
+        f"Komutlar:\n"
+        f"/basit - Hızlı mod\n"
+        f"/derin - Derin düşünme\n"
+        f"/yeni - Sıfırla"
     )
 
-async def ara_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sohbet geçmişinde arama"""
+
+async def basit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/basit"""
     user_id = update.effective_user.id
-    
-    if not context.args:
-        await update.message.reply_text(
-            "🔍 Nasıl kullanılır:\n"
-            "/ara [arama kelimesi]\n\n"
-            "Örnek: **/ara python**",
-            parse_mode='Markdown'
-        )
-        return
-    
-    keyword = " ".join(context.args)
-    
-    if chat_manager and chat_manager.driver:
-        results = chat_manager.search_chats(get_system_user_id(user_id), keyword, 3)
-        
-        if results:
-            response = f"🔍 **'{keyword}' araması sonuçları:**\n\n"
-            for i, (message, response_text, timestamp) in enumerate(results, 1):
-                response += f"**{i}. Kullanıcı:** {message[:50]}...\n💬 **AI Yanıtı:** {response_text[:100]}...\n\n"
-        else:
-            response = f"❌ **'{keyword}' için sonuç bulunamadı**"
-        
-        await update.message.reply_text(response, parse_mode='Markdown')
-    else:
-        await update.message.reply_text("❌ Chat hafızası aktif değil")
+    ai = get_ai(user_id)
+    ai.mode = "basit"
+    await update.message.reply_text("⚡ Basit mod aktif (HafizaAsistani)")
 
-async def yazili_mod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Yazılı mod"""
+
+async def derin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/derin"""
     user_id = update.effective_user.id
-    user_voice_modes[user_id] = False
-    await update.message.reply_text(
-        "📝 **Yazılı Mod Aktif!**\n"
-        "Sadece metin yanıtlar vereceğim.",
-        parse_mode='Markdown'
-    )
+    ai = get_ai(user_id)
 
-async def sesli_mod_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sesli mod"""
+    if not ai.quantum:
+        await update.message.reply_text("❌ QuantumTree mevcut değil, basit modda kalınıyor.")
+        return
+
+    ai.mode = "derin"
+    await update.message.reply_text("🧠 Derin mod aktif (QuantumTree)")
+
+
+async def yeni_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/yeni"""
     user_id = update.effective_user.id
-    user_voice_modes[user_id] = True
-    await update.message.reply_text(
-        "🔊 **Sesli Mod Aktif!**\n"
-        "Her mesajına sesli yanıt vereceğim!",
-        parse_mode='Markdown'
-    )
+    ai = get_ai(user_id)
+    result = ai.reset()
+    await update.message.reply_text(result)
 
-async def hizli_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Hızlı AI modu"""
-    user_id = update.effective_user.id
-    user_ai = get_user_ai(user_id)
-    user_ai.set_mode("simple")
-    await update.message.reply_text(
-        "⚡ **Hızlı AI Aktif!**\n"
-        "PersonalAI hızlı modda çalışıyor.",
-        parse_mode='Markdown'
-    )
 
-async def derin_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Derin AI modu - devre dışı, her zaman hızlı mod aktif"""
-    await update.message.reply_text(
-        "⚡ **Hızlı AI aktif!**\n"
-        "Sistem her zaman hızlı modda çalışıyor.",
-        parse_mode='Markdown'
-    )
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sistem istatistikleri (Admin)"""
-    if update.effective_user.id != 6505503887:
-        await update.message.reply_text("❌ Bu komut sadece admin içindir.", parse_mode=None)
-        return
-
-    stats = f"""📊 **Sistem İstatistikleri**
-
-👥 **Aktif Kullanıcı Instance'ları**: {len(ai_instances)}
-
-**Kullanıcı Detayları**:"""
-
-    for telegram_id, ai_instance in ai_instances.items():
-        system_user_id = ai_instance.user_id
-        message_count = getattr(ai_instance, 'message_count', 0)
-        last_used = getattr(ai_instance, 'last_used', 0)
-
-        if last_used:
-            last_used_str = datetime.fromtimestamp(last_used).strftime("%H:%M")
-        else:
-            last_used_str = "Bilinmiyor"
-
-        stats += f"\n• User {telegram_id} ({system_user_id.split('_')[-1]}): **{message_count}** mesaj, son: {last_used_str}"
-
-    await update.message.reply_text(stats, parse_mode='Markdown')
-
-ADMIN_USER_ID = 6505503887  # Sadece admin kullanabilir
-
-async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Kontrol menüsü - Sadece admin için"""
-    user_id = update.effective_user.id
-
-    if user_id != ADMIN_USER_ID:
-        await update.message.reply_text("❌ Bu menü sadece admin içindir.")
-        return
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔁 Bilgisayarı Yeniden Başlat", callback_data="pc_restart")],
-        [InlineKeyboardButton("⏻ Bilgisayarı Kapat", callback_data="pc_shutdown")],
-    ])
-
-    await update.message.reply_text(
-        "📋 **Kontrol Menüsü**\n\n"
-        "Aşağıdaki işlemlerden birini seçin:",
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
-
-async def handle_pc_control_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Bilgisayar kontrol callback handler"""
-    query = update.callback_query
-    await query.answer()
-
-    user_id = update.effective_user.id
-    callback_data = query.data
-
-    if user_id != ADMIN_USER_ID:
-        await query.edit_message_text("❌ Bu işlem sadece admin tarafından yapılabilir.")
-        return
-
-    if callback_data == "pc_shutdown":
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Evet, Kapat", callback_data="pc_shutdown_confirm"),
-                InlineKeyboardButton("❌ İptal", callback_data="pc_cancel")
-            ]
-        ])
-        await query.edit_message_text(
-            "⚠️ **Bilgisayarı kapatmak istediğinize emin misiniz?**\n\n"
-            "Bu işlem geri alınamaz!",
-            reply_markup=keyboard,
-            parse_mode='Markdown'
-        )
-
-    elif callback_data == "pc_restart":
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Evet, Yeniden Başlat", callback_data="pc_restart_confirm"),
-                InlineKeyboardButton("❌ İptal", callback_data="pc_cancel")
-            ]
-        ])
-        await query.edit_message_text(
-            "⚠️ **Bilgisayarı yeniden başlatmak istediğinize emin misiniz?**\n\n"
-            "Bot otomatik olarak tekrar başlayacak.",
-            reply_markup=keyboard,
-            parse_mode='Markdown'
-        )
-
-    elif callback_data == "pc_shutdown_confirm":
-        await query.edit_message_text("⏻ **Bilgisayar 10 saniye içinde kapanacak...**", parse_mode='Markdown')
-        os.system("shutdown /s /t 10")
-
-    elif callback_data == "pc_restart_confirm":
-        await query.edit_message_text("🔁 **Bilgisayar 10 saniye içinde yeniden başlayacak...**\n\nBot otomatik olarak açılacak.", parse_mode='Markdown')
-        os.system("shutdown /r /t 10")
-
-    elif callback_data == "pc_cancel":
-        await query.edit_message_text("❌ İşlem iptal edildi.")
-
-async def risale_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ana Risale arama komutu"""
-    if not risale_interface:
-        await update.message.reply_text(
-            "❌ **Risale arama sistemi şu anda kullanılamıyor.**\n"
-            "Sistem yöneticisi ile iletişime geçin.",
-            parse_mode='Markdown'
-        )
-        return
-    
-    try:
-        menu_data = risale_interface.create_main_menu()
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(row[0]["text"], callback_data=row[0]["callback"])]
-            for row in menu_data["keyboard"]
-        ])
-        
-        await update.message.reply_text(
-            menu_data["text"],
-            reply_markup=keyboard,
-            parse_mode=None
-        )
-
-    except Exception:
-        await update.message.reply_text("❌ Risale menüsü yüklenirken hata oluştu.")
-
-async def handle_risale_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Risale arama callback handler'ı"""
-    query = update.callback_query
-    await query.answer()
-    
-    if not risale_interface:
-        await query.edit_message_text("❌ Risale arama sistemi kullanılamıyor.")
-        return
-    
-    try:
-        callback_data = query.data
-        user_id = update.effective_user.id
-        
-        if callback_data == "set_mode_yazili":
-            user_voice_modes[user_id] = False
-            await query.edit_message_text("📝 **Yazılı Mod** tercih edildi. Yanıtlar bundan sonra metin olarak gelecek.")
-            return
-
-        if callback_data == "set_mode_sesli":
-            user_voice_modes[user_id] = True
-            await query.edit_message_text("🔊 **Sesli Mod** tercih edildi. Yanıtlar bundan sonra sesli olarak gelecek.")
-            return
-
-        if callback_data == "reset_chat":
-            user_ai = get_user_ai(user_id)
-            user_ai.reset_conversation()
-
-            await query.edit_message_text(
-                "✅ **Sohbet Sıfırlandı!**\n\n"
-                "🆕 Yeni bir sohbet başlatabilirsin.\n"
-                "🧠 HafizaAsistani hafızası temizlendi.",
-                parse_mode='Markdown'
-            )
-            return
-
-        if callback_data == "main_menu":
-            menu_data = risale_interface.create_main_menu()
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(row[0]["text"], callback_data=row[0]["callback"])]
-                for row in menu_data["keyboard"]
-            ])
-            await query.edit_message_text(menu_data["text"], reply_markup=keyboard, parse_mode=None)
-            
-        elif callback_data == "select_source":
-            menu_data = risale_interface.create_source_menu()
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(row[0]["text"], callback_data=row[0]["callback"])]
-                for row in menu_data["keyboard"]
-            ])
-            await query.edit_message_text(menu_data["text"], reply_markup=keyboard, parse_mode=None)
-            
-        elif callback_data == "show_stats":
-            stats_data = risale_interface.get_statistics()
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(row[0]["text"], callback_data=row[0]["callback"])]
-                for row in stats_data["keyboard"]
-            ])
-            await query.edit_message_text(stats_data["text"], reply_markup=keyboard, parse_mode=None)
-            
-        elif callback_data == "random_content":
-            random_data = risale_interface.get_random_content()
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(row[0]["text"], callback_data=row[0]["callback"])]
-                for row in random_data["keyboard"]
-            ])
-            await query.edit_message_text(random_data["text"], reply_markup=keyboard, parse_mode=None)
-            
-        elif callback_data == "search_keyword":
-            context.user_data['risale_search_mode'] = True
-            context.user_data['risale_source_filter'] = None
-            await query.edit_message_text(
-                "🔍 **Arama Modu Aktif**\n\n"
-                "Aramak istediğiniz kelimeyi yazın.\n"
-                "Örnek: iman, namaz, tevhid\n\n"
-                "❌ İptal etmek için /iptal yazın.",
-                parse_mode='Markdown'
-            )
-            
-        elif callback_data.startswith("source_"):
-            source = callback_data.replace("source_", "")
-            if source == "all":
-                source_name = "Tüm Kaynaklar"
-                source_filter = None
-            else:
-                source_name = risale_engine.source_mapping.get(source, source.title())
-                source_filter = source
-            
-            context.user_data['risale_search_mode'] = True
-            context.user_data['risale_source_filter'] = source_filter
-            
-            await query.edit_message_text(
-                f"📚 **{source_name}** seçildi\n\n"
-                f"🔍 **Arama Modu Aktif**\n\n"
-                f"Bu kaynakta aramak istediğiniz kelimeyi yazın.\n"
-                f"Örnek: iman, namaz, tevhid\n\n"
-                f"❌ İptal etmek için /iptal yazın.",
-                parse_mode='Markdown'
-            )
-            
-        elif callback_data == "help":
-            help_text = """📖 **Risale-i Nur Arama Sistemi Yardımı**
-
-🔍 **Kelime Ara**: Risale'de belirli kelimeleri arayın
-📚 **Kaynak Seç**: Sadece belirli kitaplarda arama yapın
-📊 **İstatistikler**: Veritabanı bilgilerini görün
-🎲 **Rastgele İçerik**: Örnek metinler görün
-
-Desteklenen Kaynaklar:
-- Sözler
-- Mektubat
-- Lemalar
-- Şualar
-- Lahikalar
-
-Arama İpuçları:
-- Tek kelime aramaları daha etkilidir
-- Farklı çekim eklerini deneyin
-- "Nerede geçiyor" sorusunu ekleyebilirsiniz"""
-            
-            keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu")
-            ]])
-            await query.edit_message_text(help_text, reply_markup=keyboard, parse_mode='Markdown')
-            
-        else:
-            await query.edit_message_text("❌ Bilinmeyen komut.")
-
-    except Exception:
-        await query.edit_message_text("❌ İşlem gerçekleştirilemedi.")
-
-async def handle_risale_search(update: Update, context: ContextTypes.DEFAULT_TYPE, search_query: str):
-    """Risale arama işlemi"""
-    if not risale_interface:
-        await update.message.reply_text("❌ Risale arama sistemi kullanılamıyor.")
-        return
-    
-    try:
-        user_id = update.effective_user.id
-        source_filter = context.user_data.get('risale_source_filter')
-        
-        search_data = risale_interface.handle_search_request(user_id, search_query, source_filter)
-        
-        if search_data.get("keyboard"):
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(row[0]["text"], callback_data=row[0]["callback"])]
-                for row in search_data["keyboard"]
-            ])
-            await update.message.reply_text(
-                search_data["text"],
-                reply_markup=keyboard,
-                parse_mode=search_data.get('parse_mode', None)
-            )
-        else:
-            await update.message.reply_text(
-                search_data["text"],
-                parse_mode=search_data.get('parse_mode', None)
-            )
-        
-        context.user_data['risale_search_mode'] = False
-        context.user_data['risale_source_filter'] = None
-
-    except Exception:
-        await update.message.reply_text("❌ Arama sırasında hata oluştu.")
-
-async def iptal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Risale arama modunu iptal et"""
-    if context.user_data.get('risale_search_mode'):
-        context.user_data['risale_search_mode'] = False
-        context.user_data['risale_source_filter'] = None
-        await update.message.reply_text(
-            "❌ **Risale arama modu iptal edildi.**\n\n"
-            "📖 Yeniden başlatmak için /risale komutunu kullanın.",
-            parse_mode='Markdown'
-        )
-    else:
-        await update.message.reply_text("❌ Aktif bir arama modu bulunmuyor.")
+# === MESAJ HANDLER ===
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ana mesaj handler - PersonalAI full integration + TIMEOUT"""
+    """Text mesaj"""
     user_input = update.message.text
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
 
-    if context.user_data.get('risale_search_mode'):
-        await handle_risale_search(update, context, user_input)
-        return
+    # Düşünüyorum mesajı
+    status = await context.bot.send_message(chat_id, "💭 Düşünüyorum...")
 
-    status_message = None
+    # İşle
+    ai = get_ai(user_id)
+    response = await ai.process(user_input)
 
+    # Status mesajını sil
     try:
-        user_ai = get_user_ai(user_id)
-        current_mode = getattr(user_ai, 'current_mode', 'simple')
-        is_deep_mode = current_mode == "deep"
+        await context.bot.delete_message(chat_id, status.message_id)
+    except:
+        pass
 
-        wants_voice_reply = should_send_voice_response(user_id, user_input)
-        send_text = should_send_text_response(user_id)
+    # Cevabı gönder
+    await update.message.reply_text(response)
 
-        status_message = await context.bot.send_message(
-            chat_id=chat_id,
-            text="☁️ Düşünüyorum...",
-            parse_mode=None
-        )
 
-        await context.bot.send_chat_action(chat_id=chat_id, action='typing')
-
-        # Hafıza yönetimi PersonalAI/HafizaAsistani tarafında
-        # Telegram sadece arayüz - boş history gönder
-        ai_response, mode, status = await user_ai.process(
-            user_input=user_input,
-            chat_history=[],
-            image_data=None
-        )
-
-        if isinstance(ai_response, dict):
-            processed_response = ai_response.get('chat_response', status)
-        else:
-            processed_response = ai_response
-
-        if status_message:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-            except Exception:
-                pass
-
-        raw_response = clean_response_for_user(processed_response)
-        raw_response = format_response_for_telegram(raw_response)
-
-        message_chunks = smart_text_splitter(raw_response, MESSAGE_FORMATTING["max_chunk_length"], is_deep_mode=False)
-
-        voice_response = None
-        if wants_voice_reply:
-            voice_response = await voice_processor.text_to_speech(raw_response, user_id)
-        
-        for i, chunk in enumerate(message_chunks):
-            cleaned_chunk = clean_markdown(chunk)
-
-            if send_text:
-                await context.bot.send_message(chat_id=chat_id, text=cleaned_chunk, parse_mode=None)
-
-            if i == 0 and wants_voice_reply and voice_response:
-                keyboard = [
-                    [
-                        InlineKeyboardButton("1x", callback_data=f"speed_play_normal_{user_id}"),
-                        InlineKeyboardButton("1.25x", callback_data=f"speed_play_fast_{user_id}"),
-                        InlineKeyboardButton("1.5x", callback_data=f"speed_play_faster_{user_id}"),
-                        InlineKeyboardButton("2x", callback_data=f"speed_play_fastest_{user_id}")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await context.bot.send_voice(chat_id=chat_id, voice=voice_response, reply_markup=reply_markup)
-            
-            if i < len(message_chunks) - 1:
-                delay = MESSAGE_FORMATTING["chunk_delay"]
-                if is_deep_mode:
-                    delay *= 1.5
-                await asyncio.sleep(delay)
-
-    except Exception:
-        
-        if status_message:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-            except Exception:
-                pass  # Mesaj zaten silinmiş olabilir
-
-        await update.message.reply_text("❌ Bir sorun oluştu, tekrar dener misin? 🔄")
-
-async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sesli mesaj handler"""
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-    status_message = None
-
-    try:
-        user_ai = get_user_ai(user_id)
-        current_mode = getattr(user_ai, 'current_mode', 'simple')
-        is_deep_mode = current_mode == "deep"
-
-        status_message = await context.bot.send_message(
-            chat_id=chat_id,
-            text="☁️ Düşünüyorum...",
-            parse_mode=None
-        )
-        await context.bot.send_chat_action(chat_id=chat_id, action='typing')
-
-        voice_file = await context.bot.get_file(update.message.voice.file_id)
-        voice_data = await voice_file.download_as_bytearray()
-        user_input = await voice_processor.speech_to_text(bytes(voice_data))
-
-        if user_input.startswith("❌"):
-            await context.bot.edit_message_text(
-                text=user_input + "\n🔄 Tekrar dener misiniz?",
-                chat_id=chat_id,
-                message_id=status_message.message_id,
-                parse_mode='Markdown'
-            )
-            return
-
-        await context.bot.edit_message_text(
-            text=f"🎧 Duyduğum: {user_input[:60]}...\n☁️ Düşünüyorum...",
-            chat_id=chat_id,
-            message_id=status_message.message_id,
-            parse_mode=None
-        )
-
-        # Hafıza yönetimi PersonalAI/HafizaAsistani tarafında
-        ai_response, mode, status = await user_ai.process(
-            user_input=user_input,
-            chat_history=[],
-            image_data=None
-        )
-
-        if isinstance(ai_response, dict):
-            processed_response = ai_response.get('chat_response', status)
-        else:
-            processed_response = ai_response
-
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-        except Exception:
-            pass
-
-        raw_response = clean_response_for_user(processed_response)
-        raw_response = format_response_for_telegram(raw_response)
-        message_chunks = smart_text_splitter(raw_response, MESSAGE_FORMATTING["max_chunk_length"], is_deep_mode=False)
-
-        voice_response = await voice_processor.text_to_speech(raw_response, user_id)
-        
-        for i, chunk in enumerate(message_chunks):
-            cleaned_chunk = clean_markdown(chunk)
-            await context.bot.send_message(chat_id=chat_id, text=cleaned_chunk, parse_mode=None)
-
-            if i == 0 and voice_response:
-                keyboard = [
-                    [
-                        InlineKeyboardButton("1x", callback_data=f"speed_play_normal_{user_id}"),
-                        InlineKeyboardButton("1.25x", callback_data=f"speed_play_fast_{user_id}"),
-                        InlineKeyboardButton("1.5x", callback_data=f"speed_play_faster_{user_id}"),
-                        InlineKeyboardButton("2x", callback_data=f"speed_play_fastest_{user_id}")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await context.bot.send_voice(chat_id=chat_id, voice=voice_response, reply_markup=reply_markup)
-            
-            if i < len(message_chunks) - 1:
-                delay = MESSAGE_FORMATTING["chunk_delay"]
-                if is_deep_mode:
-                    delay *= 1.5
-                await asyncio.sleep(delay)
-
-    except Exception:
-        if status_message:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-            except Exception:
-                pass  # Mesaj zaten silinmiş olabilir
-        await update.message.reply_text("❌ Sesli mesajı işlerken sorun oluştu. 🔄")
-
-async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fotoğraf handler"""
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-    status_message = None
-
-    try:
-        user_ai = get_user_ai(user_id)
-        is_deep_mode = getattr(user_ai, 'current_mode', 'simple') == "deep"
-
-        status_message = await context.bot.send_message(
-            chat_id=chat_id,
-            text="☁️ Düşünüyorum...",
-            parse_mode=None
-        )
-
-        photo = update.message.photo[-1]
-        file = await context.bot.get_file(photo.file_id)
-        image_data = await file.download_as_bytearray()
-        user_input = update.message.caption or "Bu görseli detaylıca analiz et ve açıkla."
-
-        image_base64 = base64.b64encode(bytes(image_data)).decode('utf-8')
-
-        # Hafıza yönetimi PersonalAI/HafizaAsistani tarafında
-        ai_response, mode, status = await user_ai.process(
-            user_input=user_input,
-            chat_history=[],
-            image_data=image_base64
-        )
-
-        if isinstance(ai_response, dict):
-            processed_response = ai_response.get('chat_response', status)
-        else:
-            processed_response = ai_response
-
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-        except Exception:
-            pass
-
-        raw_response = clean_response_for_user(processed_response)
-        raw_response = format_response_for_telegram(raw_response)
-        message_chunks = smart_text_splitter(raw_response, MESSAGE_FORMATTING["max_chunk_length"], is_deep_mode=False)
-
-        for i, chunk in enumerate(message_chunks):
-            cleaned_chunk = clean_markdown(chunk)
-            await context.bot.send_message(chat_id=chat_id, text=cleaned_chunk, parse_mode=None)
-
-            if i < len(message_chunks) - 1:
-                delay = MESSAGE_FORMATTING["chunk_delay"]
-                if is_deep_mode:
-                    delay *= 1.5
-                await asyncio.sleep(delay)
-
-    except Exception:
-        if status_message:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=status_message.message_id)
-            except Exception:
-                pass  # Mesaj zaten silinmiş olabilir
-        await update.message.reply_text("❌ Görseli analiz ederken sorun oluştu. 🔄")
-
-async def speed_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ses hızı callback handler"""
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data.startswith("speed_play_"):
-        parts = query.data.split("_")
-        speed_type = parts[2]
-        target_user_id = int(parts[3])
-        
-        speed_mapping = {
-            "normal": "normal",
-            "fast": "hızlı",
-            "faster": "çok_hızlı",
-            "fastest": "çok_hızlı"
-        }
-        user_voice_speeds[target_user_id] = speed_mapping.get(speed_type, "normal")
-        
-        speed_text = {
-            "normal": "1x",
-            "fast": "1.25x",
-            "faster": "1.5x",
-            "fastest": "2x"
-        }
-        
-        await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(
-            f"⚡ Ses hızı **{speed_text[speed_type]}** olarak ayarlandı!",
-            parse_mode='Markdown'
-        )
-
-async def post_init(application: Application):
-    """Bot komutlarını ayarla"""
-    commands = [
-        BotCommand("hizli_ai", "⚡ Hızlı AI"),
-        BotCommand("yeni", "🔄 Sohbeti sıfırla"),
-        BotCommand("menu", "📋 Kontrol Menüsü"),
-    ]
-    await application.bot.set_my_commands(commands)
-
-def load_risale_system():
-    """Risale arama sistemini yükle"""
-    global risale_engine, risale_interface
-
-    if risale_available:
-        try:
-            risale_engine = RisaleSearchEngine()
-            risale_interface = RisaleTelegramInterface(risale_engine)
-            return True
-        except Exception:
-            risale_engine = None
-            risale_interface = None
-            return False
-    return False
+# === MAIN ===
 
 def main():
-    """Ana fonksiyon"""
-    print("=" * 70)
-    print("🚀 PersonalAI Telegram Bot Başlatılıyor...")
-    print("=" * 70)
-    print()
-    
-    risale_loaded = load_risale_system()
-    
-    global chat_manager, chat_analyzer
-    try:
-        try:
-            with open('config.json', 'r', encoding='utf-8') as f:
-                config_data = json.load(f)
-            neo4j_enabled = config_data.get('neo4j', {}).get('enabled', False)
-        except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
-            print(f"Config okuma hatası: {e}")
-            neo4j_enabled = False
+    print("=" * 50)
+    print("🚀 Telegram Bot Başlatılıyor...")
+    print("=" * 50)
 
-        neo4j_pass = os.getenv("NEO4J_PASS") or os.getenv("NEO4J_PASSWORD") or "senegal5454"
-        chat_manager = ChatHistoryManager(neo4j_uri="bolt://localhost:7687", password=neo4j_pass, enabled=neo4j_enabled)
-        chat_analyzer = ChatDataAnalyzer(neo4j_uri="bolt://localhost:7687", password=neo4j_pass, enabled=neo4j_enabled)
-        if neo4j_enabled:
-            print("✅ Neo4j Chat Manager başlatıldı")
-    except Exception as e:
-        print(f"⚠️ Neo4j Chat Manager başlatılamadı: {e}")
-        chat_manager = None
-        chat_analyzer = None
-    
-    global quantum_tree
-    if quantum_available:
-        quantum_initialized = initialize_quantum_tree()
-        if quantum_initialized:
-            print("✅ QuantumTree başarıyla başlatıldı!")
-            print("🌟 Derin mod (QuantumTree + PersonalAI) aktif!")
-        else:
-            print("⚠️ QuantumTree başlatılamadı")
-            print("⚡ Sadece PersonalAI hızlı mod aktif olacak")
-    else:
-        print("⚠️ QuantumTree modülü mevcut değil")
-        print("⚡ Sadece PersonalAI hızlı mod aktif olacak")
-    
-    telegram_token = os.getenv("TELEGRAM_TOKEN")
-    if not telegram_token:
-        print("=" * 70)
-        print("❌ TELEGRAM_TOKEN ortam değişkeni bulunamadı!")
-        print("📝 .env dosyasına ekle: TELEGRAM_TOKEN=your_bot_token")
-        print("=" * 70)
-        sys.exit(1)
-    
-    try:
-        application = (
-            Application.builder()
-            .token(telegram_token)
-            .post_init(post_init)
-            .connect_timeout(30)
-            .read_timeout(30)
-            .write_timeout(30)
-            .build()
-        )
-        
-        application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(CommandHandler("yazili", yazili_mod_command))
-        application.add_handler(CommandHandler("sesli", sesli_mod_command))
-        application.add_handler(CommandHandler("hizli_ai", hizli_ai_command))
-        application.add_handler(CommandHandler("derin_ai", derin_ai_command))
-        application.add_handler(CommandHandler("risale", risale_command))
-        application.add_handler(CommandHandler("yeni", new_chat_command))
-        application.add_handler(CommandHandler("gecmis", gecmis_command))
-        application.add_handler(CommandHandler("ara", ara_command))
-        application.add_handler(CommandHandler("iptal", iptal_command))
-        application.add_handler(CommandHandler("stats", stats_command))
-        application.add_handler(CommandHandler("menu", menu_command))
-
-        application.add_handler(CallbackQueryHandler(speed_callback_handler, pattern="^speed_play_"))
-        application.add_handler(CallbackQueryHandler(handle_pc_control_callbacks, pattern="^pc_"))
-        application.add_handler(CallbackQueryHandler(handle_risale_callbacks, pattern="^set_mode_"))
-        application.add_handler(CallbackQueryHandler(handle_risale_callbacks))
-        
-        application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        application.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
-        
-        start_cleanup_timer()
-        
-        print()
-        print("=" * 70)
-        print("✅ TELEGRAM BOT BAŞARILI!")
-        print("=" * 70)
-        print()
-        print("🤖 ANA ÖZELLİKLER:")
-        print("  • PersonalAI + HafizaAsistani")
-        print("  • Multi-modal (Text + Voice + Images)")
-        print(f"  • Timeout: {PROCESS_TIMEOUT}s")
-        print()
-        print("🧠 HAFIZA:")
-        print("  • HafizaAsistani (RAM)")
-        print("  • TopicMemory (Dosya)")
-        print("  • ConversationContext (Dosya)")
-        print("  • FAISS KB (Bilgi Tabanı)")
-        print()
-        print("🛑 Durdurmak için Ctrl+C")
-        print("=" * 70)
-        print()
-        
-        application.run_polling(drop_pending_updates=True)
-        
-    except KeyboardInterrupt:
-        print()
-        print("=" * 70)
-        print("👋 PersonalAI Telegram Bot kullanıcı tarafından durduruldu.")
-        print("=" * 70)
-        print()
-        
-        print("🧹 Cleanup işlemleri başlıyor...")
-        
-        if quantum_tree:
-            try:
-                quantum_tree.stop_background()
-                print("  ✅ QuantumTree kapatıldı")
-            except Exception as e:
-                print(f"  ⚠️ QuantumTree kapatma hatası: {e}")
-
-        if chat_manager and chat_manager.driver:
-            try:
-                chat_manager.driver.close()
-                print("  ✅ Neo4j chat manager kapatıldı")
-            except Exception as e:
-                print(f"  ⚠️ Neo4j chat manager kapatma hatası: {e}")
-
-        if chat_analyzer and chat_analyzer.driver:
-            try:
-                chat_analyzer.close()
-                print("  ✅ Chat analyzer kapatıldı")
-            except Exception as e:
-                print(f"  ⚠️ Chat analyzer kapatma hatası: {e}")
-        
-        for telegram_id in list(ai_instances.keys()):
-            try:
-                del ai_instances[telegram_id]
-                print(f"  ✅ AI instance {telegram_id} cleanup completed")
-            except Exception as e:
-                print(f"  ⚠️ AI cleanup error (user {telegram_id}): {e}")
-        
-        print()
-        print("✅ Tüm cleanup işlemleri tamamlandı.")
-        print("=" * 70)
-        
-    except Exception as e:
-        print()
-        print("=" * 70)
-        print(f"❌ Kritik hata: {e}")
-        print("=" * 70)
+    token = os.getenv("TELEGRAM_TOKEN")
+    if not token:
+        print("❌ TELEGRAM_TOKEN bulunamadı!")
         sys.exit(1)
 
-if __name__ == '__main__':
+    app = Application.builder().token(token).build()
+
+    # Komutlar
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("basit", basit_command))
+    app.add_handler(CommandHandler("derin", derin_command))
+    app.add_handler(CommandHandler("yeni", yeni_command))
+
+    # Mesaj
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("✅ Bot hazır!")
+    print("🛑 Durdurmak için Ctrl+C")
+    print("=" * 50)
+
+    app.run_polling(drop_pending_updates=True)
+
+
+if __name__ == "__main__":
     main()
