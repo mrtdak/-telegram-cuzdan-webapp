@@ -1973,6 +1973,39 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         son_mesajlar = self.hafiza[-n:]
         return [{"rol": m["rol"], "mesaj": m["mesaj"]} for m in son_mesajlar]
 
+    def set_llm(self, llm):
+        """LLM referansını ayarla - PersonalAI'dan çağrılır"""
+        self.llm = llm
+        print("✅ LLM HafizaAsistani'ya bağlandı")
+
+    async def process(self, user_input: str, chat_history: List[Dict] = None, image_data=None) -> str:
+        """
+        Ana işlem metodu - Telegram'dan çağrılır
+
+        Akış: Telegram → HafizaAsistani.process() → PersonalAI.generate() → Telegram
+
+        1. Prompt hazırla
+        2. LLM'e gönder
+        3. Cevabı kaydet
+        4. Cevabı döndür
+        """
+        chat_history = chat_history or []
+
+        # 1. Prompt hazırla
+        paket = await self.hazirla_ve_prompt_olustur(user_input, chat_history)
+        prompt = paket.get('prompt', user_input)
+
+        # 2. LLM'e gönder
+        if not hasattr(self, 'llm') or self.llm is None:
+            return "❌ LLM bağlı değil!"
+
+        response = await self.llm.generate(prompt, image_data)
+
+        # 3. Cevabı kaydet
+        self.add(user_input, response, chat_history)
+
+        # 4. Döndür
+        return response
 
 
 async def test_sekreter():

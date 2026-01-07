@@ -26,38 +26,32 @@ import numpy as np
 from neo4j import GraphDatabase
 
 try:
-    from personal_ai import PersonalAI, ResponseCodes, SystemConfig
-
-    AIResponseCodes = ResponseCodes
+    from personal_ai import LocalLLM, SystemConfig
+    from hafiza_asistani import HafizaAsistani
 
     logger = logging.getLogger(__name__)
-    print("✅ PersonalAI modülü yüklendi")
-    
+    print("✅ LocalLLM + HafizaAsistani yüklendi")
+
 except ImportError as e:
     logger = logging.getLogger(__name__)
-    print(f"❌ PersonalAI modülü yüklenemedi: {e}")
-    
-    class PersonalAI:
+    print(f"❌ Modüller yüklenemedi: {e}")
+
+    class LocalLLM:
         def __init__(self, user_id="murat"):
             self.user_id = user_id
-            
-        async def process(self, user_input, chat_history, image_data=None):
-            return "PersonalAI bağlantı hatası", user_input, "Sistem yüklenemedi"
-            
-        def set_mode(self, mode): pass
-        def reset_conversation(self): pass
-        def close(self): pass
-        def get_system_stats(self): return {}
-    
-    class ResponseCodes:
-        NO_DATA = "NO_DATA"
-        API_ERROR = "API_ERROR"
-        SEARCH_FAILED = "SEARCH_FAILED"
-        
+        async def generate(self, prompt, image_data=None):
+            return "LLM bağlantı hatası"
+
+    class HafizaAsistani:
+        def __init__(self, **kwargs):
+            pass
+        def set_llm(self, llm): pass
+        async def process(self, user_input, chat_history=None, image_data=None):
+            return "HafizaAsistani bağlantı hatası"
+        def clear(self): pass
+
     class SystemConfig:
         DEFAULT_USER_ID = "murat"
-    
-    AIResponseCodes = ResponseCodes
 
 try:
     from quantum_agac import QuantumTree
@@ -93,7 +87,7 @@ logging.getLogger("telegram").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("httpcore").setLevel(logging.ERROR)
 
-ai_instances: Dict[int, "PersonalAIWrapperEnhanced"] = {}
+ai_instances: Dict[int, "AIWrapper"] = {}
 quantum_tree: Optional[QuantumTree] = None
 chat_manager: Optional["ChatHistoryManager"] = None
 chat_analyzer: Optional["ChatDataAnalyzer"] = None
@@ -512,84 +506,56 @@ class VoiceProcessor:
 
 voice_processor = VoiceProcessor()
 
-class PersonalAIWrapper:
-    """PersonalAI sistemine direkt bağlanan wrapper"""
-    
+class AIWrapper:
+    """
+    Basit AI Wrapper - Telegram → HafizaAsistani → LLM
+    """
+
     def __init__(self, user_id="murat"):
         self.user_id = user_id
-        
-        self.ai_core_instance = PersonalAI(user_id=user_id)
-        self.current_mode = "simple"
-    
-    def validate_and_format_chat_history(self, telegram_history: List[Dict]) -> List[Dict[str, Any]]:
-        """Telegram chat history'yi PersonalAI formatına çevir"""
-        if not telegram_history:
-            return []
+        self.last_used = time.time()
+        self.message_count = 0
 
-        validated_history = []
-        for entry in telegram_history:
-            if not isinstance(entry, dict):
-                continue
+        # 1. LLM oluştur
+        self.llm = LocalLLM(user_id)
 
-            role = entry.get('role', '')
-            content = (
-                entry.get('content_en') or
-                entry.get('content') or
-                entry.get('message') or
-                ""
-            ).strip()
+        # 2. HafizaAsistani oluştur
+        self.hafiza = HafizaAsistani(
+            saat_limiti=48,
+            esik=0.50,
+            max_mesaj=20,
+            model_adi="BAAI/bge-m3",
+            use_decision_llm=True,
+            decision_model="meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
+        )
 
-            if not role or not content:
-                continue
+        # 3. LLM'i HafizaAsistani'ya ver
+        self.hafiza.set_llm(self.llm)
 
-            validated_history.append({
-                'role': role,
-                'content': content,
-                'timestamp': entry.get('timestamp', time.time())
-            })
+        print(f"✅ AIWrapper hazır (user: {user_id})")
 
-        return validated_history
-    
-    async def process(self, user_input: str, chat_history: List[Dict],
+    async def process(self, user_input: str, chat_history: List[Dict] = None,
                       image_data: Optional[bytes] = None) -> Tuple[Any, str, str]:
-        """Ana process metodu - PersonalAI'a direkt bağlı"""
+        """
+        Ana process - Telegram → HafizaAsistani → LLM → Telegram
+        """
+        self.last_used = time.time()
+        self.message_count += 1
+
         try:
-            formatted_history = self.validate_and_format_chat_history(chat_history)
+            chat_history = chat_history or []
 
-            if self.current_mode == "deep" and quantum_tree:
-                
-                try:
-                    english_text = GoogleTranslator(source='auto', target='en').translate(user_input)
-                except Exception as e:
-                    print(f"Çeviri hatası: {e}")
-                    english_text = user_input
-                
-                loop = asyncio.get_event_loop()
-                quantum_result = await loop.run_in_executor(None, quantum_tree.truth_filter, english_text)
-                final_response_text = quantum_result.get("final_response") or "QuantumTree yanıt üretemedi."
-                
-                return {
-                    "chat_response": final_response_text,
-                    "quantum_result": quantum_result,
-                    "mode": "deep"
-                }, user_input, final_response_text
+            # Direkt HafizaAsistani'ya gönder!
+            ai_response = await asyncio.wait_for(
+                self.hafiza.process(
+                    user_input=user_input,
+                    chat_history=chat_history,
+                    image_data=image_data
+                ),
+                timeout=PROCESS_TIMEOUT
+            )
 
-            else:
-                ai_response_tr, processed_input, final_response = await asyncio.wait_for(
-                    self.ai_core_instance.process(
-                        user_input=user_input,
-                        chat_history=formatted_history,
-                        image_data=image_data
-                    ),
-                    timeout=PROCESS_TIMEOUT
-                )
-                
-                return {
-                    "chat_response": ai_response_tr,
-                    "processed_input": processed_input,
-                    "mode": self.current_mode,
-                    "personai_used": True
-                }, user_input, ai_response_tr
+            return {"chat_response": ai_response}, user_input, ai_response
 
         except asyncio.TimeoutError:
             error_msg = USER_MESSAGES_TR["timeout_error"]
@@ -597,47 +563,26 @@ class PersonalAIWrapper:
 
         except Exception as e:
             error_msg = USER_MESSAGES_TR["processing_error"]
+            print(f"❌ Process hatası: {e}")
             return {"chat_response": error_msg, "error": str(e)}, user_input, error_msg
-    
-    def set_mode(self, mode: str):
-        """Mode değiştir"""
-        self.current_mode = mode
-        if hasattr(self.ai_core_instance, 'set_mode'):
-            self.ai_core_instance.set_mode(mode)
 
     def reset_conversation(self):
-        """Konuşmayı sıfırla - DeepThinker dahil!"""
-        if hasattr(self.ai_core_instance, 'memory') and self.ai_core_instance.memory:
-            self.ai_core_instance.memory.clear()
-
-        if hasattr(self.ai_core_instance, 'thinker') and self.ai_core_instance.thinker:
-            self.ai_core_instance.thinker.clear_context()
-
+        """Konuşmayı sıfırla"""
+        if hasattr(self.hafiza, 'clear'):
+            self.hafiza.clear()
         return "✅ Konuşma sıfırlandı"
 
-class PersonalAIWrapperEnhanced(PersonalAIWrapper):
-    """Enhanced wrapper with usage tracking"""
-    
-    def __init__(self, user_id="murat"):
-        super().__init__(user_id)
-        self.last_used = time.time()
-        self.message_count = 0
-    
-    async def process(self, user_input: str, chat_history: List[Dict], 
-                      image_data: Optional[bytes] = None):
-        """Enhanced process with tracking"""
-        self.last_used = time.time()
-        self.message_count += 1
-        
-        return await super().process(user_input, chat_history, image_data)
+    def set_mode(self, mode: str):
+        """Mode ayarla (şimdilik kullanılmıyor)"""
+        pass
 
 def get_user_ai(telegram_user_id):
-    """Her Telegram kullanıcısı için ayrı PersonalAI instance oluştur"""
+    """Her Telegram kullanıcısı için ayrı AI instance oluştur"""
     telegram_id = int(telegram_user_id)
 
     if telegram_id not in ai_instances:
         system_user_id = get_system_user_id(telegram_id)
-        ai_instances[telegram_id] = PersonalAIWrapperEnhanced(user_id=system_user_id)
+        ai_instances[telegram_id] = AIWrapper(user_id=system_user_id)
 
     return ai_instances[telegram_id]
 
@@ -677,10 +622,6 @@ def cleanup_inactive_users():
 
     for telegram_id in inactive_users:
         try:
-            if hasattr(ai_instances[telegram_id], 'ai_core_instance'):
-                ai_core = ai_instances[telegram_id].ai_core_instance
-                if hasattr(ai_core, 'close'):
-                    ai_core.close()
             del ai_instances[telegram_id]
         except Exception:
             pass
@@ -773,10 +714,8 @@ async def gecmis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # HafizaAsistani'dan hafıza bilgisi al
     user_ai = get_user_ai(user_id)
     hafiza_count = 0
-    if hasattr(user_ai, 'ai_core_instance') and hasattr(user_ai.ai_core_instance, 'memory'):
-        memory = user_ai.ai_core_instance.memory
-        if hasattr(memory, 'hafiza'):
-            hafiza_count = len(memory.hafiza)
+    if hasattr(user_ai, 'hafiza') and hasattr(user_ai.hafiza, 'hafiza'):
+        hafiza_count = len(user_ai.hafiza.hafiza)
 
     if chat_manager and chat_manager.driver:
         summary = chat_manager.get_chat_summary(get_system_user_id(user_id), 7)
@@ -1596,15 +1535,12 @@ def main():
             except Exception as e:
                 print(f"  ⚠️ Chat analyzer kapatma hatası: {e}")
         
-        for telegram_id, ai_instance in list(ai_instances.items()):
-            if hasattr(ai_instance, 'ai_core_instance') and ai_instance.ai_core_instance:
-                try:
-                    if hasattr(ai_instance.ai_core_instance, 'close'):
-                        ai_instance.ai_core_instance.close()
-                    print(f"  ✅ PersonalAI instance {telegram_id} cleanup completed")
-                    del ai_instances[telegram_id]
-                except Exception as e:
-                    print(f"  ⚠️ PersonalAI cleanup error (user {telegram_id}): {e}")
+        for telegram_id in list(ai_instances.keys()):
+            try:
+                del ai_instances[telegram_id]
+                print(f"  ✅ AI instance {telegram_id} cleanup completed")
+            except Exception as e:
+                print(f"  ⚠️ AI cleanup error (user {telegram_id}): {e}")
         
         print()
         print("✅ Tüm cleanup işlemleri tamamlandı.")
