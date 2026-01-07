@@ -71,11 +71,14 @@ class LocalLLM:
         provider_name = "Together.ai" if self.provider == "together" else "Ollama"
         print(f"✅ LLM başlatıldı: {self.model_name} ({provider_name}, {self.device})")
 
-    async def generate(self, prompt: str, image_data: Optional[bytes] = None) -> str:
-        """LLM yanıt üret"""
+    async def generate(self, prompt: str, image_data: Optional[bytes] = None, messages: list = None) -> str:
+        """LLM yanıt üret - messages formatı destekler"""
         try:
             if image_data:
                 return await self._generate_with_vision(prompt, image_data)
+            elif messages:
+                # Yeni: Messages formatı (sohbet bağlamı korunur)
+                return await self._generate_with_messages(messages)
             else:
                 return await self._generate_text_only(prompt)
         except Exception as e:
@@ -121,6 +124,62 @@ class LocalLLM:
             return await self._generate_together(prompt)
         else:
             return await self._generate_ollama(prompt)
+
+    async def _generate_with_messages(self, messages: list) -> str:
+        """Messages formatı ile LLM çağrısı - sohbet bağlamı korunur"""
+        if SystemConfig.LOG_FULL_PROMPT:
+            print("\n" + "=" * 70)
+            print(f"📋 LLM MESSAGES ({self.provider.upper()}):")
+            print("=" * 70)
+            for msg in messages[-5:]:  # Son 5 mesajı göster
+                role = msg.get('role', 'unknown')
+                content = msg.get('content', '')[:200]
+                print(f"[{role}]: {content}...")
+            print("=" * 70 + "\n")
+
+        if self.provider == "together":
+            return await self._generate_together_messages(messages)
+        else:
+            # Ollama için messages'ı prompt'a çevir
+            prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+            return await self._generate_ollama(prompt)
+
+    async def _generate_together_messages(self, messages: list) -> str:
+        """Together.ai API - Messages formatı"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.together_api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": SystemConfig.TOGETHER_MODEL,
+                "messages": messages,  # Direkt messages listesi
+                "max_tokens": SystemConfig.MAX_TOKENS,
+                "temperature": SystemConfig.TEMPERATURE,
+                "top_p": SystemConfig.TOP_P,
+                "repetition_penalty": SystemConfig.REPEAT_PENALTY,
+                "stream": False
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    SystemConfig.TOGETHER_API_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=180)
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                    else:
+                        error_text = await resp.text()
+                        print(f"⚠️ Together.ai hatası: {resp.status} - {error_text[:200]}")
+                        return "API hatası oluştu."
+        except asyncio.TimeoutError:
+            return "Zaman aşımı."
+        except Exception as e:
+            print(f"⚠️ Together.ai hatası: {e}")
+            return "Bağlantı hatası."
 
     async def _generate_together(self, prompt: str) -> str:
         """Together.ai API"""

@@ -1978,33 +1978,159 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         self.llm = llm
         print("✅ LLM HafizaAsistani'ya bağlandı")
 
+    def _build_messages(
+        self,
+        user_input: str,
+        paket: Dict[str, Any],
+        chat_history: List[Dict] = None
+    ) -> List[Dict[str, str]]:
+        """
+        Messages formatı oluştur - LLM için proper chat format
+
+        Returns: [
+            {"role": "system", "content": "..."},
+            {"role": "user", "content": "msg1"},
+            {"role": "assistant", "content": "resp1"},
+            {"role": "user", "content": "current_input + context"}
+        ]
+        """
+        messages = []
+
+        # 1. System message - SYSTEM_PROMPT + zaman
+        zaman = get_current_datetime()
+        system_content = f"""{self.SYSTEM_PROMPT}
+
+[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']})"""
+
+        messages.append({"role": "system", "content": system_content})
+
+        # 2. Chat history - user/assistant rolleri ile
+        max_history = self.max_mesaj  # 20
+
+        # Telegram history varsa onu kullan
+        if chat_history and len(chat_history) > 0:
+            limited_history = chat_history[-max_history:] if len(chat_history) > max_history else chat_history
+            for msg in limited_history:
+                role = msg.get('role', 'user')
+                content = msg.get('content', '')
+                if content and role in ['user', 'assistant']:
+                    messages.append({"role": role, "content": content})
+
+        # Telegram history boşsa self.hafiza'dan al
+        elif self.hafiza and len(self.hafiza) > 0:
+            for m in self.hafiza[-max_history:]:
+                rol = m.get("rol", "user")
+                mesaj = m.get("mesaj", "")
+                if mesaj:
+                    messages.append({"role": rol, "content": mesaj})
+
+        # 3. Son user message - context ile birlikte
+        context_parts = []
+
+        # Metadata'dan context bilgilerini al
+        metadata = paket.get('metadata', {})
+        llm_decision = paket.get('llm_decision', {})
+
+        # Prompt'tan context kısımlarını çıkar
+        prompt = paket.get('prompt', '')
+
+        # Tool result varsa ekle
+        if metadata.get('has_tool_result'):
+            tool_name = paket.get('tool_used', '')
+            # Prompt'tan tool result'ı çıkarmaya çalış
+            if '[🌐 İNTERNET ARAŞTIRMASI]:' in prompt:
+                start = prompt.find('[🌐 İNTERNET ARAŞTIRMASI]:')
+                end = prompt.find('\n\n[', start + 1)
+                if end == -1:
+                    end = prompt.find('━━━', start + 1)
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+            elif '[📚 RİSALE-İ NUR\'DAN' in prompt:
+                start = prompt.find('[📚 RİSALE-İ NUR\'DAN')
+                end = prompt.find('\n\n[', start + 1)
+                if end == -1:
+                    end = prompt.find('━━━', start + 1)
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+
+        # Semantic context varsa ekle
+        if metadata.get('has_semantic'):
+            if '[HAFIZA]:' in prompt:
+                start = prompt.find('[HAFIZA]:')
+                end = prompt.find('\n\n[', start + 1)
+                if end == -1:
+                    end = prompt.find('━━━', start + 1)
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+
+        # FAISS context varsa ekle
+        if metadata.get('has_faiss'):
+            if '[BİLGİ TABANI]:' in prompt:
+                start = prompt.find('[BİLGİ TABANI]:')
+                end = prompt.find('\n\n[', start + 1)
+                if end == -1:
+                    end = prompt.find('━━━', start + 1)
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+
+        # Kullanıcı profili varsa ekle
+        if '[👤 KULLANICI PROFİLİ' in prompt:
+            start = prompt.find('[👤 KULLANICI PROFİLİ')
+            end = prompt.find('\n\n[', start + 1)
+            if end == -1:
+                end = prompt.find('━━━', start + 1)
+            if start != -1 and end != -1:
+                context_parts.append(prompt[start:end].strip())
+
+        # Son user message'ı oluştur
+        if context_parts:
+            user_content = f"""📚 Bağlam:
+{chr(10).join(context_parts)}
+
+📩 Sorum:
+{user_input}"""
+        else:
+            user_content = user_input
+
+        messages.append({"role": "user", "content": user_content})
+
+        return messages
+
     async def process(self, user_input: str, chat_history: List[Dict] = None, image_data=None) -> str:
         """
         Ana işlem metodu - Telegram'dan çağrılır
 
         Akış: Telegram → HafizaAsistani.process() → PersonalAI.generate() → Telegram
 
-        1. Prompt hazırla
-        2. LLM'e gönder
-        3. Cevabı kaydet
-        4. Cevabı döndür
+        1. Paket hazırla (context, tool results, vb.)
+        2. Messages formatı oluştur
+        3. LLM'e gönder (proper chat format)
+        4. Cevabı kaydet
+        5. Cevabı döndür
         """
         chat_history = chat_history or []
 
-        # 1. Prompt hazırla
+        # 1. Paket hazırla
         paket = await self.hazirla_ve_prompt_olustur(user_input, chat_history)
-        prompt = paket.get('prompt', user_input)
 
-        # 2. LLM'e gönder
+        # 2. LLM kontrolü
         if not hasattr(self, 'llm') or self.llm is None:
             return "❌ LLM bağlı değil!"
 
-        response = await self.llm.generate(prompt, image_data)
+        # 3. LLM'e gönder
+        if image_data:
+            # Vision için eski prompt formatı kullan
+            prompt = paket.get('prompt', user_input)
+            response = await self.llm.generate(prompt, image_data)
+        else:
+            # Text için messages formatı kullan (YENİ!)
+            messages = self._build_messages(user_input, paket, chat_history)
+            response = await self.llm.generate(prompt=None, image_data=None, messages=messages)
 
-        # 3. Cevabı kaydet
+        # 4. Cevabı kaydet
         self.add(user_input, response, chat_history)
 
-        # 4. Döndür
+        # 5. Döndür
         return response
 
 

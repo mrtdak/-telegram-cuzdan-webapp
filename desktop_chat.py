@@ -12,21 +12,17 @@ if sys.platform == 'win32':
 from dotenv import load_dotenv
 load_dotenv()
 
-# ==================== PERSONALAI IMPORT ====================
+# ==================== AI IMPORT ====================
 AI_AVAILABLE = False
 try:
-    from personal_ai import PersonalAI
+    from personal_ai import LocalLLM
+    from hafiza_asistani import HafizaAsistani
     AI_AVAILABLE = True
-    print("PersonalAI modülü yüklendi")
+    print("AI modülleri yüklendi (HafizaAsistani + LocalLLM)")
 except Exception as e:
-    print(f"PersonalAI yüklenemedi: {e}")
-    class PersonalAI:
-        def __init__(self, user_id="murat"): self.user_id = user_id
-        async def process(self, user_input, chat_history, image_data=None):
-            return "PersonalAI yüklenemedi. Lütfen modülü kontrol edin.", user_input, "Hata"
-        def set_mode(self, mode): pass
-        def reset_conversation(self): pass
-        def close(self): pass
+    print(f"AI yüklenemedi: {e}")
+    LocalLLM = None
+    HafizaAsistani = None
 
 # ==================== GUI ====================
 import tkinter as tk
@@ -42,32 +38,42 @@ ctk.set_default_color_theme("blue")
 
 PROCESS_TIMEOUT = 120
 
-class PersonalAIWrapper:
-    """PersonalAI için wrapper sınıfı"""
+class AIWrapper:
+    """AI Wrapper - HafizaAsistani + LocalLLM"""
     def __init__(self, user_id="desktop_user"):
-        self.ai_core = PersonalAI(user_id=user_id)
-        self.current_mode = "normal"
-        print(f"PersonalAI Wrapper başlatıldı (user: {user_id})")
+        self.user_id = user_id
+        self.mode = "basit"  # varsayılan
+
+        # HafizaAsistani + LLM
+        self.llm = LocalLLM(user_id)
+        self.hafiza = HafizaAsistani(
+            saat_limiti=48,
+            esik=0.50,
+            max_mesaj=20,
+            model_adi="BAAI/bge-m3",
+            use_decision_llm=True,
+            decision_model="meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
+        )
+        self.hafiza.set_llm(self.llm)
+        print(f"AI Wrapper başlatıldı (user: {user_id})")
 
     def set_mode(self, mode_name: str):
         """Yapay zeka modunu değiştir"""
         mode_map = {
-            "Sohbet": "simple",
-            "Derin Analiz": "deep"
+            "Sohbet": "basit",
+            "Derin Analiz": "derin"
         }
-        self.current_mode = mode_map.get(mode_name, "normal")
-        if hasattr(self.ai_core, 'set_mode'):
-            self.ai_core.set_mode(self.current_mode)
-        print(f"AI modu değişti: {self.current_mode}")
+        self.mode = mode_map.get(mode_name, "basit")
+        print(f"AI modu değişti: {self.mode}")
 
     async def process(self, user_input: str) -> str:
         """Kullanıcı girdisini işle ve yanıt döndür"""
         try:
-            ai_response, _, _ = await asyncio.wait_for(
-                self.ai_core.process(user_input=user_input, chat_history=[], image_data=None),
+            response = await asyncio.wait_for(
+                self.hafiza.process(user_input, []),
                 timeout=PROCESS_TIMEOUT
             )
-            return ai_response.strip() if ai_response else "Yanıt alınamadı."
+            return response.strip() if response else "Yanıt alınamadı."
         except asyncio.TimeoutError:
             return "Yanıt süresi aşıldı, tekrar dener misin?"
         except Exception as e:
@@ -76,13 +82,12 @@ class PersonalAIWrapper:
 
     def reset(self):
         """Konuşmayı sıfırla"""
-        if hasattr(self.ai_core, 'reset_conversation'):
-            self.ai_core.reset_conversation()
+        if hasattr(self.hafiza, 'hafiza'):
+            self.hafiza.hafiza = []
 
     def close(self):
         """Kaynakları temizle"""
-        if hasattr(self.ai_core, 'close'):
-            self.ai_core.close()
+        pass
 
 
 class ChatApp(ctk.CTk):
@@ -104,7 +109,7 @@ class ChatApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # AI Wrapper
-        self.ai: Optional[PersonalAIWrapper] = None
+        self.ai: Optional[AIWrapper] = None
         self.is_processing = False
         self.chat_history = []  # Mesajları tut (kopyalama için)
 
@@ -119,7 +124,7 @@ class ChatApp(ctk.CTk):
         """AI sistemini başlat"""
         if AI_AVAILABLE:
             try:
-                self.ai = PersonalAIWrapper(user_id="desktop_user")
+                self.ai = AIWrapper(user_id="desktop_user")
                 self.status_label.configure(text="Durum: Hazır", text_color="green")
             except Exception as e:
                 print(f"AI başlatma hatası: {e}")
