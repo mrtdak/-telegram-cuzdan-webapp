@@ -24,13 +24,20 @@ except Exception as e:
     LocalLLM = None
     HafizaAsistani = None
 
+# ==================== TTS ====================
+import pyttsx3
+
 # ==================== GUI ====================
 import tkinter as tk
 import customtkinter as ctk
 import threading
 import asyncio
+import json
 from datetime import datetime
 from typing import Optional
+
+# Kamera bildirim dosyası
+KAMERA_BILDIRIM_DOSYASI = "C:/Projects/quantumtree/kamera_bildirim.json"
 
 # Görünüm Ayarları
 ctk.set_appearance_mode("Dark")
@@ -113,12 +120,38 @@ class ChatApp(ctk.CTk):
         self.is_processing = False
         self.chat_history = []  # Mesajları tut (kopyalama için)
 
+        # TTS (Text-to-Speech)
+        self.tts_enabled = False
+        self.tts_engine = None
+        self.tts_speaking = False
+        self.init_tts()
+
         self.setup_sidebar()
         self.setup_chat_area()
         self.init_ai()
 
+        # Kamera bildirim kontrolünü başlat
+        self.check_kamera_bildirim()
+
         # Kapatma eventi
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def init_tts(self):
+        """TTS motorunu başlat"""
+        try:
+            self.tts_engine = pyttsx3.init()
+            # Türkçe ses varsa seç
+            voices = self.tts_engine.getProperty('voices')
+            for voice in voices:
+                if 'turkish' in voice.name.lower() or 'tr' in voice.id.lower():
+                    self.tts_engine.setProperty('voice', voice.id)
+                    break
+            # Hız ayarı (varsayılan 200, biraz yavaşlat)
+            self.tts_engine.setProperty('rate', 175)
+            print("TTS motoru başlatıldı")
+        except Exception as e:
+            print(f"TTS başlatılamadı: {e}")
+            self.tts_engine = None
 
     def init_ai(self):
         """AI sistemini başlat"""
@@ -131,6 +164,74 @@ class ChatApp(ctk.CTk):
                 self.status_label.configure(text="Durum: AI Hatası", text_color="red")
         else:
             self.status_label.configure(text="Durum: AI Yok", text_color="red")
+
+    def check_kamera_bildirim(self):
+        """Kamera bildirimlerini kontrol et (her 2 saniyede bir)"""
+        try:
+            if os.path.exists(KAMERA_BILDIRIM_DOSYASI):
+                with open(KAMERA_BILDIRIM_DOSYASI, 'r', encoding='utf-8') as f:
+                    bildirim = json.load(f)
+
+                # Okunmamış bildirim varsa işle
+                if not bildirim.get('okundu', True):
+                    ai_sonuc = bildirim.get('ai_analiz', 'Analiz yok')
+                    foto_path = bildirim.get('foto_path', '')
+                    timestamp = bildirim.get('timestamp', '')
+
+                    # Bildirimi okundu olarak işaretle (tekrar işlenmemesi için)
+                    bildirim['okundu'] = True
+                    with open(KAMERA_BILDIRIM_DOSYASI, 'w', encoding='utf-8') as f:
+                        json.dump(bildirim, f, ensure_ascii=False, indent=2)
+
+                    # Durum güncelle
+                    self.status_label.configure(text="Kamera bildirimi işleniyor...", text_color="#ff6b6b")
+
+                    # QuantumTree AI'a gönder - Türkçe yorumlama için
+                    self.process_kamera_bildirim(ai_sonuc, timestamp)
+
+                    print(f"Kamera bildirimi alındı, AI'a gönderiliyor: {ai_sonuc[:50]}...")
+        except Exception as e:
+            print(f"Bildirim kontrol hatası: {e}")
+
+        # 2 saniye sonra tekrar kontrol et
+        self.after(2000, self.check_kamera_bildirim)
+
+    def process_kamera_bildirim(self, ai_sonuc: str, timestamp: str):
+        """Kamera bildirimini QuantumTree AI ile işle"""
+        if not self.ai:
+            # AI yoksa direkt göster
+            mesaj = f"📷 KAMERA BİLDİRİMİ\n\n{ai_sonuc}"
+            self.add_bubble(mesaj, "ai", animate=False)
+            return
+
+        # AI'a bildirim gönder - Türkçe yorumlama için
+        prompt = f"""Kamera gözetleme sisteminden bir bildirim geldi.
+Görüntü analizi sonucu (İngilizce): "{ai_sonuc}"
+
+Bu bildirimi Türkçe olarak kısaca açıkla. Şu formatta yanıt ver:
+"📷 Kamera Gözetleme Sistemi: [Türkçe açıklama]"
+
+Sadece ne görüldüğünü açıkla, ekstra yorum yapma."""
+
+        # Ayrı thread'de AI'a sor
+        threading.Thread(target=self._ai_kamera_yorumla, args=(prompt,), daemon=True).start()
+
+    def _ai_kamera_yorumla(self, prompt: str):
+        """AI ile kamera bildirimini yorumla (thread içinde)"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            response = loop.run_until_complete(self.ai.process(prompt))
+            if response and len(response) > 5:
+                self.after(0, lambda: self.add_bubble(response, "ai", animate=False))
+            else:
+                self.after(0, lambda: self.add_bubble("📷 Kamera bildirimi alındı.", "ai", animate=False))
+        except Exception as e:
+            print(f"AI yorumlama hatası: {e}")
+            self.after(0, lambda: self.add_bubble("📷 Kamera bildirimi alındı (yorumlanamadı).", "ai", animate=False))
+        finally:
+            loop.close()
+            self.after(0, lambda: self.status_label.configure(text="Durum: Hazır", text_color="green"))
 
     def setup_sidebar(self):
         """Sol sidebar'ı oluştur"""
@@ -197,6 +298,17 @@ class ChatApp(ctk.CTk):
         self.theme_option.set("Dark")
         self.theme_option.grid(row=6, column=0, padx=20, pady=10, sticky="n")
 
+        # Sesli okuma butonu
+        self.tts_btn = ctk.CTkButton(
+            self.sidebar_frame,
+            text="Ses: Kapalı",
+            command=self.toggle_tts,
+            fg_color="#6e7681",
+            hover_color="#8b949e",
+            width=140
+        )
+        self.tts_btn.grid(row=7, column=0, padx=20, pady=(20, 5))
+
         # Durum etiketi (altta)
         self.status_label = ctk.CTkLabel(
             self.sidebar_frame,
@@ -204,7 +316,7 @@ class ChatApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        self.status_label.grid(row=7, column=0, pady=20)
+        self.status_label.grid(row=8, column=0, pady=20)
 
     def setup_chat_area(self):
         """Sağ chat alanını oluştur"""
@@ -373,6 +485,8 @@ class ChatApp(ctk.CTk):
         self.add_bubble(response, "ai")
         self.is_processing = False
         self.send_button.configure(state="normal")
+        # Sesli oku
+        self.speak_text(response)
 
     def on_mode_change(self, mode: str):
         """AI modunu değiştir"""
@@ -383,6 +497,47 @@ class ChatApp(ctk.CTk):
     def on_theme_change(self, theme: str):
         """Tema değiştir"""
         ctk.set_appearance_mode(theme)
+
+    def toggle_tts(self):
+        """Sesli okumayı aç/kapa"""
+        if not self.tts_engine:
+            self.status_label.configure(text="TTS kullanılamıyor", text_color="red")
+            self.after(2000, lambda: self.status_label.configure(text="Durum: Hazır", text_color="green"))
+            return
+
+        self.tts_enabled = not self.tts_enabled
+        if self.tts_enabled:
+            self.tts_btn.configure(text="Ses: Açık", fg_color="#238636", hover_color="#2ea043")
+            self.status_label.configure(text="Sesli okuma açık", text_color="#58a6ff")
+        else:
+            self.tts_btn.configure(text="Ses: Kapalı", fg_color="#6e7681", hover_color="#8b949e")
+            self.status_label.configure(text="Sesli okuma kapalı", text_color="gray")
+            # Konuşmayı durdur
+            if self.tts_speaking:
+                self.tts_engine.stop()
+                self.tts_speaking = False
+        self.after(2000, lambda: self.status_label.configure(text="Durum: Hazır", text_color="green"))
+
+    def speak_text(self, text: str):
+        """Metni sesli oku (ayrı thread'de)"""
+        if not self.tts_enabled:
+            return
+
+        def _speak():
+            try:
+                self.tts_speaking = True
+                # Her seferinde yeni engine oluştur (thread-safe)
+                engine = pyttsx3.init()
+                engine.setProperty('rate', 175)
+                engine.say(text)
+                engine.runAndWait()
+                engine.stop()
+            except Exception as e:
+                print(f"TTS hatası: {e}")
+            finally:
+                self.tts_speaking = False
+
+        threading.Thread(target=_speak, daemon=True).start()
 
     def copy_chat(self):
         """Tüm sohbeti panoya kopyala"""
@@ -411,6 +566,11 @@ class ChatApp(ctk.CTk):
 
     def on_close(self):
         """Uygulama kapatılırken"""
+        # TTS'i durdur
+        if self.tts_engine:
+            try:
+                self.tts_engine.stop()
+            except: pass
         if self.ai:
             try:
                 self.ai.close()
