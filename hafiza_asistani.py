@@ -552,6 +552,7 @@ class HafizaAsistani:
 
     def __init__(
         self,
+        user_id: str = None,  # Dinamik kullanıcı ID
         saat_limiti: int = 48,
         esik: float = 0.50,
         max_mesaj: int = 20,
@@ -563,6 +564,10 @@ class HafizaAsistani:
         print("=" * 60)
         print("🧠 HafizaAsistani v3.0 - Genişletilmiş Sekreter")
         print("=" * 60)
+
+        # Kullanıcı ID - None ise varsayılan kullan
+        self.user_id = user_id or "default_user"
+        print(f"👤 Kullanıcı: {self.user_id}")
 
         self.together_api_key = together_api_key or os.getenv("TOGETHER_API_KEY")
         self.decision_model = decision_model
@@ -600,7 +605,7 @@ class HafizaAsistani:
         print("✅ Closed Topics Tracker aktif!")
 
         self.topic_memory = TopicMemory(
-            user_id="murat",  # Sabit kullanıcı
+            user_id=self.user_id,
             base_dir="user_data",
             together_api_key=self.together_api_key,
             together_model=decision_model,
@@ -613,7 +618,7 @@ class HafizaAsistani:
         self._injection_cooldown = 5  # Kaç mesaj sonra tekrar enjekte edilebilir
 
         self.conversation_context = ConversationContextManager(
-            user_id="murat",  # Sabit kullanıcı
+            user_id=self.user_id,
             base_dir="user_data",
             together_api_key=self.together_api_key,
             together_model=decision_model,
@@ -623,7 +628,7 @@ class HafizaAsistani:
 
         # Kullanıcı Profili
         self.profile_manager = ProfileManager(
-            user_id="murat",  # Sabit kullanıcı
+            user_id=self.user_id,
             base_dir="user_data"
         )
         if self.profile_manager.has_profile():

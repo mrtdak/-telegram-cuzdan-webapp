@@ -20,6 +20,14 @@ import os
 import time
 import requests
 import argparse
+import winsound
+import threading
+import numpy as np
+import sounddevice as sd
+import whisper
+from scipy.io.wavfile import write as write_wav
+from gtts import gTTS
+import pygame
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -36,11 +44,178 @@ EV_MIN_ALAN = 3000
 EV_BEKLEME = 30  # saniye
 
 # Kuyumcu modu ayarlari
-KUYUMCU_ANALIZ_SURESI = 10  # her 10 saniyede bir analiz (test icin)
+KUYUMCU_ANALIZ_SURESI = 2  # her 2 saniyede bir analiz
+
+# Ses analizi ayarlari
+SES_KAYIT_SURESI = 3  # saniye
+SES_ORNEKLEME_HIZI = 16000  # 16kHz (Whisper icin ideal)
 
 KAMERA_ID = 0
 
+# Tehlikeli kelime listesi (lokal filtreleme)
+TEHLIKELI_KELIMELER = [
+    # Yardim cagrisi
+    "yardım", "yardim", "imdat", "kurtarın", "kurtarin",
+    # Tehdit
+    "vuracağım", "vuracagim", "öldüreceğim", "oldurecegim", "seni öldürürüm",
+    "gebertir", "kafana sıkarım", "sıkarım", "sikarim",
+    # Silah/bicak
+    "silah", "tabanca", "bıçak", "bicak", "tüfek", "tufek",
+    # Soygun
+    "soygun", "parayı ver", "parayi ver", "kasayı aç", "kasayi ac",
+    "ellerini kaldır", "yere yat", "kıpırdama", "kipirdama",
+    # Kavga
+    "döverim", "doverim", "patlatırım", "patlatirim",
+    # Genel tehlike
+    "bomba", "patlayıcı", "patlayici", "rehin"
+]
+
+# Whisper modeli (global - bir kez yukle)
+WHISPER_MODEL = None
+
 os.makedirs(KAYIT_KLASORU, exist_ok=True)
+
+
+# ============== SES ANALİZİ FONKSİYONLARI ==============
+def whisper_yukle():
+    """Whisper modelini yukle (bir kez)"""
+    global WHISPER_MODEL
+    if WHISPER_MODEL is None:
+        print("[SES] Whisper modeli yukleniyor (ilk seferde yavas olabilir)...")
+        WHISPER_MODEL = whisper.load_model("tiny")  # tiny model - hizli
+        print("[SES] Whisper hazir!")
+    return WHISPER_MODEL
+
+
+def ses_kaydet(sure=SES_KAYIT_SURESI):
+    """Mikrofondan ses kaydet"""
+    try:
+        ses = sd.rec(int(sure * SES_ORNEKLEME_HIZI),
+                     samplerate=SES_ORNEKLEME_HIZI,
+                     channels=1,
+                     dtype='float32')
+        sd.wait()  # Kayit bitene kadar bekle
+        return ses
+    except Exception as e:
+        print(f"  [SES HATA] Mikrofon hatasi: {e}")
+        return None
+
+
+def ses_yaziya_cevir(ses_data):
+    """Whisper ile ses -> yazi"""
+    try:
+        model = whisper_yukle()
+
+        # Gecici wav dosyasi olustur
+        temp_wav = f"{KAYIT_KLASORU}/temp_ses.wav"
+        write_wav(temp_wav, SES_ORNEKLEME_HIZI, ses_data)
+
+        # Whisper ile transkript
+        result = model.transcribe(temp_wav, language="tr")
+        metin = result["text"].strip().lower()
+
+        # Gecici dosyayi sil
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
+
+        return metin
+    except Exception as e:
+        print(f"  [SES HATA] Whisper hatasi: {e}")
+        return ""
+
+
+def tehlikeli_kelime_kontrol(metin):
+    """Metinde tehlikeli kelime var mi kontrol et"""
+    metin_lower = metin.lower()
+    bulunan_kelimeler = []
+
+    for kelime in TEHLIKELI_KELIMELER:
+        if kelime in metin_lower:
+            bulunan_kelimeler.append(kelime)
+
+    return bulunan_kelimeler
+
+
+def ses_tehlike_analiz_llm(metin, foto_path=None):
+    """LLM ile detayli ses tehlike analizi"""
+    prompt = f"""Guvenlik kamerasi ses kaydi analizi.
+
+Duyulan ses: "{metin}"
+
+Bu seste tehlike var mi? Analiz et:
+- Yardim cagrisi mi?
+- Tehdit mi?
+- Soygun/gasap durumu mu?
+- Kavga mi?
+
+ONEMLI: Tehlike YOKSA sadece "OK" yaz.
+Tehlike VARSA detayli acikla ve onem derecesini belirt (DUSUK/ORTA/YUKSEK/KRITIK)
+
+Ornek: "KRITIK TEHLIKE: Soygun girisimi - 'parayi ver kasayi ac' ifadesi duyuldu."
+"""
+
+    try:
+        response = requests.post(
+            'https://openrouter.ai/api/v1/chat/completions',
+            headers={
+                'Authorization': f'Bearer {OPENROUTER_API_KEY}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'model': 'google/gemini-2.0-flash-001',
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 200
+            },
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            return data['choices'][0]['message']['content'].strip()
+        else:
+            return None
+    except Exception as e:
+        print(f"  [SES HATA] LLM hatasi: {e}")
+        return None
+
+
+# ============== ALARM FONKSİYONU ==============
+def alarm_cal():
+    """Tehlike algılandığında alarm sesi + sesli uyarı"""
+    def _alarm():
+        # Önce alarm sesi
+        for _ in range(3):
+            winsound.Beep(2500, 200)
+            winsound.Beep(1500, 200)
+            winsound.Beep(2500, 200)
+            winsound.Beep(1500, 200)
+            time.sleep(0.3)
+
+        # Sesli uyarı
+        mesaj = "Dikkat! Güvenlik ihlali tespit edildi. Tüm güvenlik sistemleri devreye alındı. Teslim olun!"
+        alarm_dosya = f"{KAYIT_KLASORU}/alarm_uyari.mp3"
+        try:
+            tts = gTTS(text=mesaj, lang='tr')
+            tts.save(alarm_dosya)
+
+            pygame.mixer.init()
+            pygame.mixer.music.load(alarm_dosya)
+            pygame.mixer.music.play()
+
+            while pygame.mixer.music.get_busy():
+                time.sleep(0.1)
+
+            pygame.mixer.quit()
+
+            # Dosyayı sil
+            if os.path.exists(alarm_dosya):
+                os.remove(alarm_dosya)
+        except Exception as e:
+            print(f"  [ALARM HATA] {e}")
+
+    # Thread ile çal (bloklamadan)
+    threading.Thread(target=_alarm, daemon=True).start()
+
 
 # ============== PROMPTLAR ==============
 EV_PROMPT = """Bu ev guvenlik kamerasi goruntusu. Analiz et:
@@ -222,19 +397,24 @@ def ev_modu():
 
 
 def kuyumcu_modu():
-    """KUYUMCU MODU: Periyodik analiz, sadece tehlikede bildirim"""
+    """KUYUMCU MODU: Goruntu + Ses analizi, tehlikede bildirim"""
     print("=" * 60)
     print("    KUYUMCU GUVENLIK MODU")
-    print("    Tehlike algilandiginda ALARM")
+    print("    Goruntu + Ses Analizi - Tehlike ALARM")
     print("=" * 60)
     print()
     print(f"Ayarlar:")
-    print(f"  - Analiz araligi: {KUYUMCU_ANALIZ_SURESI} saniye")
+    print(f"  - Goruntu analiz araligi: {KUYUMCU_ANALIZ_SURESI} saniye")
+    print(f"  - Ses kayit suresi: {SES_KAYIT_SURESI} saniye")
     print(f"  - Tehlike tespiti: Silah, bicak, maske, saldiri")
+    print(f"  - Ses tespiti: Tehdit, yardim cagrisi, soygun")
     print()
     print("Cikmak icin Ctrl+C basin")
     print("-" * 60)
     print()
+
+    # Ses analizi devre disi (mikrofon alindiginda aktif edilecek)
+    SES_ANALIZI_AKTIF = False
 
     cap = cv2.VideoCapture(KAMERA_ID)
     if not cap.isOpened():
@@ -245,10 +425,14 @@ def kuyumcu_modu():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     print("[KAMERA] Baslatildi, izleniyor...")
+    if SES_ANALIZI_AKTIF:
+        print("[SES] Mikrofon dinleniyor...")
+    else:
+        print("[SES] Devre disi (mikrofon alindiginda aktif edilecek)")
     print("[MOD] Sadece TEHLIKE durumunda bildirim gonderilecek")
     print()
 
-    son_analiz = 0
+    son_goruntu_analiz = 0
 
     try:
         while True:
@@ -258,12 +442,12 @@ def kuyumcu_modu():
 
             simdi = time.time()
 
-            # Her X saniyede bir analiz
-            if simdi - son_analiz >= KUYUMCU_ANALIZ_SURESI:
-                son_analiz = simdi
+            # Her X saniyede bir goruntu analizi
+            if simdi - son_goruntu_analiz >= KUYUMCU_ANALIZ_SURESI:
+                son_goruntu_analiz = simdi
 
                 tarih = datetime.now().strftime("%Y%m%d_%H%M%S")
-                print(f"[{tarih}] Periyodik kontrol...")
+                print(f"[{tarih}] Goruntu kontrol...")
 
                 foto_path = f"{KAYIT_KLASORU}/kuyumcu_{tarih}.jpg"
                 cv2.imwrite(foto_path, frame)
@@ -273,17 +457,18 @@ def kuyumcu_modu():
                 if ai_sonuc:
                     # Tehlike kontrolu
                     if ai_sonuc.strip().upper() == "OK":
-                        print(f"  Durum: Normal (tehlike yok)")
+                        print(f"  Goruntu: Normal")
                         # Fotografi sil (gereksiz)
                         os.remove(foto_path)
                     else:
                         # TEHLIKE VAR!
-                        print(f"  !!! TEHLIKE ALGILANDI !!!")
+                        print(f"  !!! GORUNTU TEHLIKE !!!")
                         print(f"  AI: {ai_sonuc}")
+                        alarm_cal()
                         bildirim_gonder(foto_path, ai_sonuc, "kuyumcu", tehlike=True)
                         print()
                 else:
-                    print(f"  AI analiz basarisiz")
+                    print(f"  Goruntu analiz basarisiz")
 
             time.sleep(0.5)
 

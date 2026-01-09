@@ -45,6 +45,7 @@ class AIWrapper:
         # Basit mod: HafizaAsistani + LLM
         self.llm = LocalLLM(user_id)
         self.hafiza = HafizaAsistani(
+            user_id=user_id,  # Dinamik kullanıcı ID
             saat_limiti=48,
             esik=0.50,
             max_mesaj=20,
@@ -98,6 +99,62 @@ class AIWrapper:
         if hasattr(self.hafiza, 'hafiza'):
             self.hafiza.hafiza = []
         return "✅ Sıfırlandı"
+
+    async def summarize_and_save(self):
+        """Sohbeti özetle ve profile kaydet"""
+        if not hasattr(self.hafiza, 'hafiza') or len(self.hafiza.hafiza) < 2:
+            return  # Yeterli sohbet yok
+
+        # Sohbet geçmişini al
+        chat_text = ""
+        for msg in self.hafiza.hafiza[-20:]:  # Son 20 mesaj
+            rol = "Kullanıcı" if msg.get("rol") == "user" else "AI"
+            chat_text += f"{rol}: {msg.get('mesaj', '')}\n"
+
+        if not chat_text.strip():
+            return
+
+        # LLM'e özet sorgusu
+        summary_prompt = f"""Bu sohbeti analiz et ve şu bilgileri çıkar:
+
+1. ÖZET: Sohbetin 1-2 cümlelik özeti
+2. YENİ BİLGİLER: Kullanıcı hakkında öğrenilen yeni bilgiler (isim, meslek, ilgi alanı, önemli gerçekler)
+
+Sohbet:
+{chat_text}
+
+Sadece JSON formatında cevap ver:
+{{"ozet": "...", "yeni_bilgiler": ["bilgi1", "bilgi2"]}}"""
+
+        try:
+            response = await self.llm.generate(summary_prompt)
+
+            # JSON parse et
+            import json
+            import re
+
+            # JSON kısmını bul
+            json_match = re.search(r'\{[^{}]*\}', response, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group())
+
+                # Profile kaydet
+                if hasattr(self.hafiza, 'profile_manager'):
+                    pm = self.hafiza.profile_manager
+
+                    # Özeti kaydet
+                    if data.get('ozet'):
+                        pm.update_last_session(data['ozet'])
+                        print(f"📝 Sohbet özeti kaydedildi: {data['ozet'][:50]}...")
+
+                    # Yeni bilgileri ekle
+                    for bilgi in data.get('yeni_bilgiler', []):
+                        if bilgi and len(bilgi) > 3:
+                            pm.add_important_fact(bilgi)
+                            print(f"💡 Yeni bilgi eklendi: {bilgi}")
+
+        except Exception as e:
+            print(f"⚠️ Özet çıkarma hatası: {e}")
 
 
 def get_ai(user_id: int) -> AIWrapper:
@@ -184,6 +241,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === MAIN ===
 
+async def shutdown_handler():
+    """Bot kapanırken tüm kullanıcıların sohbetlerini özetle"""
+    print("\n🛑 Bot kapatılıyor...")
+    print("📝 Sohbetler özetleniyor...")
+
+    for user_id, ai in ai_instances.items():
+        try:
+            await ai.summarize_and_save()
+        except Exception as e:
+            print(f"⚠️ User {user_id} özet hatası: {e}")
+
+    print("✅ Tüm sohbetler kaydedildi!")
+
+
 def main():
     print("=" * 50)
     print("🚀 Telegram Bot Başlatılıyor...")
@@ -204,6 +275,9 @@ def main():
 
     # Mesaj
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Shutdown handler
+    app.post_shutdown = lambda _: asyncio.get_event_loop().run_until_complete(shutdown_handler())
 
     print("✅ Bot hazır!")
     print("🛑 Durdurmak için Ctrl+C")
