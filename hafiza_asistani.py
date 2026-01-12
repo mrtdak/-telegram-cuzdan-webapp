@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import faiss
 import time
 import requests
 import json
@@ -126,10 +127,6 @@ def calculate_math(expression: str) -> str:
 async def web_ara(query: str, context: str = "") -> str:
     """
     Tavily API ile internet araması.
-
-    Args:
-        query: Arama sorgusu
-        context: Opsiyonel bağlam
     """
     try:
         search_query = query
@@ -144,11 +141,12 @@ async def web_ara(query: str, context: str = "") -> str:
             print(f"   ✅ Sonuç bulundu")
             return result
 
-        return f"❌ '{query}' için bilgi bulunamadı."
+        print(f"   ❌ Sonuç bulunamadı")
+        return None
 
     except Exception as e:
         print(f"❌ Web arama hatası: {e}")
-        return f"❌ Arama hatası: {str(e)}"
+        return None
 
 
 async def wiki_ara(query: str) -> str:
@@ -422,39 +420,187 @@ class MultiRoleSystem:
 
 
 
-class SimpleFAISSKB:
+class FAISSKnowledgeBase:
     """
-    Basit FAISS KB wrapper
-    (Gerçek FAISS KB PersonalAI’dan alınır ve buraya inject edilir)
+    FAISS tabanlı yerel bilgi tabanı
+    Risale-i Nur, dökümanlar için
     """
 
-    def __init__(self):
-        self.enabled = False
-        self.faiss_kb = None
+    # Config ayarları
+    FAISS_INDEX_FILE = "faiss_index.bin"
+    FAISS_TEXTS_FILE = "faiss_texts_final.json"
+    FAISS_SEARCH_TOP_K = 10
+    FAISS_SIMILARITY_THRESHOLD = 0.48
+    FAISS_MAX_RESULTS = 6
+    FAISS_RELATIVE_THRESHOLD = 0.90
 
-    def set_faiss_kb(self, faiss_kb):
-        """Gerçek FAISS KB'yi inject et"""
-        self.faiss_kb = faiss_kb
-        self.enabled = (
-            faiss_kb is not None and hasattr(faiss_kb, "enabled") and faiss_kb.enabled
-        )
+    def __init__(self, user_id: str = "default"):
+        self.user_id = user_id
+        self.enabled = True
+        self.user_namespace = f"user_{user_id}"
+
+        # Data
+        self.texts = []
+        self.index = None
+        self.embedding_model = None
+
+        # Load
+        self._load_components()
+
+    def _load_components(self):
+        """Index ve text dosyalarını yükle"""
+        try:
+            # FAISS index
+            if os.path.exists(self.FAISS_INDEX_FILE):
+                self.index = faiss.read_index(self.FAISS_INDEX_FILE)
+                print(f"✅ FAISS index yüklendi: {self.FAISS_INDEX_FILE}")
+            else:
+                print(f"⚠️ FAISS index bulunamadı: {self.FAISS_INDEX_FILE}")
+                self.enabled = False
+                return
+
+            # Texts JSON
+            if os.path.exists(self.FAISS_TEXTS_FILE):
+                with open(self.FAISS_TEXTS_FILE, 'r', encoding='utf-8') as f:
+                    self.texts = json.load(f)
+                print(f"✅ FAISS texts yüklendi: {len(self.texts)} döküman")
+            else:
+                print(f"⚠️ FAISS texts bulunamadı: {self.FAISS_TEXTS_FILE}")
+                self.enabled = False
+                return
+
+            # Embedding model (zaten HafizaAsistani'da yüklü, onu kullanacağız)
+            # Burada ayrı yüklemiyoruz, get_relevant_context'te parametre olarak alacağız
+
+            print(f"✅ FAISS Bilgi Tabanı hazır: {len(self.texts)} döküman")
+
+        except Exception as e:
+            print(f"❌ FAISS yükleme hatası: {e}")
+            self.enabled = False
+
+    def set_embedding_model(self, model):
+        """Embedding modelini set et (HafizaAsistani'dan)"""
+        self.embedding_model = model
 
     def get_relevant_context(self, query: str, max_chunks: int = 6) -> str:
-        """FAISS'ten ilgili bağlamı getir"""
-        if not self.enabled or not self.faiss_kb:
+        """Kullanıcı input'una göre ilgili bağlamı getir"""
+        if not self.enabled:
+            print("⚠️ FAISS KB devre dışı")
             return ""
+
         try:
-            return self.faiss_kb.get_relevant_context(query, max_chunks)
+            print(f"\n{'='*60}")
+            print(f"🔍 FAISS KB ARAMA BAŞLADI")
+            print(f"📝 Sorgu: {query}")
+            print(f"📊 Max chunks: {max_chunks}")
+            print(f"{'='*60}")
+
+            # Search
+            results = self.search(query, top_k=max_chunks * 2)
+
+            print(f"\n📊 ARAMA SONUÇLARI: {len(results)} sonuç")
+
+            if not results:
+                print("   ❌ Hiç sonuç bulunamadı!")
+                return ""
+
+            # İlgili bilgileri birleştir
+            combined_text = "İLGİLİ BİLGİLER:\n"
+
+            for i, result in enumerate(results[:max_chunks]):
+                text = result.get('text', '')
+                score = result.get('score', 0.0)
+
+                print(f"   📄 #{i+1}: Skor={score:.4f}, {len(text)} karakter")
+
+                if text:
+                    combined_text += f"{text}\n\n"
+
+            print(f"✅ FAISS KB ARAMA TAMAMLANDI - {len(combined_text)} karakter")
+
+            return combined_text.strip()
+
         except Exception as e:
-            print(f"❌ FAISS hatası: {e}")
+            print(f"❌ FAISS context hatası: {e}")
+            import traceback
+            traceback.print_exc()
             return ""
+
+    def search(self, query: str, top_k: int = None) -> List[Dict]:
+        """Bilgi tabanında ara"""
+        if not self.enabled or not self.embedding_model:
+            print("⚠️ FAISS KB search devre dışı veya embedding model yok")
+            return []
+
+        try:
+            requested_k = top_k or self.FAISS_SEARCH_TOP_K
+
+            # Embed query
+            query_vector = self.embedding_model.encode(
+                [query],
+                normalize_embeddings=True
+            )
+            query_vector = np.array(query_vector, dtype=np.float32)
+
+            # Search
+            k = min(requested_k + 10, len(self.texts))
+            scores, indices = self.index.search(query_vector, k)
+
+            # Filter results
+            results = []
+
+            for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
+                if idx == -1:
+                    continue
+
+                similarity = float(score)
+
+                if similarity >= self.FAISS_SIMILARITY_THRESHOLD and idx < len(self.texts):
+                    text_data = self.texts[idx]
+
+                    # Text content
+                    if isinstance(text_data, dict):
+                        text_content = text_data.get('text', str(text_data))
+                    else:
+                        text_content = str(text_data)
+
+                    results.append({
+                        'text': text_content,
+                        'score': similarity,
+                        'index': int(idx)
+                    })
+
+            # Relative scoring: En yüksek skorun %90'ı altındakileri çıkar
+            if results:
+                top_score = results[0]['score']
+                relative_threshold = top_score * self.FAISS_RELATIVE_THRESHOLD
+
+                filtered_results = [r for r in results if r['score'] >= relative_threshold]
+
+                # Max sonuç limiti
+                if len(filtered_results) > self.FAISS_MAX_RESULTS:
+                    filtered_results = filtered_results[:self.FAISS_MAX_RESULTS]
+
+                return filtered_results
+
+            return results
+
+        except Exception as e:
+            print(f"❌ FAISS search hatası: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+
+# Geriye uyumluluk için alias
+SimpleFAISSKB = FAISSKnowledgeBase
 
 
 
 class DecisionLLM:
     """Together.ai API ile akıllı karar verme (Llama 70B)"""
 
-    def __init__(self, api_key: str = None, model: str = "deepseek-ai/DeepSeek-R1"):
+    def __init__(self, api_key: str = None, model: str = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"):
         self.api_key = api_key or os.getenv("TOGETHER_API_KEY")
         self.model = model
         self.base_url = "https://api.together.xyz/v1/completions"
@@ -559,7 +705,7 @@ class HafizaAsistani:
         model_adi: str = "BAAI/bge-m3",
         use_decision_llm: bool = True,
         together_api_key: str = None,
-        decision_model: str = "deepseek-ai/DeepSeek-R1",
+        decision_model: str = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     ):
         print("=" * 60)
         print("🧠 HafizaAsistani v3.0 - Genişletilmiş Sekreter")
@@ -597,8 +743,9 @@ class HafizaAsistani:
         self.multi_role = MultiRoleSystem()
         print("✅ Multi-Role System aktif!")
 
-        self.faiss_kb = SimpleFAISSKB()
-        print("✅ FAISS KB wrapper hazır (inject edilecek)!")
+        self.faiss_kb = FAISSKnowledgeBase(user_id=self.user_id)
+        self.faiss_kb.set_embedding_model(self.embedder)  # Embedding model'i set et
+        print(f"✅ FAISS KB hazır (aktif: {self.faiss_kb.enabled})")
 
         self.closed_topics: List[Dict[str, Any]] = []
         self.max_closed_topics = 20  # En fazla 20 kapanan konu tut
@@ -1992,9 +2139,9 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
 
     def set_faiss_kb(self, faiss_kb):
-        """FAISS KB'yi inject et"""
-        self.faiss_kb.set_faiss_kb(faiss_kb)
-        print(f"✅ FAISS KB inject edildi (aktif: {self.faiss_kb.enabled})")
+        """FAISS KB - artık inject gerekmiyor, dahili FAISS kullanılıyor"""
+        # Geriye uyumluluk için boş bırakıldı
+        pass
 
     @property
     def data(self):
@@ -2125,8 +2272,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if metadata.get('has_tool_result'):
             tool_name = paket.get('tool_used', '')
             # Prompt'tan tool result'ı çıkarmaya çalış
-            if '[🌐 İNTERNET ARAŞTIRMASI]:' in prompt:
-                start = prompt.find('[🌐 İNTERNET ARAŞTIRMASI]:')
+            if '[🌐 İNTERNET BİLGİSİ]:' in prompt:
+                start = prompt.find('[🌐 İNTERNET BİLGİSİ]:')
                 end = prompt.find('\n\n[', start + 1)
                 if end == -1:
                     end = prompt.find('━━━', start + 1)
@@ -2134,11 +2281,17 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     context_parts.append(prompt[start:end].strip())
             elif '[📚 RİSALE-İ NUR\'DAN' in prompt:
                 start = prompt.find('[📚 RİSALE-İ NUR\'DAN')
-                end = prompt.find('\n\n[', start + 1)
-                if end == -1:
-                    end = prompt.find('━━━', start + 1)
+                # Sonraki ana bölümü bul (FAISS içindeki [Sayfa] etiketlerini atlayarak)
+                end = -1
+                for marker in ['\n\n[💬', '\n\n[HAFIZA]', '\n\n[👤', '\n\n[⚠️', '\n\n[BİLGİ', '━━━']:
+                    pos = prompt.find(marker, start + 1)
+                    if pos != -1 and (end == -1 or pos < end):
+                        end = pos
                 if start != -1 and end != -1:
                     context_parts.append(prompt[start:end].strip())
+                elif start != -1:
+                    # Sonraki bölüm yoksa, sonuna kadar al
+                    context_parts.append(prompt[start:].strip())
 
         # Semantic context varsa ekle
         if metadata.get('has_semantic'):

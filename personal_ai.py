@@ -145,7 +145,7 @@ class LocalLLM:
                 if role == 'system':
                     print(f"[{role}]: {content}")
                 else:
-                    print(f"[{role}]: {content[:300]}..." if len(content) > 300 else f"[{role}]: {content}")
+                    print(f"[{role}]: {content}")  # Tam göster, kesme yok
             print("=" * 70 + "\n")
 
         if self.provider == "openrouter":
