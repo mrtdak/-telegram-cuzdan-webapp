@@ -11,6 +11,18 @@ import os
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "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")
 
 
+def fix_encoding(text: str) -> str:
+    """Bozuk UTF-8 karakterleri düzelt"""
+    if not text:
+        return text
+    try:
+        # Latin-1 olarak encode edilmiş UTF-8'i düzelt
+        return text.encode('latin-1').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        # Düzeltemiyorsa olduğu gibi döndür
+        return text
+
+
 class WebSearch:
     """Tavily tabanli internet arama sinifi."""
 
@@ -49,12 +61,12 @@ class WebSearch:
 
             return {
                 "query": query,
-                "answer": data.get("answer", ""),
+                "answer": fix_encoding(data.get("answer", "")),
                 "results": [
                     {
-                        "title": r.get("title", ""),
+                        "title": fix_encoding(r.get("title", "")),
                         "url": r.get("url", ""),
-                        "content": r.get("content", ""),
+                        "content": fix_encoding(r.get("content", "")),
                         "score": r.get("score", 0)
                     }
                     for r in data.get("results", [])
@@ -84,21 +96,18 @@ class WebSearch:
         if result.get("error"):
             return f"Arama hatasi: {result['error']}"
 
-        output = []
-
-        # Tavily'nin AI-generated cevabi
+        # Öncelik 1: Tavily'nin AI-generated cevabı (temiz ve öz)
         if result.get("answer"):
-            output.append(result["answer"])
-            output.append("")
+            return result["answer"]
 
-        # Kaynaklar
-        if result.get("results"):
-            output.append("Kaynaklar:")
-            for i, r in enumerate(result["results"][:3], 1):
-                output.append(f"  {i}. {r['title']}")
-                output.append(f"     {r['url']}")
+        # Öncelik 2: AI cevabı yoksa ilk sonucun içeriğini kullan (temizse)
+        if result.get("results") and len(result["results"]) > 0:
+            first = result["results"][0]
+            content = first.get("content", "")
+            if content and "�" not in content:
+                return content[:500]  # Max 500 karakter
 
-        return "\n".join(output) if output else "Sonuc bulunamadi."
+        return "Sonuc bulunamadi."
 
     def search_news(self, query: str, max_results: int = 5) -> List[Dict]:
         """

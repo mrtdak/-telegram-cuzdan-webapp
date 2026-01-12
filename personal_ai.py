@@ -35,7 +35,7 @@ class SystemConfig:
 
     # OpenRouter (Claude)
     OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-    OPENROUTER_MODEL = "anthropic/claude-sonnet-4.5"
+    OPENROUTER_MODEL = "google/gemma-3-27b-it"  # Test: Gemma 3 27B (açık kaynak)
 
     MODEL_NAME = OPENROUTER_MODEL if LLM_PROVIDER == "openrouter" else (TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL)
 
