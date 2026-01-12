@@ -52,7 +52,8 @@ class WebSearch:
                     "search_depth": search_depth,
                     "include_answer": True,
                     "include_raw_content": False,
-                    "max_results": max_results
+                    "max_results": max_results,
+                    "auto_parameters": True
                 },
                 timeout=self.timeout
             )

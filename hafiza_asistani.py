@@ -639,7 +639,7 @@ class DecisionLLM:
                     "model": self.model,
                     "prompt": prompt,
                     "max_tokens": max_tokens,
-                    "temperature": 0.3,
+                    "temperature": 0.1,  # Karar alma için deterministik
                     "stop": ["<|eot_id|>", "<|end_of_text|>"]
                 },
                 timeout=15,
