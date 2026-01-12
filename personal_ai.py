@@ -11,7 +11,7 @@ import torch
 import aiohttp
 from zoneinfo import ZoneInfo
 
-from hafiza_asistani import HafizaAsistani
+# HafizaAsistani artık telegram_bot.py'de yönetiliyor
 
 
 class SystemConfig:
@@ -40,7 +40,7 @@ class SystemConfig:
     MODEL_NAME = OPENROUTER_MODEL if LLM_PROVIDER == "openrouter" else (TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL)
 
     # Model Parametreleri (Gemma 3 - tutarlı ayar)
-    TEMPERATURE = 0.5  # Tutarlı: uydurmasın, gerçekçi olsun
+    TEMPERATURE = 0.72  # Dengeli: doğal ve akıcı
     TOP_P = 0.95       # Gemma resmi
     TOP_K = 64         # Gemma resmi
     MAX_TOKENS = 4000
@@ -333,48 +333,30 @@ class LocalLLM:
 
 class PersonalAI:
     """
-    PersonalAI - LLM Cevap Üretici
+    PersonalAI - SADECE Cevap Üretici (LLM)
 
     Akış:
-    Telegram → HafizaAsistani (prompt) → PersonalAI (LLM) → HafizaAsistani (kayıt) → Telegram
+    Telegram → HafizaAsistani.prepare() → PersonalAI.generate() → HafizaAsistani.save() → Telegram
     """
 
     def __init__(self, user_id: str = None):
         self.user_id = user_id or SystemConfig.DEFAULT_USER_ID
 
-        print("=" * 60)
-        print(f"🚀 PersonalAI Başlatılıyor... (user: {self.user_id})")
-        print("=" * 60)
+        print(f"🤖 PersonalAI başlatıldı (user: {self.user_id})")
 
-        # 1. LLM - Cevap üretici
+        # Sadece LLM - Cevap üretici
         self.llm = LocalLLM(self.user_id)
 
-        # 2. HafizaAsistani - Merkezi beyin
-        self.memory = HafizaAsistani(
-            saat_limiti=48,
-            esik=0.50,
-            max_mesaj=20,
-            model_adi="BAAI/bge-m3",
-            use_decision_llm=True,
-            decision_model="meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
-        )
+    async def generate(self, messages: list = None, prompt: str = None, image_data: bytes = None) -> str:
+        """
+        LLM ile cevap üret
 
-        # 3. LLM'i HafizaAsistani'ya ver
-        self.memory.set_llm(self.llm)
+        Args:
+            messages: Chat messages formatı (öncelikli)
+            prompt: Düz metin prompt (eski format)
+            image_data: Görsel verisi (vision için)
 
-        print("✅ PersonalAI hazır!")
-        print("=" * 60 + "\n")
-
-    async def generate(self, prompt: str, image_data=None) -> str:
-        """LLM cevap üret"""
-        return await self.llm.generate(prompt, image_data)
-
-    def close(self):
-        """Kapat"""
-        print("🛑 PersonalAI kapatılıyor...")
-        if hasattr(self.memory, 'profile_manager'):
-            try:
-                self.memory.profile_manager.update_last_session("Sohbet yapıldı")
-            except:
-                pass
-        print("✅ Tamamlandı.")
+        Returns:
+            str: LLM cevabı
+        """
+        return await self.llm.generate(prompt=prompt, image_data=image_data, messages=messages)

@@ -454,7 +454,7 @@ class SimpleFAISSKB:
 class DecisionLLM:
     """Together.ai API ile akıllı karar verme (Llama 70B)"""
 
-    def __init__(self, api_key: str = None, model: str = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"):
+    def __init__(self, api_key: str = None, model: str = "deepseek-ai/DeepSeek-R1"):
         self.api_key = api_key or os.getenv("TOGETHER_API_KEY")
         self.model = model
         self.base_url = "https://api.together.xyz/v1/completions"
@@ -559,7 +559,7 @@ class HafizaAsistani:
         model_adi: str = "BAAI/bge-m3",
         use_decision_llm: bool = True,
         together_api_key: str = None,
-        decision_model: str = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+        decision_model: str = "deepseek-ai/DeepSeek-R1",
     ):
         print("=" * 60)
         print("🧠 HafizaAsistani v3.0 - Genişletilmiş Sekreter")
@@ -1039,10 +1039,57 @@ class HafizaAsistani:
 
 
 
+    async def _process_web_result(self, raw_data: str, query: str, user_input: str) -> str:
+        """
+        Process and clean raw web search data using DecisionLLM.
+
+        - Removes irrelevant/garbage content
+        - Extracts key facts
+        - Formats for prompt injection
+        """
+        if not raw_data or len(raw_data) < 50:
+            return raw_data
+
+        try:
+            process_prompt = f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
+
+GÖREV: İnternet arama sonuçlarından faydalı bilgileri çıkar ve temizle.
+
+KULLANICI SORUSU: {user_input}
+ARAMA: {query}
+
+HAM İNTERNET VERİSİ:
+{raw_data[:3000]}
+
+TALİMATLAR:
+1. SADECE kullanıcının sorusunu cevaplayan bilgileri çıkar
+2. Reklamları, navigasyon metinlerini, alakasız içeriği kaldır
+3. Alakalı sayıları, tarihleri, isimleri koru
+4. Veri yanlış/eski görünüyorsa belirt
+5. Temiz, özet bilgi ver (max 500 karakter)
+6. Faydalı bilgi yoksa "NO_USEFUL_DATA" yaz
+
+CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+"""
+            response = self.decision_llm._call_llm(process_prompt, max_tokens=300)
+
+            if response and "NO_USEFUL_DATA" not in response:
+                clean_data = response.strip()
+                print(f"   🧹 Web data processed: {len(raw_data)} → {len(clean_data)} chars")
+                return clean_data
+            else:
+                print(f"   ⚠️ No useful data extracted from web search")
+                return raw_data
+
+        except Exception as e:
+            print(f"   ⚠️ Web data processing error: {e}")
+            return raw_data
+
     async def _tool_calistir(
         self, tool_name: str, tool_param: str, user_input: str
     ) -> Optional[str]:
-        """Seçilen aracı çalıştır ve sonucu döndür"""
+        """Run selected tool and return result"""
         if tool_name == "yok":
             return None
 
@@ -1079,8 +1126,13 @@ class HafizaAsistani:
 
             if tool_name == "web_ara" or tool_name == "wiki_ara":
                 query = tool_param or user_input
-                result = await web_ara(query)
-                return result
+                raw_data = await web_ara(query)
+
+                # Process raw web data
+                if raw_data and "❌" not in raw_data:
+                    processed_data = await self._process_web_result(raw_data, query, user_input)
+                    return processed_data
+                return raw_data
 
             return None
         except Exception as e:
@@ -1577,7 +1629,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         if tool_result:
             if tool_name == "web_ara" or tool_name == "wiki_ara":
-                combined_sources.append(f"[🌐 İNTERNET ARAŞTIRMASI]:\n{tool_result}\n\n🚨 ÖNEMLİ: Bu bilgi SADECE yardımcı! Kullanıcının sorusuna ODAKLAN. İnternet 'olmaz/yetersiz' dese bile kullanıcı 'nasıl yaparım' soruyorsa → NASIL yapılacağını anlat, caydırma!")
+                # Data already cleaned by _process_web_result
+                combined_sources.append(f"[🌐 İNTERNET BİLGİSİ]:\n{tool_result}")
             elif tool_name == "risale_ara":
                 if is_detail_followup:
                     combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - Doğrudan verme, kendi yorumunla açıkla!]:\n{tool_result}")
@@ -2130,84 +2183,35 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         return messages
 
-    async def process(self, user_input: str, chat_history: List[Dict] = None, image_data=None) -> str:
+    async def prepare(self, user_input: str, chat_history: List[Dict] = None) -> Dict[str, Any]:
         """
-        Ana işlem metodu - Telegram'dan çağrılır
+        Prompt ve messages hazırla - LLM ÇAĞIRMA!
 
-        Akış: Telegram → HafizaAsistani.process() → PersonalAI.generate() → Telegram
+        Akış: Telegram → HafizaAsistani.prepare() → messages döner
 
-        1. Paket hazırla (context, tool results, vb.)
-        2. Messages formatı oluştur
-        3. LLM'e gönder (proper chat format)
-        4. Cevabı kaydet
-        5. Cevabı döndür
+        Returns:
+            {
+                "messages": [...],  # LLM için hazır messages
+                "paket": {...}      # Metadata (tool_used, role vs.)
+            }
         """
         chat_history = chat_history or []
 
-        # 1. Paket hazırla
+        # 1. Paket hazırla (karar, tool, bağlam)
         paket = await self.hazirla_ve_prompt_olustur(user_input, chat_history)
 
-        # 2. LLM kontrolü
-        if not hasattr(self, 'llm') or self.llm is None:
-            return "❌ LLM bağlı değil!"
+        # 2. Messages formatı oluştur
+        messages = self._build_messages(user_input, paket, chat_history)
 
-        # 3. LLM'e gönder
-        if image_data:
-            # Vision için eski prompt formatı kullan
-            prompt = paket.get('prompt', user_input)
-            response = await self.llm.generate(prompt, image_data)
-        else:
-            # Text için messages formatı kullan (YENİ!)
-            messages = self._build_messages(user_input, paket, chat_history)
-            response = await self.llm.generate(prompt=None, image_data=None, messages=messages)
+        return {
+            "messages": messages,
+            "paket": paket
+        }
 
-        # 4. Cevabı kaydet
-        self.add(user_input, response, chat_history)
+    def save(self, user_input: str, response: str, chat_history: List[Dict] = None):
+        """
+        Cevabı hafızaya kaydet
 
-        # 5. Döndür
-        return response
-
-
-async def test_sekreter():
-    print("\n" + "=" * 60)
-    print("🧪 HafizaAsistani v3.0 TEST")
-    print("=" * 60)
-
-    sekreter = HafizaAsistani(saat_limiti=48, esik=0.50, max_mesaj=20)
-
-    print("\n--- TEST 1: Basit Sohbet ---")
-    paket1 = await sekreter.hazirla_ve_prompt_olustur(
-        user_input="Merhaba, nasılsın?",
-        chat_history=[],
-    )
-    print(f"✅ Prompt hazır (uzunluk: {len(paket1['prompt'])})")
-    print(f"   Role: {paket1['role']}")
-    print(f"   Tool: {paket1['tool_used']}")
-
-    print("\n--- TEST 2: Matematik ---")
-    paket2 = await sekreter.hazirla_ve_prompt_olustur(
-        user_input="15 çarpı 7 kaç eder?",
-        chat_history=[],
-    )
-    print("✅ Prompt hazır")
-    print(f"   Tool: {paket2['tool_used']}")
-    print(f"   Tool sonucu: {paket2['metadata']['has_tool_result']}")
-
-    print("\n--- TEST 3: Zaman ---")
-    paket3 = await sekreter.hazirla_ve_prompt_olustur(
-        user_input="Saat kaç?",
-        chat_history=[],
-    )
-    print("✅ Prompt hazır")
-    print(f"   Tool: {paket3['tool_used']}")
-
-    print("\n" + "=" * 60)
-    print("✅ Tüm testler tamamlandı (elle de deneyebilirsin).")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        asyncio.run(test_sekreter())
+        Akış: PersonalAI cevap verdi → HafizaAsistani.save() → hafızaya kaydet
+        """
+        self.add(user_input, response, chat_history or [])
