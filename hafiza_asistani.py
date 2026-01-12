@@ -1577,7 +1577,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         if tool_result:
             if tool_name == "web_ara" or tool_name == "wiki_ara":
-                combined_sources.append(f"[🌐 İNTERNET ARAŞTIRMASI]:\n{tool_result}\n\n⚠️ Bu bilgi soruyla alakalı mı? Alakasız veya yanlış ise HİÇ KULLANMA, kendi bilginle cevap ver.")
+                combined_sources.append(f"[🌐 İNTERNET ARAŞTIRMASI]:\n{tool_result}\n\n🚨 ÖNEMLİ: Bu bilgi SADECE yardımcı! Kullanıcının sorusuna ODAKLAN. İnternet 'olmaz/yetersiz' dese bile kullanıcı 'nasıl yaparım' soruyorsa → NASIL yapılacağını anlat, caydırma!")
             elif tool_name == "risale_ara":
                 if is_detail_followup:
                     combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - Doğrudan verme, kendi yorumunla açıkla!]:\n{tool_result}")

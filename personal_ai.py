@@ -39,9 +39,10 @@ class SystemConfig:
 
     MODEL_NAME = OPENROUTER_MODEL if LLM_PROVIDER == "openrouter" else (TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL)
 
-    # Model Parametreleri
-    TEMPERATURE = 0.5
-    TOP_P = 0.9
+    # Model Parametreleri (Gemma 3 - tutarlı ayar)
+    TEMPERATURE = 0.5  # Tutarlı: uydurmasın, gerçekçi olsun
+    TOP_P = 0.95       # Gemma resmi
+    TOP_K = 64         # Gemma resmi
     MAX_TOKENS = 4000
 
     ENABLE_VISION = True
@@ -242,7 +243,8 @@ class LocalLLM:
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
-                "top_p": SystemConfig.TOP_P
+                "top_p": SystemConfig.TOP_P,
+                "top_k": SystemConfig.TOP_K
             }
 
             async with aiohttp.ClientSession() as session:
@@ -279,7 +281,8 @@ class LocalLLM:
                 "messages": messages,
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
-                "top_p": SystemConfig.TOP_P
+                "top_p": SystemConfig.TOP_P,
+                "top_k": SystemConfig.TOP_K
             }
 
             async with aiohttp.ClientSession() as session:
