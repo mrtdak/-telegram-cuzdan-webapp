@@ -25,7 +25,7 @@ class SystemConfig:
     LOG_FULL_PROMPT = True  # Debug için
 
     # LLM Ayarları
-    LLM_PROVIDER = "together"  # "ollama" veya "together"
+    LLM_PROVIDER = "openrouter"  # "ollama", "together" veya "openrouter"
 
     OLLAMA_URL = "http://localhost:11434"
     OLLAMA_MODEL = "gemma3:27b"
@@ -33,13 +33,16 @@ class SystemConfig:
     TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
     TOGETHER_MODEL = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
 
-    MODEL_NAME = TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL
+    # OpenRouter (Claude)
+    OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+    OPENROUTER_MODEL = "anthropic/claude-sonnet-4.5"
+
+    MODEL_NAME = OPENROUTER_MODEL if LLM_PROVIDER == "openrouter" else (TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL)
 
     # Model Parametreleri
     TEMPERATURE = 0.5
-    TOP_P = 0.90
-    REPEAT_PENALTY = 1.15
-    MAX_TOKENS = 1500
+    TOP_P = 0.9
+    MAX_TOKENS = 4000
 
     ENABLE_VISION = True
 
@@ -50,7 +53,6 @@ class SystemConfig:
         return {
             "temperature": cls.TEMPERATURE,
             "top_p": cls.TOP_P,
-            "repeat_penalty": cls.REPEAT_PENALTY,
             "max_tokens": cls.MAX_TOKENS,
         }
 
@@ -67,8 +69,10 @@ class LocalLLM:
         self.model_name = SystemConfig.MODEL_NAME
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.together_api_key = os.getenv("TOGETHER_API_KEY", "")
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
 
-        provider_name = "Together.ai" if self.provider == "together" else "Ollama"
+        provider_names = {"together": "Together.ai", "ollama": "Ollama", "openrouter": "OpenRouter (Claude)"}
+        provider_name = provider_names.get(self.provider, self.provider)
         print(f"✅ LLM başlatıldı: {self.model_name} ({provider_name}, {self.device})")
 
     async def generate(self, prompt: str, image_data: Optional[bytes] = None, messages: list = None) -> str:
@@ -120,7 +124,9 @@ class LocalLLM:
             print(prompt[:2000] + "..." if len(prompt) > 2000 else prompt)
             print("=" * 70 + "\n")
 
-        if self.provider == "together":
+        if self.provider == "openrouter":
+            return await self._generate_openrouter(prompt)
+        elif self.provider == "together":
             return await self._generate_together(prompt)
         else:
             return await self._generate_ollama(prompt)
@@ -133,11 +139,17 @@ class LocalLLM:
             print("=" * 70)
             for msg in messages[-5:]:  # Son 5 mesajı göster
                 role = msg.get('role', 'unknown')
-                content = msg.get('content', '')[:200]
-                print(f"[{role}]: {content}...")
+                content = msg.get('content', '')
+                # System message tam göster, diğerleri kısa
+                if role == 'system':
+                    print(f"[{role}]: {content}")
+                else:
+                    print(f"[{role}]: {content[:300]}..." if len(content) > 300 else f"[{role}]: {content}")
             print("=" * 70 + "\n")
 
-        if self.provider == "together":
+        if self.provider == "openrouter":
+            return await self._generate_openrouter_messages(messages)
+        elif self.provider == "together":
             return await self._generate_together_messages(messages)
         else:
             # Ollama için messages'ı prompt'a çevir
@@ -153,11 +165,10 @@ class LocalLLM:
             }
             payload = {
                 "model": SystemConfig.TOGETHER_MODEL,
-                "messages": messages,  # Direkt messages listesi
+                "messages": messages,
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
                 "top_p": SystemConfig.TOP_P,
-                "repetition_penalty": SystemConfig.REPEAT_PENALTY,
                 "stream": False
             }
 
@@ -194,7 +205,6 @@ class LocalLLM:
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
                 "top_p": SystemConfig.TOP_P,
-                "repetition_penalty": SystemConfig.REPEAT_PENALTY,
                 "stream": False
             }
 
@@ -216,6 +226,80 @@ class LocalLLM:
             return "Zaman aşımı."
         except Exception as e:
             print(f"⚠️ Together.ai hatası: {e}")
+            return "Bağlantı hatası."
+
+    async def _generate_openrouter(self, prompt: str) -> str:
+        """OpenRouter API (Claude)"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.openrouter_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/personal-ai",
+                "X-Title": "PersonalAI"
+            }
+            payload = {
+                "model": SystemConfig.OPENROUTER_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": SystemConfig.MAX_TOKENS,
+                "temperature": SystemConfig.TEMPERATURE,
+                "top_p": SystemConfig.TOP_P
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    SystemConfig.OPENROUTER_API_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=180)
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                    else:
+                        error_text = await resp.text()
+                        print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
+                        return "API hatası oluştu."
+        except asyncio.TimeoutError:
+            return "Zaman aşımı."
+        except Exception as e:
+            print(f"⚠️ OpenRouter hatası: {e}")
+            return "Bağlantı hatası."
+
+    async def _generate_openrouter_messages(self, messages: list) -> str:
+        """OpenRouter API - Messages formatı (Claude)"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.openrouter_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/personal-ai",
+                "X-Title": "PersonalAI"
+            }
+            payload = {
+                "model": SystemConfig.OPENROUTER_MODEL,
+                "messages": messages,
+                "max_tokens": SystemConfig.MAX_TOKENS,
+                "temperature": SystemConfig.TEMPERATURE,
+                "top_p": SystemConfig.TOP_P
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    SystemConfig.OPENROUTER_API_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=180)
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                    else:
+                        error_text = await resp.text()
+                        print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
+                        return "API hatası oluştu."
+        except asyncio.TimeoutError:
+            return "Zaman aşımı."
+        except Exception as e:
+            print(f"⚠️ OpenRouter hatası: {e}")
             return "Bağlantı hatası."
 
     async def _generate_ollama(self, prompt: str) -> str:

@@ -844,8 +844,24 @@ class HafizaAsistani:
         True döndüren durumlar:
         1. Kullanıcı geçmişe referans veriyor
         2. Soru mevcut kategori konularıyla alakalı olabilir
+
+        False döndüren durumlar:
+        1. Kısa onay mesajları (tamam, oke, anladım vb.)
+        2. Çok kısa mesajlar
         """
-        user_lower = user_input.lower()
+        user_lower = user_input.lower().strip()
+
+        # Kısa onay/tepki mesajlarını filtrele - bunlar için TopicMemory KULLANILMAZ
+        short_responses = [
+            "tamam", "oke", "ok", "okay", "anladım", "anladim",
+            "he", "hee", "evet", "hayır", "hayir", "yok", "var",
+            "peki", "oldu", "olur", "olmaz", "iyi", "güzel", "super",
+            "eyvallah", "sağol", "teşekkür", "tesekkur", "saol",
+            "devam", "devam et", "sorun yok", "problem yok"
+        ]
+
+        if user_lower in short_responses or len(user_input.split()) <= 3:
+            return False
 
         past_references = [
             "daha önce", "geçen sefer", "hatırlıyor musun",
@@ -857,7 +873,8 @@ class HafizaAsistani:
             print(f"   📌 Geçmiş referansı tespit edildi")
             return True
 
-        if len(user_input) > 15 and self.topic_memory.index.get("categories"):
+        # Minimum 30 karakter ve 4+ kelime olmalı
+        if len(user_input) > 30 and len(user_input.split()) >= 4 and self.topic_memory.index.get("categories"):
             return True
 
         return False
@@ -1363,6 +1380,7 @@ JSON:
     SYSTEM_PROMPT = """Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın.
 
 - Doğal uzunlukta cevap ver, gereksiz uzatma
+- DÜZ METİN yaz: yıldız (*), tire (-), numara (1. 2. 3.), başlık (#, ##) KULLANMA - akıcı paragraf halinde yaz
 - Samimi ama abartısız ol
 - Emoji kullanabilirsin (abartmadan)
 - Kısa tepkilere (evet, tamam, anladım) kısa cevap ver
@@ -2004,10 +2022,18 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         """
         messages = []
 
-        # 1. System message - SYSTEM_PROMPT + zaman
+        # 1. System message - SYSTEM_PROMPT + kullanıcı bilgisi + zaman
         zaman = get_current_datetime()
-        system_content = f"""{self.SYSTEM_PROMPT}
 
+        # Kullanıcı profili bilgisini al
+        user_info = ""
+        if hasattr(self, 'profile_manager'):
+            profile_context = self.profile_manager.get_prompt_context()
+            if profile_context:
+                user_info = f"\n[👤 KULLANICI BİLGİSİ]:\n{profile_context}\n"
+
+        system_content = f"""{self.SYSTEM_PROMPT}
+{user_info}
 [⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']})"""
 
         messages.append({"role": "system", "content": system_content})
