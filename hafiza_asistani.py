@@ -364,61 +364,6 @@ class ToolSystem:
 
 
 
-_ROLES_CACHE = None
-
-def get_roles():
-    """ROLES'u personal_ai.py'dan al - artık tek basit rol"""
-    global _ROLES_CACHE
-    if _ROLES_CACHE is None:
-        try:
-            from personal_ai import SystemConfig
-            _ROLES_CACHE = SystemConfig.ROLES
-        except ImportError:
-            # Fallback: tek basit rol
-            _ROLES_CACHE = {
-                "default": {"keywords": [], "tone": "natural", "response_style": "adaptive"}
-            }
-    return _ROLES_CACHE
-
-
-_MultiRoleSystem = None
-
-def get_multi_role_system_class():
-    """MultiRoleSystem'i lazy import et - artık sadeleştirilmiş"""
-    global _MultiRoleSystem
-    if _MultiRoleSystem is None:
-        try:
-            from personal_ai import MultiRoleSystem as _MRS
-            _MultiRoleSystem = _MRS
-        except ImportError:
-            class FallbackMultiRoleSystem:
-                def __init__(self):
-                    self.enabled = False  # Devre dışı
-                @property
-                def ROLES(self):
-                    return get_roles()
-                def detect_role(self, user_input: str) -> str:
-                    return "default"  # Her zaman default
-            _MultiRoleSystem = FallbackMultiRoleSystem
-    return _MultiRoleSystem
-
-
-class MultiRoleSystem:
-    """
-    Sadeleştirilmiş MultiRoleSystem - tek tutarlı kişilik
-    """
-
-    def __init__(self):
-        self._impl = get_multi_role_system_class()()
-
-    @property
-    def ROLES(self):
-        return get_roles()
-
-    def detect_role(self, user_input: str) -> str:
-        return "default"  # Artık her zaman default döner
-
-
 
 class FAISSKnowledgeBase:
     """
@@ -739,9 +684,6 @@ class HafizaAsistani:
 
         self.tool_system = ToolSystem()
         print("✅ Tool System aktif!")
-
-        self.multi_role = MultiRoleSystem()
-        print("✅ Multi-Role System aktif!")
 
         self.faiss_kb = FAISSKnowledgeBase(user_id=self.user_id)
         self.faiss_kb.set_embedding_model(self.embedder)  # Embedding model'i set et
@@ -1308,7 +1250,6 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 "needs_chat_history": bool,
                 "tool_name": "yok|hesapla|zaman_getir|hava_durumu|namaz_vakti|risale_ara|web_ara",
                 "tool_param": str,
-                "response_style": "brief|detailed|conversational",
                 "is_farewell": bool,
                 "topic_closed": bool,  # YENİ: Kullanıcı bu konuyu kapatmak istiyor mu?
                 "closed_topic_summary": str,  # YENİ: Kapanan konunun özeti
@@ -1353,7 +1294,7 @@ Karar sistemi. ÖNCE <analiz> YAZ, SONRA JSON VER.
 {history_section}MESAJ: {user_input}
 
 <analiz>
-1. TİP: Sohbet/bilgi/teknik/dini/matematik/duygusal?
+1. TİP: Sohbet/bilgi/teknik/dini/matematik?
 2. GÜVENİM: %90+ biliyor muyum?
 3. KAYNAK: Kendi bilgim mi, tool mu lazım?
 </analiz>
@@ -1440,7 +1381,6 @@ JSON:
                     "needs_clarification": False,
                     "tool_name": "yok",
                     "tool_param": "",
-                    "response_style": "conversational",
                     "is_farewell": False,
                     "topic_closed": False,
                     "closed_topic_summary": "",
@@ -1500,7 +1440,6 @@ JSON:
                     print(f"   • Tool: {decision['tool_name']}")
                     if decision['tool_param']:
                         print(f"   • Tool Param: {decision['tool_param']}")
-                    print(f"   • Stil: {decision['response_style']}")
                     if decision.get('needs_clarification'):
                         print(f"   • ❓ Netleştirme gerekiyor!")
                     if decision.get('is_farewell'):
@@ -1530,7 +1469,6 @@ JSON:
             "needs_chat_history": True,     # Güvenli mod: history aç
             "tool_name": "yok",
             "tool_param": "",
-            "response_style": "conversational",
             "is_farewell": False,
             "topic_closed": False,
             "closed_topic_summary": "",

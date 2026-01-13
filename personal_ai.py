@@ -138,14 +138,17 @@ class LocalLLM:
             print("\n" + "=" * 70)
             print(f"📋 LLM MESSAGES ({self.provider.upper()}):")
             print("=" * 70)
-            for msg in messages[-5:]:  # Son 5 mesajı göster
+            # System message'ı her zaman göster
+            for msg in messages:
+                if msg.get('role') == 'system':
+                    print(f"[system]: {msg.get('content', '')}")
+                    break
+            # Son 5 user/assistant mesajını göster
+            non_system = [m for m in messages if m.get('role') != 'system']
+            for msg in non_system[-5:]:
                 role = msg.get('role', 'unknown')
                 content = msg.get('content', '')
-                # System message tam göster, diğerleri kısa
-                if role == 'system':
-                    print(f"[{role}]: {content}")
-                else:
-                    print(f"[{role}]: {content}")  # Tam göster, kesme yok
+                print(f"[{role}]: {content}")
             print("=" * 70 + "\n")
 
         if self.provider == "openrouter":
