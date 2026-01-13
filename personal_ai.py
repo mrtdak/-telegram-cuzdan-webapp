@@ -122,7 +122,7 @@ class LocalLLM:
             print("\n" + "=" * 70)
             print(f"📋 LLM PROMPT ({self.provider.upper()}):")
             print("=" * 70)
-            print(prompt[:2000] + "..." if len(prompt) > 2000 else prompt)
+            print(prompt)
             print("=" * 70 + "\n")
 
         if self.provider == "openrouter":
@@ -135,17 +135,17 @@ class LocalLLM:
     async def _generate_with_messages(self, messages: list) -> str:
         """Messages formatı ile LLM çağrısı - sohbet bağlamı korunur"""
         if SystemConfig.LOG_FULL_PROMPT:
-            non_system = [m for m in messages if m.get('role') != 'system']
             print("\n" + "=" * 70)
-            print(f"📋 LLM MESSAGES ({self.provider.upper()}) - Toplam: {len(non_system)} mesaj")
+            print(f"📋 LLM MESSAGES ({self.provider.upper()}):")
             print("=" * 70)
-            # System message'ı her zaman göster
-            for msg in messages:
-                if msg.get('role') == 'system':
-                    print(f"[system]: {msg.get('content', '')}")
-                    break
-            # Tüm user/assistant mesajlarını göster
-            for msg in non_system:
+            # System message'ı her zaman göster (ilk mesaj)
+            if messages and messages[0].get('role') == 'system':
+                print(f"[system]: {messages[0].get('content', '')}")
+                print("-" * 70)
+
+            # Diğer mesajları göster (system hariç, son 10 mesaj)
+            other_messages = [m for m in messages if m.get('role') != 'system']
+            for msg in other_messages[-10:]:
                 role = msg.get('role', 'unknown')
                 content = msg.get('content', '')
                 print(f"[{role}]: {content}")
@@ -260,12 +260,6 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
-                        # Token kullanımını logla
-                        usage = result.get('usage', {})
-                        if usage:
-                            prompt_tokens = usage.get('prompt_tokens', 0)
-                            completion_tokens = usage.get('completion_tokens', 0)
-                            print(f"📊 Token: {prompt_tokens} giriş + {completion_tokens} çıkış = {prompt_tokens + completion_tokens} toplam")
                         return result.get('choices', [{}])[0].get('message', {}).get('content', '')
                     else:
                         error_text = await resp.text()
@@ -305,12 +299,6 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
-                        # Token kullanımını logla
-                        usage = result.get('usage', {})
-                        if usage:
-                            prompt_tokens = usage.get('prompt_tokens', 0)
-                            completion_tokens = usage.get('completion_tokens', 0)
-                            print(f"📊 Token: {prompt_tokens} giriş + {completion_tokens} çıkış = {prompt_tokens + completion_tokens} toplam")
                         return result.get('choices', [{}])[0].get('message', {}).get('content', '')
                     else:
                         error_text = await resp.text()

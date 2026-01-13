@@ -364,6 +364,61 @@ class ToolSystem:
 
 
 
+_ROLES_CACHE = None
+
+def get_roles():
+    """ROLES'u personal_ai.py'dan al - artık tek basit rol"""
+    global _ROLES_CACHE
+    if _ROLES_CACHE is None:
+        try:
+            from personal_ai import SystemConfig
+            _ROLES_CACHE = SystemConfig.ROLES
+        except ImportError:
+            # Fallback: tek basit rol
+            _ROLES_CACHE = {
+                "default": {"keywords": [], "tone": "natural", "response_style": "adaptive"}
+            }
+    return _ROLES_CACHE
+
+
+_MultiRoleSystem = None
+
+def get_multi_role_system_class():
+    """MultiRoleSystem'i lazy import et - artık sadeleştirilmiş"""
+    global _MultiRoleSystem
+    if _MultiRoleSystem is None:
+        try:
+            from personal_ai import MultiRoleSystem as _MRS
+            _MultiRoleSystem = _MRS
+        except ImportError:
+            class FallbackMultiRoleSystem:
+                def __init__(self):
+                    self.enabled = False  # Devre dışı
+                @property
+                def ROLES(self):
+                    return get_roles()
+                def detect_role(self, user_input: str) -> str:
+                    return "default"  # Her zaman default
+            _MultiRoleSystem = FallbackMultiRoleSystem
+    return _MultiRoleSystem
+
+
+class MultiRoleSystem:
+    """
+    Sadeleştirilmiş MultiRoleSystem - tek tutarlı kişilik
+    """
+
+    def __init__(self):
+        self._impl = get_multi_role_system_class()()
+
+    @property
+    def ROLES(self):
+        return get_roles()
+
+    def detect_role(self, user_input: str) -> str:
+        return "default"  # Artık her zaman default döner
+
+
 
 class FAISSKnowledgeBase:
     """
@@ -685,6 +740,9 @@ class HafizaAsistani:
         self.tool_system = ToolSystem()
         print("✅ Tool System aktif!")
 
+        self.multi_role = MultiRoleSystem()
+        print("✅ Multi-Role System aktif!")
+
         self.faiss_kb = FAISSKnowledgeBase(user_id=self.user_id)
         self.faiss_kb.set_embedding_model(self.embedder)  # Embedding model'i set et
         print(f"✅ FAISS KB hazır (aktif: {self.faiss_kb.enabled})")
@@ -778,6 +836,9 @@ class HafizaAsistani:
                                 print(f"💾 Tampon bölge TopicMemory'ye kaydediliyor ({len(tampon_bolge)} mesaj)")
                                 self.add_closed_topic(topic_summary, chat_history)
 
+                    if len(self.hafiza) > 4:
+                        self.hafiza = self.hafiza[-4:]
+                        print("🧹 Hafıza temizlendi (son 4 mesaj kaldı - bağlam korundu)")
                 elif result.get("summary_updated"):
                     print(f"📝 Konu özeti güncellendi: {result.get('current_summary', '')[:50]}...")
             except Exception as e:
@@ -1250,6 +1311,7 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 "needs_chat_history": bool,
                 "tool_name": "yok|hesapla|zaman_getir|hava_durumu|namaz_vakti|risale_ara|web_ara",
                 "tool_param": str,
+                "response_style": "brief|detailed|conversational",
                 "is_farewell": bool,
                 "topic_closed": bool,  # YENİ: Kullanıcı bu konuyu kapatmak istiyor mu?
                 "closed_topic_summary": str,  # YENİ: Kapanan konunun özeti
@@ -1294,7 +1356,7 @@ Karar sistemi. ÖNCE <analiz> YAZ, SONRA JSON VER.
 {history_section}MESAJ: {user_input}
 
 <analiz>
-1. TİP: Sohbet/bilgi/teknik/dini/matematik?
+1. TİP: Sohbet/bilgi/teknik/dini/matematik/duygusal?
 2. GÜVENİM: %90+ biliyor muyum?
 3. KAYNAK: Kendi bilgim mi, tool mu lazım?
 </analiz>
@@ -1381,6 +1443,7 @@ JSON:
                     "needs_clarification": False,
                     "tool_name": "yok",
                     "tool_param": "",
+                    "response_style": "conversational",
                     "is_farewell": False,
                     "topic_closed": False,
                     "closed_topic_summary": "",
@@ -1440,6 +1503,7 @@ JSON:
                     print(f"   • Tool: {decision['tool_name']}")
                     if decision['tool_param']:
                         print(f"   • Tool Param: {decision['tool_param']}")
+                    print(f"   • Stil: {decision['response_style']}")
                     if decision.get('needs_clarification'):
                         print(f"   • ❓ Netleştirme gerekiyor!")
                     if decision.get('is_farewell'):
@@ -1469,6 +1533,7 @@ JSON:
             "needs_chat_history": True,     # Güvenli mod: history aç
             "tool_name": "yok",
             "tool_param": "",
+            "response_style": "conversational",
             "is_farewell": False,
             "topic_closed": False,
             "closed_topic_summary": "",
@@ -1511,7 +1576,12 @@ JSON:
 
 
     # TEK BİRLEŞİK PROMPT - Full Friend Modu
-    SYSTEM_PROMPT = """Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın.
+    SYSTEM_PROMPT = """⚠️ KRİTİK - SOHBET BAĞLAMI:
+- CEVAP VERMEDEN ÖNCE önceki [user] ve [assistant] mesajlarını OKU
+- Son [user] mesajını sohbetin devamı olarak cevapla
+- 📚 BAĞLAM bölümü varsa bu bilgileri MUTLAKA kullan
+
+Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın.
 
 - Doğal uzunlukta cevap ver, gereksiz uzatma
 - DÜZ METİN yaz: yıldız (*), tire (-), numara (1. 2. 3.), başlık (#, ##) KULLANMA - akıcı paragraf halinde yaz
@@ -2157,7 +2227,57 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         """
         messages = []
 
-        # 1. System message - SYSTEM_PROMPT + kullanıcı bilgisi + zaman
+        # 1. Önce context_parts'ı oluştur (system message'a eklenecek)
+        context_parts = []
+
+        # Metadata'dan context bilgilerini al
+        metadata = paket.get('metadata', {})
+        prompt = paket.get('prompt', '')
+
+        # Tool result varsa ekle
+        if metadata.get('has_tool_result'):
+            if '[🌐 İNTERNET BİLGİSİ]:' in prompt:
+                start = prompt.find('[🌐 İNTERNET BİLGİSİ]:')
+                end = prompt.find('\n\n[', start + 1)
+                if end == -1:
+                    end = prompt.find('━━━', start + 1)
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+            elif '[📚 RİSALE-İ NUR\'DAN' in prompt:
+                start = prompt.find('[📚 RİSALE-İ NUR\'DAN')
+                end = -1
+                for marker in ['\n\n[💬', '\n\n[HAFIZA]', '\n\n[👤', '\n\n[⚠️', '\n\n[BİLGİ', '━━━']:
+                    pos = prompt.find(marker, start + 1)
+                    if pos != -1 and (end == -1 or pos < end):
+                        end = pos
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+                elif start != -1:
+                    context_parts.append(prompt[start:].strip())
+
+        # Semantic context varsa ekle
+        if metadata.get('has_semantic'):
+            if '[HAFIZA]:' in prompt:
+                start = prompt.find('[HAFIZA]:')
+                end = prompt.find('\n\n[', start + 1)
+                if end == -1:
+                    end = prompt.find('━━━', start + 1)
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+
+        # FAISS context varsa ekle
+        if metadata.get('has_faiss'):
+            if '[BİLGİ TABANI]:' in prompt:
+                start = prompt.find('[BİLGİ TABANI]:')
+                end = prompt.find('\n\n[', start + 1)
+                if end == -1:
+                    end = prompt.find('━━━', start + 1)
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+
+        # Kullanıcı profili BAĞLAMA EKLENMİYOR - zaten system message'da var
+
+        # 2. System message - SYSTEM_PROMPT + kullanıcı bilgisi + zaman + BAĞLAM
         zaman = get_current_datetime()
 
         # Kullanıcı profili bilgisini al
@@ -2167,9 +2287,14 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             if profile_context:
                 user_info = f"\n[👤 KULLANICI BİLGİSİ]:\n{profile_context}\n"
 
+        # Bağlam bilgisi
+        context_info = ""
+        if context_parts:
+            context_info = f"\n\n📚 BAĞLAM:\n{chr(10).join(context_parts)}"
+
         system_content = f"""{self.SYSTEM_PROMPT}
 {user_info}
-[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']})"""
+[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']}){context_info}"""
 
         messages.append({"role": "system", "content": system_content})
 
@@ -2193,70 +2318,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 if mesaj:
                     messages.append({"role": rol, "content": mesaj})
 
-        # 3. Son user message - context ile birlikte
-        context_parts = []
-
-        # Metadata'dan context bilgilerini al
-        metadata = paket.get('metadata', {})
-        llm_decision = paket.get('llm_decision', {})
-
-        # Prompt'tan context kısımlarını çıkar
-        prompt = paket.get('prompt', '')
-
-        # Tool result varsa ekle
-        if metadata.get('has_tool_result'):
-            tool_name = paket.get('tool_used', '')
-            # Prompt'tan tool result'ı çıkarmaya çalış
-            if '[🌐 İNTERNET BİLGİSİ]:' in prompt:
-                start = prompt.find('[🌐 İNTERNET BİLGİSİ]:')
-                end = prompt.find('\n\n[', start + 1)
-                if end == -1:
-                    end = prompt.find('━━━', start + 1)
-                if start != -1 and end != -1:
-                    context_parts.append(prompt[start:end].strip())
-            elif '[📚 RİSALE-İ NUR\'DAN' in prompt:
-                start = prompt.find('[📚 RİSALE-İ NUR\'DAN')
-                # Sonraki ana bölümü bul (FAISS içindeki [Sayfa] etiketlerini atlayarak)
-                end = -1
-                for marker in ['\n\n[💬', '\n\n[HAFIZA]', '\n\n[👤', '\n\n[⚠️', '\n\n[BİLGİ', '━━━']:
-                    pos = prompt.find(marker, start + 1)
-                    if pos != -1 and (end == -1 or pos < end):
-                        end = pos
-                if start != -1 and end != -1:
-                    context_parts.append(prompt[start:end].strip())
-                elif start != -1:
-                    # Sonraki bölüm yoksa, sonuna kadar al
-                    context_parts.append(prompt[start:].strip())
-
-        # Semantic context varsa ekle
-        if metadata.get('has_semantic'):
-            if '[HAFIZA]:' in prompt:
-                start = prompt.find('[HAFIZA]:')
-                end = prompt.find('\n\n[', start + 1)
-                if end == -1:
-                    end = prompt.find('━━━', start + 1)
-                if start != -1 and end != -1:
-                    context_parts.append(prompt[start:end].strip())
-
-        # FAISS context varsa ekle
-        if metadata.get('has_faiss'):
-            if '[BİLGİ TABANI]:' in prompt:
-                start = prompt.find('[BİLGİ TABANI]:')
-                end = prompt.find('\n\n[', start + 1)
-                if end == -1:
-                    end = prompt.find('━━━', start + 1)
-                if start != -1 and end != -1:
-                    context_parts.append(prompt[start:end].strip())
-
-        # Son user message'ı oluştur (profil zaten system'de var, tekrar ekleme)
-        if context_parts:
-            user_content = f"""📚 Bağlam:
-{chr(10).join(context_parts)}
-
-📩 Sorum:
-{user_input}"""
-        else:
-            user_content = user_input
+        # 3. Son user message - sadece kullanıcının sorusu (bağlam artık system'de)
+        user_content = user_input
 
         messages.append({"role": "user", "content": user_content})
 
