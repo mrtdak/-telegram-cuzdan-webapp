@@ -836,9 +836,6 @@ class HafizaAsistani:
                                 print(f"💾 Tampon bölge TopicMemory'ye kaydediliyor ({len(tampon_bolge)} mesaj)")
                                 self.add_closed_topic(topic_summary, chat_history)
 
-                    if len(self.hafiza) > 4:
-                        self.hafiza = self.hafiza[-4:]
-                        print("🧹 Hafıza temizlendi (son 4 mesaj kaldı - bağlam korundu)")
                 elif result.get("summary_updated"):
                     print(f"📝 Konu özeti güncellendi: {result.get('current_summary', '')[:50]}...")
             except Exception as e:
