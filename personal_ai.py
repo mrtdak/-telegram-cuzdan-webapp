@@ -135,17 +135,17 @@ class LocalLLM:
     async def _generate_with_messages(self, messages: list) -> str:
         """Messages formatı ile LLM çağrısı - sohbet bağlamı korunur"""
         if SystemConfig.LOG_FULL_PROMPT:
+            non_system = [m for m in messages if m.get('role') != 'system']
             print("\n" + "=" * 70)
-            print(f"📋 LLM MESSAGES ({self.provider.upper()}):")
+            print(f"📋 LLM MESSAGES ({self.provider.upper()}) - Toplam: {len(non_system)} mesaj")
             print("=" * 70)
             # System message'ı her zaman göster
             for msg in messages:
                 if msg.get('role') == 'system':
                     print(f"[system]: {msg.get('content', '')}")
                     break
-            # Son 5 user/assistant mesajını göster
-            non_system = [m for m in messages if m.get('role') != 'system']
-            for msg in non_system[-5:]:
+            # Tüm user/assistant mesajlarını göster
+            for msg in non_system:
                 role = msg.get('role', 'unknown')
                 content = msg.get('content', '')
                 print(f"[{role}]: {content}")
