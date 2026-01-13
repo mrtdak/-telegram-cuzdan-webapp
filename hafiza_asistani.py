@@ -701,7 +701,7 @@ class HafizaAsistani:
         user_id: str = None,  # Dinamik kullanıcı ID
         saat_limiti: int = 48,
         esik: float = 0.50,
-        max_mesaj: int = 20,
+        max_mesaj: int = 50,  # Gemma 3 27B 128K token destekliyor
         model_adi: str = "BAAI/bge-m3",
         use_decision_llm: bool = True,
         together_api_key: str = None,
