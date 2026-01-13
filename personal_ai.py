@@ -260,6 +260,12 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
+                        # Token kullanımını logla
+                        usage = result.get('usage', {})
+                        if usage:
+                            prompt_tokens = usage.get('prompt_tokens', 0)
+                            completion_tokens = usage.get('completion_tokens', 0)
+                            print(f"📊 Token: {prompt_tokens} giriş + {completion_tokens} çıkış = {prompt_tokens + completion_tokens} toplam")
                         return result.get('choices', [{}])[0].get('message', {}).get('content', '')
                     else:
                         error_text = await resp.text()
@@ -299,6 +305,12 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
+                        # Token kullanımını logla
+                        usage = result.get('usage', {})
+                        if usage:
+                            prompt_tokens = usage.get('prompt_tokens', 0)
+                            completion_tokens = usage.get('completion_tokens', 0)
+                            print(f"📊 Token: {prompt_tokens} giriş + {completion_tokens} çıkış = {prompt_tokens + completion_tokens} toplam")
                         return result.get('choices', [{}])[0].get('message', {}).get('content', '')
                     else:
                         error_text = await resp.text()

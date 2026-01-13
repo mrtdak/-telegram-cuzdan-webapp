@@ -2248,16 +2248,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 if start != -1 and end != -1:
                     context_parts.append(prompt[start:end].strip())
 
-        # Kullanıcı profili varsa ekle
-        if '[👤 KULLANICI PROFİLİ' in prompt:
-            start = prompt.find('[👤 KULLANICI PROFİLİ')
-            end = prompt.find('\n\n[', start + 1)
-            if end == -1:
-                end = prompt.find('━━━', start + 1)
-            if start != -1 and end != -1:
-                context_parts.append(prompt[start:end].strip())
-
-        # Son user message'ı oluştur
+        # Son user message'ı oluştur (profil zaten system'de var, tekrar ekleme)
         if context_parts:
             user_content = f"""📚 Bağlam:
 {chr(10).join(context_parts)}
