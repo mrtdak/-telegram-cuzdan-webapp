@@ -189,12 +189,12 @@ class LocalLLM:
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ Together.ai hatası: {resp.status} - {error_text[:200]}")
-                        return "API hatası oluştu."
+                        return "[HATA] Bir sorun oluştu, tekrar dener misin?"
         except asyncio.TimeoutError:
-            return "Zaman aşımı."
+            return "[HATA] Bağlantı zaman aşımına uğradı."
         except Exception as e:
             print(f"⚠️ Together.ai hatası: {e}")
-            return "Bağlantı hatası."
+            return "[HATA] Bağlantı sorunu oluştu."
 
     async def _generate_together(self, prompt: str) -> str:
         """Together.ai API"""
@@ -225,12 +225,12 @@ class LocalLLM:
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ Together.ai hatası: {resp.status} - {error_text[:200]}")
-                        return "API hatası oluştu."
+                        return "[HATA] Bir sorun oluştu, tekrar dener misin?"
         except asyncio.TimeoutError:
-            return "Zaman aşımı."
+            return "[HATA] Bağlantı zaman aşımına uğradı."
         except Exception as e:
             print(f"⚠️ Together.ai hatası: {e}")
-            return "Bağlantı hatası."
+            return "[HATA] Bağlantı sorunu oluştu."
 
     async def _generate_openrouter(self, prompt: str) -> str:
         """OpenRouter API (Claude)"""
@@ -264,12 +264,12 @@ class LocalLLM:
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
-                        return "API hatası oluştu."
+                        return "[HATA] Bir sorun oluştu, tekrar dener misin?"
         except asyncio.TimeoutError:
-            return "Zaman aşımı."
+            return "[HATA] Bağlantı zaman aşımına uğradı."
         except Exception as e:
             print(f"⚠️ OpenRouter hatası: {e}")
-            return "Bağlantı hatası."
+            return "[HATA] Bağlantı sorunu oluştu."
 
     async def _generate_openrouter_messages(self, messages: list) -> str:
         """OpenRouter API - Messages formatı (Claude)"""
@@ -303,12 +303,12 @@ class LocalLLM:
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
-                        return "API hatası oluştu."
+                        return "[HATA] Bir sorun oluştu, tekrar dener misin?"
         except asyncio.TimeoutError:
-            return "Zaman aşımı."
+            return "[HATA] Bağlantı zaman aşımına uğradı."
         except Exception as e:
             print(f"⚠️ OpenRouter hatası: {e}")
-            return "Bağlantı hatası."
+            return "[HATA] Bağlantı sorunu oluştu."
 
     async def _generate_ollama(self, prompt: str) -> str:
         """Ollama API"""
@@ -333,7 +333,7 @@ class LocalLLM:
                         return "Ollama hatası."
         except Exception as e:
             print(f"⚠️ Ollama hatası: {e}")
-            return "Bağlantı hatası."
+            return "[HATA] Bağlantı sorunu oluştu."
 
 
 class PersonalAI:

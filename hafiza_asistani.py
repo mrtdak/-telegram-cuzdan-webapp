@@ -25,6 +25,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 from topic_memory import TopicMemory
 from conversation_context import ConversationContextManager
 from profile_manager import ProfileManager
+# from calculation_context import CalculationContext  # Devre dışı - chat history yeterli
 
 
 def get_current_datetime() -> Dict[str, str]:
@@ -127,11 +128,26 @@ def calculate_math(expression: str) -> str:
 async def web_ara(query: str, context: str = "") -> str:
     """
     Tavily API ile internet araması.
+    Tarım/üretim sorularında teknik bilgi odaklı arama yapar.
     """
     try:
         search_query = query
         if context:
             search_query = f"{query} {context}"
+
+        # Tarım/üretim sorularında teknik bilgi odaklı arama
+        tarim_keywords = ['mantar', 'yetiştir', 'üretim', 'tarım', 'sera', 'hasat', 'ekim', 'dikim']
+        query_lower = query.lower()
+
+        if any(kw in query_lower for kw in tarim_keywords):
+            # Sorgudan ana konuyu çıkar ve teknik bilgi ekle
+            if 'kaç' in query_lower or 'ne kadar' in query_lower or 'verim' in query_lower:
+                # Verim sorusu - teknik koşulları ara
+                search_query = f"{query} yetiştirme koşulları sıcaklık nem raf aralığı metrekare verim"
+            else:
+                # Genel tarım sorusu - teknik detayları ekle
+                search_query = f"{query} yetiştirme koşulları teknik bilgi"
+            print(f"   📐 Tarım sorusu algılandı - teknik arama yapılıyor")
 
         print(f"\n🌐 Web araması: '{search_query}'")
 
@@ -783,6 +799,10 @@ class HafizaAsistani:
         else:
             print("✅ Kullanıcı Profili aktif (henüz boş)")
 
+        # Hesaplama Değişkenleri - Devre dışı (chat history yeterli)
+        # self.calculation_context = CalculationContext()
+        # print("✅ Calculation Context aktif!")
+
         print("\n⚙️ Sekreter Ayarları:")
         print(f"   • Zaman limiti: {saat_limiti} saat")
         print(f"   • Benzerlik eşiği: {esik}")
@@ -836,9 +856,10 @@ class HafizaAsistani:
                                 print(f"💾 Tampon bölge TopicMemory'ye kaydediliyor ({len(tampon_bolge)} mesaj)")
                                 self.add_closed_topic(topic_summary, chat_history)
 
-                    if len(self.hafiza) > 4:
-                        self.hafiza = self.hafiza[-4:]
-                        print("🧹 Hafıza temizlendi (son 4 mesaj kaldı - bağlam korundu)")
+                    # Mesajları kesme - tüm konuşma korunsun
+                    # if len(self.hafiza) > 4:
+                    #     self.hafiza = self.hafiza[-4:]
+                    #     print("🧹 Hafıza temizlendi (son 4 mesaj kaldı - bağlam korundu)")
                 elif result.get("summary_updated"):
                     print(f"📝 Konu özeti güncellendi: {result.get('current_summary', '')[:50]}...")
             except Exception as e:
@@ -1601,6 +1622,11 @@ Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın.
 - Kullanıcının sorduğu soruyu geri sorma
 - Direkt cevaba geç
 
+🌐 İNTERNET BİLGİSİ KULLANIMI:
+- İnternet bilgisini KENDİ BİLGİN gibi sun, "araştırmalarıma göre" veya "bildiğim kadarıyla" diyebilirsin
+- Kullanıcı söylemediği bilgiyi ONUN SÖYLEMİŞ gibi sunma (örn: kullanıcı "30 ton" demediyse "30 ton iyi görünüyor" DEME)
+- Bilgiyi doğal şekilde ver, sanki zaten biliyormuşsun gibi
+
 🔴 DİNİ KONULARDA (verilen metin varsa):
 - Cevabı VERİLEN METİNDEN oluştur
 - "Risale'de", "metinde" DEME - gizli kaynak olarak kullan
@@ -1790,6 +1816,12 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     combined_sources.append(f"[📚 RİSALE-İ NUR'DAN - BU BİLGİYİ KULLAN!]:\n{tool_result}")
             else:
                 combined_sources.append(f"[🔧 ARAÇ SONUCU]:\n{tool_result}")
+
+        # Hesaplama değişkenleri (varsa)
+        if hasattr(self, 'calculation_context'):
+            calc_section = self.calculation_context.get_prompt_section()
+            if calc_section:
+                combined_sources.append(calc_section)
 
         if chat_history:
             combined_sources.append(f"[💬 Önceki Konuşma (DEVAM EDEN SOHBET - tekrar selamlama YAPMA!)]:\n{chat_history}")
@@ -2287,6 +2319,12 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             if profile_context:
                 user_info = f"\n[👤 KULLANICI BİLGİSİ]:\n{profile_context}\n"
 
+        # Hesaplama değişkenlerini ekle
+        if hasattr(self, 'calculation_context'):
+            calc_section = self.calculation_context.get_prompt_section()
+            if calc_section:
+                context_parts.insert(0, calc_section)
+
         # Bağlam bilgisi
         context_info = ""
         if context_parts:
@@ -2356,4 +2394,9 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         Akış: PersonalAI cevap verdi → HafizaAsistani.save() → hafızaya kaydet
         """
+        # Hata mesajlarını kaydetme (Telegram'a gider ama history'e eklenmez)
+        if response.startswith("[HATA]"):
+            print("   ⚠️ Hata mesajı - history'e eklenmedi")
+            return
+
         self.add(user_input, response, chat_history or [])
