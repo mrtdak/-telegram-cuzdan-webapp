@@ -721,41 +721,6 @@ KONULAR:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
         return topics[:max_topics]
 
-    def summarize_conversation(self, chat_history: List[Dict]) -> str:
-        """Summarize conversation briefly"""
-        # En az 6 mesaj olmalı, kısa konuşmalar özetlenmesin
-        if not chat_history or len(chat_history) < 6:
-            return ""
-
-        # Convert chat history to text
-        conversation_text = ""
-        for msg in chat_history[-10:]:  # Last 10 messages
-            role = "User" if msg.get('role') == 'user' else "AI"
-            content = msg.get('content', '')[:200]
-            if content:
-                conversation_text += f"{role}: {content}\n"
-
-        if not conversation_text:
-            return ""
-
-        prompt = f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
-
-What did we talk about? Summarize in Turkish (max 400 characters).
-Focus on TOPICS discussed, not user behavior analysis.
-Example: "TV izledik, saat sorduk" or "Hava durumu konuştuk"
-
-Conversation:
-{conversation_text}
-
-SUMMARY:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-
-"""
-
-        response = self._call_llm(prompt, max_tokens=150)
-
-        # Clean
-        summary = response.strip().split('\n')[0][:400]
-        return summary if len(summary) > 5 else ""
 
 
 class HafizaAsistani:
@@ -771,6 +736,9 @@ class HafizaAsistani:
     - Akıllı prompt hazırlama
     - DecisionLLM ile karar verme
     """
+
+    # Tool ayarları
+    ENABLE_HESAPLA = False  # Hesaplama aracı devre dışı
 
     def __init__(
         self,
@@ -1336,6 +1304,9 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 return result
 
             if tool_name == "hesapla":
+                if not self.ENABLE_HESAPLA:
+                    print(f"   ⏩ Hesaplama devre dışı")
+                    return None
                 result = calculate_math(tool_param or user_input)
                 print(f"   ✅ Hesaplama: {tool_param} = {result}")
                 return f"🧮 Hesaplama: {tool_param} = {result}"
@@ -1671,26 +1642,43 @@ JSON:
 
 
     # TEK BİRLEŞİK PROMPT - Full Friend Modu
-    SYSTEM_PROMPT = """You are the user's close friend. You're chatting with them right now.
+    # Kim olduğu
+    SYSTEM_PROMPT = """You are the user's mature and warm AI friend."""
 
-🎯 BEFORE YOU RESPOND: Stop. Read the ENTIRE chat history first. Understand the overall flow, context, and nuances - not just the last message. Your response must reflect awareness of the whole conversation.
-
-- Respond naturally, match the energy of the conversation
-- Be natural, no fake empathy
-- Don't ask too many questions, don't force conversation to continue
-- Friendly but not exaggerated
-- Admit when you don't know, don't make things up
-- For ambiguous messages (song lyrics, random phrases) don't pretend you know - just ask
-- No sycophancy - if user claims "you said X", check first, correct if you didn't
+    # Temel kurallar (stabil koddan)
+    SYSTEM_RULES = """
+- Give natural length responses, don't pad unnecessarily
+- Write PLAIN TEXT: NO asterisks (*), dashes (-), numbers (1. 2. 3.), headers (#, ##) - write in flowing paragraphs
+- Be friendly but not exaggerated
 - You can use emojis (sparingly)
+- Short reactions (yes, ok, got it) get short responses
+- Interpret short messages based on context"""
 
-🎯 FOR RELIGIOUS TOPICS (if text is provided):
+    # Soru anlama kuralları (stabil koddan)
+    QUESTION_RULES = """
+- Opinion questions (right?, what do you think?) → Give CLEAR ANSWER first (yes/no/I think...), then brief explanation
+- If user didn't ask for technical details → DON'T explain technical details, difficulties, system requirements
+- If discussing scenarios/ideas → think WITH them, don't lecture
+- ONLY answer what was asked, don't add unrequested information"""
+
+    # Sohbet devamı kuralları (stabil koddan)
+    CHAT_RULES = """
+- If chat history exists: DON'T greet again (Hello, Hi, etc.)
+- DON'T ask back the question user asked
+- Go straight to the answer"""
+
+    # Web bilgisi kuralları (stabil koddan)
+    WEB_RULES = """
+- Present web info as YOUR OWN knowledge, you can say "as far as I know"
+- DON'T attribute info to the user that they didn't say
+- Present info naturally, as if you already knew it"""
+
+    # Dini konular kuralları (stabil koddan)
+    RELIGIOUS_RULES = """
 - Build your answer FROM THE PROVIDED TEXT
 - DON'T say "in Risale", "in the text" - use it as a hidden source
 - Present metaphors and concepts AS YOUR OWN words
-- Conversational tone, not preaching
-
-🎯 LANGUAGE: Always respond in the user's language."""
+- Conversational tone, not preaching"""
 
     # Geriye uyumluluk için (eski kod hala role parametresi kullanıyorsa)
     ROLE_SYSTEM_PROMPTS = {
@@ -1843,7 +1831,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         """Final prompt'u oluştur (rol'e göre)"""
 
         zaman = get_current_datetime()
-        zaman_satiri = f"[⏰ CURRENT TIME]: {zaman['full']} ({zaman['zaman_dilimi']})"
+        zaman_satiri = f"[⏰ ZAMAN BİLİNCİ]: {zaman['full']} ({zaman['zaman_dilimi']})"
 
         # Tek birleşik prompt kullan
         role_prompt = self.SYSTEM_PROMPT
@@ -1862,19 +1850,19 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
 
         if closed_topics_warning:
-            combined_sources.append(f"[⚠️ CLOSED TOPICS - DON'T REOPEN!]:\n{closed_topics_warning}")
+            combined_sources.append(f"[⚠️ KAPANMIŞ KONULAR - TEKRAR AÇMA!]:\n{closed_topics_warning}")
 
         if tool_result:
             if tool_name == "web_ara":
                 # Data already cleaned by _process_web_result
-                combined_sources.append(f"[🌐 INTERNET INFO]:\n{tool_result}")
+                combined_sources.append(f"[🌐 İNTERNET BİLGİSİ]:\n{tool_result}")
             elif tool_name == "risale_ara":
                 if is_detail_followup:
-                    combined_sources.append(f"[🔇 BACKGROUND INFO - Don't share directly, explain in your own words!]:\n{tool_result}")
+                    combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - Doğrudan verme, kendi yorumunla açıkla!]:\n{tool_result}")
                 else:
-                    combined_sources.append(f"[📚 FROM RISALE-I NUR - USE THIS INFO!]:\n{tool_result}")
+                    combined_sources.append(f"[📚 RİSALE-İ NUR'DAN - BU BİLGİYİ KULLAN!]:\n{tool_result}")
             else:
-                combined_sources.append(f"[🔧 TOOL RESULT]:\n{tool_result}")
+                combined_sources.append(f"[🔧 ARAÇ SONUCU]:\n{tool_result}")
 
         # Hesaplama değişkenleri (varsa)
         if hasattr(self, 'calculation_context'):
@@ -1883,22 +1871,22 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 combined_sources.append(calc_section)
 
         if chat_history:
-            combined_sources.append(f"[💬 Previous Conversation (ONGOING CHAT - DON'T greet again!)]:\n{chat_history}")
+            combined_sources.append(f"[💬 Önceki Konuşma (DEVAM EDEN SOHBET - tekrar selamlama YAPMA!)]:\n{chat_history}")
 
         if semantic_context:
-            combined_sources.append(f"[MEMORY]:\n{semantic_context}")
+            combined_sources.append(f"[HAFIZA]:\n{semantic_context}")
 
         if faiss_context and not tool_result:
-            combined_sources.append(f"[KNOWLEDGE BASE]:\n{faiss_context}")
+            combined_sources.append(f"[BİLGİ TABANI]:\n{faiss_context}")
 
         if silent_long_term_context:
-            combined_sources.append(f"[🔇 BACKGROUND INFO - DON'T TELL USER]:\n{silent_long_term_context}")
+            combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:\n{silent_long_term_context}")
 
         # Kullanıcı profili ekle (varsa)
         if hasattr(self, 'profile_manager'):
             profile_context = self.profile_manager.get_prompt_context()
             if profile_context:
-                combined_sources.insert(0, f"[👤 USER PROFILE - use naturally, don't memorize]:\n{profile_context}")
+                combined_sources.insert(0, f"[👤 KULLANICI PROFİLİ - doğal kullan, ezberletme]:\n{profile_context}")
 
         if not combined_sources:
             sep = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1906,7 +1894,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
 {zaman_satiri}
 
-[🎭 ROLE]: {role.upper()}
+[🎭 ROL]: {role.upper()}
 {role_prompt}
 
 {sep}
@@ -2045,15 +2033,29 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         decision = self._intelligent_decision(user_input, chat_history)
 
         if decision.get('topic_closed', False):
-            # LLM ile konuşmayı özetle
-            topic_summary = ""
-            if hasattr(self, 'decision_llm') and self.decision_llm and chat_history:
-                print("📝 Konuşma özetleniyor (LLM)...")
-                topic_summary = self.decision_llm.summarize_conversation(chat_history)
+            topic_summary = decision.get('closed_topic_summary', '')
 
-            # Fallback: LLM özet başarısız olursa reasoning kullan
-            if not topic_summary and decision.get('reasoning'):
-                topic_summary = decision['reasoning'][:100]
+            if not topic_summary:
+                if chat_history:
+                    for msg in reversed(chat_history):
+                        if msg.get('role') == 'assistant':
+                            content = (msg.get('content') or '')[:100]
+                            if content and len(content) > 5:
+                                topic_summary = content
+                                break
+
+                if not topic_summary and chat_history:
+                    for msg in reversed(chat_history):
+                        if msg.get('role') == 'user':
+                            content = (msg.get('content') or '').strip()
+                            if content and len(content) > 10 and not any(
+                                w in content.lower() for w in ['teşekkür', 'sağol', 'eyvallah', 'görüşürüz', 'bye', 'hoşça']
+                            ):
+                                topic_summary = content[:100]
+                                break
+
+                if not topic_summary and decision.get('reasoning'):
+                    topic_summary = decision['reasoning'][:100]
 
             if topic_summary:
                 print(f"💾 Konu kaydediliyor: '{topic_summary[:50]}...'")
@@ -2061,7 +2063,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 # Son konuşmayı profile'a kaydet
                 if hasattr(self, 'profile_manager'):
                     self.profile_manager.update_last_session(topic_summary)
-                    print(f"📝 Son konuşma profile'a kaydedildi: {topic_summary}")
+                    print(f"📝 Son konuşma profile'a kaydedildi")
             else:
                 print("⚠️ topic_closed=true ama özet çıkarılamadı, kayıt atlandı")
 
@@ -2322,8 +2324,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         math_result = None  # Hesaplama sonucu ayrı tutulacak
 
         if metadata.get('has_tool_result'):
-            if '[🌐 INTERNET INFO]:' in prompt:
-                start = prompt.find('[🌐 INTERNET INFO]:')
+            if '[🌐 İNTERNET BİLGİSİ]:' in prompt:
+                start = prompt.find('[🌐 İNTERNET BİLGİSİ]:')
                 end = prompt.find('\n\n[', start + 1)
                 if end == -1:
                     end = prompt.find('━━━', start + 1)
@@ -2340,7 +2342,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     context_parts.append(prompt[start:end].strip())
                 elif start != -1:
                     context_parts.append(prompt[start:].strip())
-            elif '[🔧 TOOL RESULT]:' in prompt and tool_used == 'hesapla':
+            elif '[🔧 ARAÇ SONUCU]:' in prompt and tool_used == 'hesapla':
                 # hesapla sonucu BAĞLAM'a değil, doğrudan user mesajına eklenecek
                 start = prompt.find('🧮 Hesaplama:')
                 if start != -1:
@@ -2349,9 +2351,9 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                         math_result = prompt[start:end].strip()
                     else:
                         math_result = prompt[start:start+100].strip()
-            elif '[🔧 TOOL RESULT]:' in prompt:
+            elif '[🔧 ARAÇ SONUCU]:' in prompt:
                 # Diğer araçlar için BAĞLAM'a ekle
-                start = prompt.find('[🔧 TOOL RESULT]:')
+                start = prompt.find('[🔧 ARAÇ SONUCU]:')
                 end = prompt.find('\n\n[', start + 1)
                 if end == -1:
                     end = prompt.find('━━━', start + 1)
@@ -2366,8 +2368,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         # Semantic context varsa ekle
         if metadata.get('has_semantic'):
-            if '[MEMORY]:' in prompt:
-                start = prompt.find('[MEMORY]:')
+            if '[HAFIZA]:' in prompt:
+                start = prompt.find('[HAFIZA]:')
                 end = prompt.find('\n\n[', start + 1)
                 if end == -1:
                     end = prompt.find('━━━', start + 1)
@@ -2376,29 +2378,33 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         # FAISS context varsa ekle
         if metadata.get('has_faiss'):
-            if '[KNOWLEDGE BASE]:' in prompt:
-                start = prompt.find('[KNOWLEDGE BASE]:')
+            if '[BİLGİ TABANI]:' in prompt:
+                start = prompt.find('[BİLGİ TABANI]:')
                 end = prompt.find('\n\n[', start + 1)
                 if end == -1:
                     end = prompt.find('━━━', start + 1)
                 if start != -1 and end != -1:
                     context_parts.append(prompt[start:end].strip())
 
-        # ═══════════════════════════════════════════════════════════════
-        # 🧠 YENİ ORGANIK PROMPT YAPISI - Beden gibi hizmet eden prompt
-        # ═══════════════════════════════════════════════════════════════
+        # Kullanıcı profili BAĞLAMA EKLENMİYOR - zaten system message'da var
 
+        # 2. System message - SYSTEM_PROMPT + kullanıcı bilgisi + zaman + BAĞLAM
         zaman = get_current_datetime()
 
-        # 👤 USER INFO
+        # Kullanıcı profili bilgisini al
         user_info = ""
         if hasattr(self, 'profile_manager'):
             profile_context = self.profile_manager.get_prompt_context()
             if profile_context:
                 user_info = profile_context
 
-        # 💭 CHAT HISTORY - string olarak hazırla
-        history_str = ""
+        # Bağlam bilgisi
+        context_info = ""
+        if context_parts:
+            context_info = f"\n🎯 AVAILABLE INFO:\n{chr(10).join(context_parts)}\n"
+
+        # Conversation history inline olarak oluştur
+        history_text = ""
         max_history = self.max_mesaj
 
         if chat_history and len(chat_history) > 0:
@@ -2411,7 +2417,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     prefix = "User" if role == 'user' else "You"
                     history_lines.append(f"{prefix}: {content}")
             if history_lines:
-                history_str = "\n".join(history_lines)
+                history_text = "\n".join(history_lines)
+
         elif self.hafiza and len(self.hafiza) > 0:
             history_lines = []
             for m in self.hafiza[-max_history:]:
@@ -2421,44 +2428,49 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     prefix = "User" if rol == 'user' else "You"
                     history_lines.append(f"{prefix}: {mesaj}")
             if history_lines:
-                history_str = "\n".join(history_lines)
+                history_text = "\n".join(history_lines)
 
-        # 🔧 TOOLS/CONTEXT
-        tools_str = ""
-        if context_parts:
-            tools_str = "\n".join(context_parts)
-
-        # ═══════════════════════════════════════════════════════════════
-        # ORGANIK PROMPT - Her parça son cevaba hizmet ediyor
-        # ═══════════════════════════════════════════════════════════════
+        # Conversation history bölümü
+        history_section = f"""
+🎯 CONVERSATION HISTORY:
+{history_text if history_text else "(No previous messages - this is the start of conversation)"}
+""" if history_text else ""
 
         system_content = f"""🎯 YOUR TASK: Respond to this message → "{user_input}"
 
 🎯 WHO YOU ARE:
 {self.SYSTEM_PROMPT}
 
+🎯 RESPONSE RULES:
+{self.SYSTEM_RULES}
+
+🎯 QUESTION UNDERSTANDING:
+{self.QUESTION_RULES}
+
+🎯 CHAT CONTINUATION:
+{self.CHAT_RULES}
+
+🎯 WEB INFO USAGE:
+{self.WEB_RULES}
+
+🎯 FOR RELIGIOUS TOPICS (if text is provided):
+{self.RELIGIOUS_RULES}
+
+🎯 LANGUAGE: Always respond in the user's language.
+
 🎯 AWARENESS:
 - Current time: {zaman['full']} ({zaman['zaman_dilimi']})
-- {user_info if user_info else "No user info available"}
-
-🎯 CONVERSATION HISTORY:{f'''
-{history_str}''' if history_str else '''
-(No previous messages - this is the start of conversation)'''}
-
-{f'''🎯 AVAILABLE INFO:
-{tools_str}''' if tools_str else ''}
-
-🎯 END TASK - Now respond to: "{user_input}"
-"""
+- {user_info if user_info else "No user info"}
+{context_info}{history_section}
+🎯 END TASK - Now respond to: "{user_input}" """
 
         messages.append({"role": "system", "content": system_content})
 
-        # Son user message - tekrar ekle (bazı modeller için gerekli)
+        # Son user message
         messages.append({"role": "user", "content": user_input})
 
         # 4. Hesaplama sonucu varsa, system message'a ayrı bölüm olarak ekle (BAĞLAM'a değil!)
-        ENABLE_MATH_INSTRUCTION = False  # Devre dışı
-        if ENABLE_MATH_INSTRUCTION and math_result:
+        if math_result:
             calc_value = math_result.replace('🧮 Hesaplama: ', '')
             math_instruction = f"\n\n[🧮 HESAPLAMA SONUCU]: {calc_value} ← Hesaplama aracın verdi, DOĞRU. Güvenle sun."
             # System message'ı güncelle

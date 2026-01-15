@@ -136,53 +136,12 @@ class ProfileManager:
     def get_prompt_context(self) -> str:
         """
         Prompt'a eklenecek profil bağlamını oluştur
-        Bu bilgi AI'a sessizce verilir, kullanıcıya söylemez
+        Sadece kullanıcı adı verilir
         """
-        parts = []
-
         name = self.get_name()
         if name:
-            parts.append(f"User's name: {name}")
-
-        interests = self.get_interests()
-        if interests:
-            parts.append(f"Interests: {', '.join(interests)}")
-
-        facts = self.get_important_facts()
-        if facts:
-            parts.append(f"Known facts: {'; '.join(facts)}")
-
-        last_session = self.get_last_session_summary()
-        last_session_date = self.profile.get("last_session_date", "")
-
-        if last_session:
-            if last_session_date:
-                try:
-                    dt = datetime.fromisoformat(last_session_date)
-                    now = datetime.now()
-                    diff = now - dt
-
-                    # Ne kadar önce hesapla
-                    minutes = int(diff.total_seconds() / 60)
-                    if minutes < 60:
-                        time_ago = f"{minutes} minutes ago"
-                    elif minutes < 1440:  # 24 saat
-                        hours = minutes // 60
-                        time_ago = f"{hours} hours ago"
-                    else:
-                        days = minutes // 1440
-                        time_ago = f"{days} days ago"
-
-                    parts.append(f"Last conversation ({time_ago}): {last_session}")
-                except:
-                    parts.append(f"Last conversation: {last_session}")
-            else:
-                parts.append(f"Last conversation: {last_session}")
-
-        if not parts:
-            return ""
-
-        return "\n".join(parts)
+            return f"User's name: {name}"
+        return ""
 
     def has_profile(self) -> bool:
         """Profil dolu mu kontrol et"""
