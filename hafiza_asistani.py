@@ -82,17 +82,47 @@ def get_current_datetime() -> Dict[str, str]:
 def calculate_math(expression: str) -> str:
     """Matematiksel ifadeyi güvenli şekilde hesapla"""
     import math
+    import re
 
     try:
         safe_expression = expression.strip()
 
+        # Türkçe operatörleri çevir
         safe_expression = safe_expression.replace("x", "*")
         safe_expression = safe_expression.replace("X", "*")
+        safe_expression = safe_expression.replace("×", "*")
         safe_expression = safe_expression.replace("çarpı", "*")
         safe_expression = safe_expression.replace("çarp", "*")
         safe_expression = safe_expression.replace("bölü", "/")
+        safe_expression = safe_expression.replace("÷", "/")
         safe_expression = safe_expression.replace("artı", "+")
         safe_expression = safe_expression.replace("eksi", "-")
+
+        # Yüzde işlemlerini çevir: %18 → 0.18, yüzde 18 → 0.18
+        safe_expression = re.sub(r'[%](\d+(?:\.\d+)?)', r'(\1/100)', safe_expression)
+        safe_expression = re.sub(r'yüzde\s*(\d+(?:\.\d+)?)', r'(\1/100)', safe_expression, flags=re.IGNORECASE)
+
+        # Birim metinlerini temizle (TL, kg, ton, metre, m², m³, vb.)
+        units_to_remove = [
+            r'\bTL\b', r'\btl\b', r'\bLira\b', r'\blira\b',
+            r'\bkg\b', r'\bKG\b', r'\bkilogram\b', r'\bkilo\b',
+            r'\bton\b', r'\bTON\b',
+            r'\bmetre\b', r'\bm\b', r'\bm²\b', r'\bm³\b', r'\bm2\b', r'\bm3\b',
+            r'\bmetrekare\b', r'\bmetreküp\b',
+            r'\bkat\b', r'\bkatlı\b',
+            r'\badet\b', r'\btane\b',
+            r'/ton\b', r'/kg\b', r'/m\b',
+            r'\bKDV\b', r'\bkdv\b',
+        ]
+        for unit in units_to_remove:
+            safe_expression = re.sub(unit, '', safe_expression)
+
+        # Virgülü noktaya çevir (Türkçe ondalık)
+        safe_expression = safe_expression.replace(',', '.')
+
+        # Fazla boşlukları temizle
+        safe_expression = re.sub(r'\s+', ' ', safe_expression).strip()
+        safe_expression = safe_expression.replace(' ', '')
 
         allowed_chars = "0123456789+-*/(). "
         if not all(c in allowed_chars for c in safe_expression):
@@ -163,11 +193,6 @@ async def web_ara(query: str, context: str = "") -> str:
     except Exception as e:
         print(f"❌ Web arama hatası: {e}")
         return None
-
-
-async def wiki_ara(query: str) -> str:
-    """Eski isim - web_ara'ya yönlendirir."""
-    return await web_ara(query)
 
 
 async def get_weather(city: str) -> str:
@@ -1277,7 +1302,8 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
             if tool_name == "hesapla":
                 result = calculate_math(tool_param or user_input)
-                return f"🧮 {result}"
+                print(f"   ✅ Hesaplama: {tool_param} = {result}")
+                return f"🧮 Hesaplama: {tool_param} = {result}"
 
             if tool_name == "hava_durumu":
                 city = tool_param or user_input
@@ -1292,7 +1318,13 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 )
                 return result or None
 
-            if tool_name == "web_ara" or tool_name == "wiki_ara":
+            if tool_name == "web_ara":
+                # Sadece kullanıcı açıkça isterse web araması yap
+                web_keywords = ["internette ara", "web'de ara", "webde ara", "internetten bak", "araştır", "aratır", "google", "ara bak"]
+                user_lower = user_input.lower()
+                if not any(kw in user_lower for kw in web_keywords):
+                    print(f"   ⏩ web_ara engellendi: Kullanıcı açıkça istemedi")
+                    return None
                 query = tool_param or user_input
                 raw_data = await web_ara(query)
 
@@ -1330,7 +1362,7 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 "needs_faiss": bool,
                 "needs_semantic_memory": bool,
                 "needs_chat_history": bool,
-                "tool_name": "yok|hesapla|zaman_getir|hava_durumu|namaz_vakti|risale_ara|web_ara",
+                "tool_name": "hesapla|web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
                 "tool_param": str,
                 "response_style": "brief|detailed|conversational",
                 "is_farewell": bool,
@@ -1372,42 +1404,49 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
             history_section = f"GEÇMİŞ:\n{history_context}\n" if history_context else ""
             decision_prompt = f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
-Karar sistemi. ÖNCE <analiz> YAZ, SONRA JSON VER.
+Sen bir asistansın. Sana kullanıcı mesajları gelecek.
+Senin işin: Bu mesajı analiz et, gerekiyorsa doğru aracı seç.
+Seçtiğin araç çalıştırılacak ve sonucu ana AI'a verilecek.
+Ana AI bu bilgiyle kullanıcıya cevap verecek.
+Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 
+📋 KARAR VERME TARİFİ:
+1. GEÇMİŞ'i oku → Önceki konuşmada neler var? (sayılar, konu, bağlam)
+2. MESAJ'ı oku → Şimdi ne istiyor?
+3. Birleştir → GEÇMİŞ + MESAJ = Asıl soru ne?
+4. Araç seç → Bu soru için hangi araç lazım?
+5. Param yaz → Araç için gerekli bilgiyi GEÇMİŞ + MESAJ'dan al
+
+🔧 ELİNDEKİ ARAÇLAR:
+• hesapla → Hesaplama için
+• web_ara → Bilgi için
+• risale_ara → Dini sorular için
+• hava_durumu → Hava için
+• namaz_vakti → Namaz vakti için
+• zaman_getir → Tarih/saat için
+• yok → Araç gerekmiyorsa
+
+⚠️ ÖNEMLİ:
+• web_ara: SADECE kullanıcı "internette ara", "web'de bak", "araştır" derse kullan
+• Mesaj tek başına anlamsızsa GEÇMİŞ'e bak, bağlamı anla
+• hesapla: SADECE kullanıcı direkt sayı ve işlem yapmanı istedi ise kullan
+• needs_faiss: SADECE dini sorularda true (FAISS = Risale-i Nur metinleri). Tarım, teknik, genel sorularda FALSE!
+
+---
 {history_section}MESAJ: {user_input}
 
 <analiz>
-1. TİP: Sohbet/bilgi/teknik/dini/matematik/duygusal?
-2. GÜVENİM: %90+ biliyor muyum?
-3. KAYNAK: Kendi bilgim mi, tool mu lazım?
+1. GEÇMİŞ'te ne var?
+2. MESAJ ne istiyor?
+3. Asıl soru ne?
+4. Hangi araç + neden?
 </analiz>
 
-KURALLAR:
-• Selam/merhaba/veda/evet/tamam/anladım → friend, tool_name="yok"
-• Dini (Allah/iman/namaz/Kuran) → religious_teacher, risale_ara
-• Matematik → hesapla | Saat → zaman_getir | Hava → hava_durumu
-• Belirsiz → needs_clarification=true
-• Bilmediğin konu, güncel haber, kişi/yer/olay → web_ara
-• "araştır/güncel bilgi/son haberler/internetten bak" → web_ara (MUTLAKA!)
-• Kullanıcı "eski bilgi" derse → web_ara ile TEKRAR ara
-• ⚠️ GÜNCEL KONU KURALI: Haber/güncel olay konusunda HER SORU için web_ara kullan. "Zaten aradık" deme, her seferinde güncel bilgi getir!
-
 JSON:
-{{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous",
-"needs_faiss": bool, "needs_semantic_memory": bool, "needs_chat_history": bool,
-"needs_clarification": bool, "tool_name": "yok|hesapla|zaman_getir|hava_durumu|namaz_vakti|risale_ara|web_ara",
+{{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous|topic_closed",
+"needs_faiss": bool, "needs_semantic_memory": bool, "needs_chat_history": bool, "needs_clarification": bool,
+"tool_name": "hesapla|web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
 "tool_param": "", "is_farewell": bool, "topic_closed": bool, "confidence": "low|medium|high", "reasoning": ""}}
-
-ÖRNEKLER:
-1) "Selam/Merhaba/Nasılsın" → {{"question_type":"greeting","tool_name":"yok","confidence":"high"}}
-2) "Hava durumu nasıl" → {{"question_type":"weather","tool_name":"hava_durumu","confidence":"high"}}
-3) "Bugün hava nasıl" → {{"question_type":"weather","tool_name":"hava_durumu","confidence":"high"}}
-4) "Hava kaç derece" → {{"question_type":"weather","tool_name":"hava_durumu","confidence":"high"}}
-5) "Allah'ın kudreti" → {{"question_type":"religious","tool_name":"risale_ara","needs_faiss":true}}
-6) "evet ilginçmiş" → {{"question_type":"followup","tool_name":"yok"}}
-7) "Python nedir" → {{"question_type":"general","tool_name":"web_ara","tool_param":"Python programlama dili"}}
-8) "iyi araştır/güncel bilgi istiyorum" → {{"question_type":"general","tool_name":"web_ara","tool_param":"[önceki konuyla ilgili arama]"}}
-9) "bu eski bilgi, son haberlere bak" → {{"question_type":"general","tool_name":"web_ara","tool_param":"[konu] son haberler 2026"}}
 
 ÖNCE <analiz>, SONRA JSON:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
@@ -1600,6 +1639,7 @@ JSON:
     SYSTEM_PROMPT = """⚠️ KRİTİK - SOHBET BAĞLAMI:
 - CEVAP VERMEDEN ÖNCE önceki [user] ve [assistant] mesajlarını OKU
 - Son [user] mesajını sohbetin devamı olarak cevapla
+- Kullanıcı önceki cevabından bir şey soruyor mu? Eğer öyleyse, o bağlamda cevap ver
 - 📚 BAĞLAM bölümü varsa bu bilgileri MUTLAKA kullan
 
 Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın.
@@ -1626,6 +1666,11 @@ Sen kullanıcının olgun ve sıcakkanlı bir yapay zeka arkadaşısın.
 - İnternet bilgisini KENDİ BİLGİN gibi sun, "araştırmalarıma göre" veya "bildiğim kadarıyla" diyebilirsin
 - Kullanıcı söylemediği bilgiyi ONUN SÖYLEMİŞ gibi sunma (örn: kullanıcı "30 ton" demediyse "30 ton iyi görünüyor" DEME)
 - Bilgiyi doğal şekilde ver, sanki zaten biliyormuşsun gibi
+
+🧮 HESAPLAMA SONUCU VARSA:
+- [🧮 HESAPLAMA SONUCU] = Hesaplama aracın verdi, DOĞRU sonuç
+- Sonucu sohbet bağlamına göre doğal sun
+- Hesaplama ADIMLARINI anlatma (öğretmen gibi "çarptığımızda, elde ediyoruz" YAPMA)
 
 🔴 DİNİ KONULARDA (verilen metin varsa):
 - Cevabı VERİLEN METİNDEN oluştur
@@ -1806,7 +1851,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             combined_sources.append(f"[⚠️ KAPANMIŞ KONULAR - TEKRAR AÇMA!]:\n{closed_topics_warning}")
 
         if tool_result:
-            if tool_name == "web_ara" or tool_name == "wiki_ara":
+            if tool_name == "web_ara":
                 # Data already cleaned by _process_web_result
                 combined_sources.append(f"[🌐 İNTERNET BİLGİSİ]:\n{tool_result}")
             elif tool_name == "risale_ara":
@@ -1879,7 +1924,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             dynamic_rules.append("🔇 Arka plan bilgisini sessizce kullan, zorla hatırlatma yapma")
 
         if tool_result:
-            if tool_name == "web_ara" or tool_name == "wiki_ara":
+            if tool_name == "web_ara":
                 dynamic_rules.append("🌐 İnternet bilgisi geldi - alakalıysa kullan, alakasız veya yanlış ise HİÇ KULLANMA!")
             else:
                 dynamic_rules.append("🔍 ARAÇ SONUCU verildi - bu bilgiyi MUTLAKA kullan, kendi tahminini yapma!")
@@ -1894,7 +1939,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if dynamic_rules:
             dynamic_rules_str = "\n" + "\n".join([f"• {r}" for r in dynamic_rules])
 
-        if (tool_name == "web_ara" or tool_name == "wiki_ara") and tool_result:
+        if (tool_name == "web_ara") and tool_result:
             context_header = "Bağlam (İNTERNET BİLGİSİ - alakalıysa kullan, değilse kullanma!):"
         elif is_detail_followup and tool_result:
             context_header = "Bağlam (Arka plan - kendi yorumunla açıkla):"
@@ -2013,6 +2058,10 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             if topic_summary:
                 print(f"💾 Konu kaydediliyor: '{topic_summary[:50]}...'")
                 self.add_closed_topic(topic_summary, chat_history)
+                # Son konuşmayı profile'a kaydet
+                if hasattr(self, 'profile_manager'):
+                    self.profile_manager.update_last_session(topic_summary)
+                    print(f"📝 Son konuşma profile'a kaydedildi")
             else:
                 print("⚠️ topic_closed=true ama özet çıkarılamadı, kayıt atlandı")
 
@@ -2021,6 +2070,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         print(f"\n🛠️ 2. Araç çalıştırılıyor (LLM kararı: {tool_name})...")
         tool_result = await self._tool_calistir(tool_name, tool_param, user_input)
+        if tool_result:
+            print(f"   📦 Tool sonucu alındı: {len(tool_result)} karakter")
 
         print("\n📚 3. Bağlam toplanıyor (LLM kararına göre)...")
 
@@ -2267,6 +2318,9 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         prompt = paket.get('prompt', '')
 
         # Tool result varsa ekle
+        tool_used = paket.get('tool_used', 'yok')
+        math_result = None  # Hesaplama sonucu ayrı tutulacak
+
         if metadata.get('has_tool_result'):
             if '[🌐 İNTERNET BİLGİSİ]:' in prompt:
                 start = prompt.find('[🌐 İNTERNET BİLGİSİ]:')
@@ -2286,6 +2340,29 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     context_parts.append(prompt[start:end].strip())
                 elif start != -1:
                     context_parts.append(prompt[start:].strip())
+            elif '[🔧 ARAÇ SONUCU]:' in prompt and tool_used == 'hesapla':
+                # hesapla sonucu BAĞLAM'a değil, doğrudan user mesajına eklenecek
+                start = prompt.find('🧮 Hesaplama:')
+                if start != -1:
+                    end = prompt.find('\n', start)
+                    if end != -1:
+                        math_result = prompt[start:end].strip()
+                    else:
+                        math_result = prompt[start:start+100].strip()
+            elif '[🔧 ARAÇ SONUCU]:' in prompt:
+                # Diğer araçlar için BAĞLAM'a ekle
+                start = prompt.find('[🔧 ARAÇ SONUCU]:')
+                end = prompt.find('\n\n[', start + 1)
+                if end == -1:
+                    end = prompt.find('━━━', start + 1)
+                if start != -1 and end != -1:
+                    context_parts.append(prompt[start:end].strip())
+                elif start != -1:
+                    end = prompt.find('\n\n', start + 20)
+                    if end != -1:
+                        context_parts.append(prompt[start:end].strip())
+                    else:
+                        context_parts.append(prompt[start:start+200].strip())
 
         # Semantic context varsa ekle
         if metadata.get('has_semantic'):
@@ -2356,10 +2433,16 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 if mesaj:
                     messages.append({"role": rol, "content": mesaj})
 
-        # 3. Son user message - sadece kullanıcının sorusu (bağlam artık system'de)
+        # 3. Son user message - sadece kullanıcının sorusu
         user_content = user_input
-
         messages.append({"role": "user", "content": user_content})
+
+        # 4. Hesaplama sonucu varsa, system message'a ayrı bölüm olarak ekle (BAĞLAM'a değil!)
+        if math_result:
+            calc_value = math_result.replace('🧮 Hesaplama: ', '')
+            math_instruction = f"\n\n[🧮 HESAPLAMA SONUCU]: {calc_value} ← Hesaplama aracın verdi, DOĞRU. Güvenle sun."
+            # System message'ı güncelle
+            messages[0]["content"] += math_instruction
 
         return messages
 
