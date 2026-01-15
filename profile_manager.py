@@ -142,30 +142,42 @@ class ProfileManager:
 
         name = self.get_name()
         if name:
-            parts.append(f"Kullanıcının adı: {name}")
+            parts.append(f"User's name: {name}")
 
         interests = self.get_interests()
         if interests:
-            parts.append(f"İlgi alanları: {', '.join(interests)}")
+            parts.append(f"Interests: {', '.join(interests)}")
 
         facts = self.get_important_facts()
         if facts:
-            parts.append(f"Bilinen gerçekler: {'; '.join(facts)}")
+            parts.append(f"Known facts: {'; '.join(facts)}")
 
         last_session = self.get_last_session_summary()
         last_session_date = self.profile.get("last_session_date", "")
 
         if last_session:
             if last_session_date:
-                # Tarihi okunabilir formata çevir
                 try:
                     dt = datetime.fromisoformat(last_session_date)
-                    tarih_str = dt.strftime("%d %B %Y, %H:%M")
-                    parts.append(f"Son sohbet ({tarih_str}): {last_session}")
+                    now = datetime.now()
+                    diff = now - dt
+
+                    # Ne kadar önce hesapla
+                    minutes = int(diff.total_seconds() / 60)
+                    if minutes < 60:
+                        time_ago = f"{minutes} minutes ago"
+                    elif minutes < 1440:  # 24 saat
+                        hours = minutes // 60
+                        time_ago = f"{hours} hours ago"
+                    else:
+                        days = minutes // 1440
+                        time_ago = f"{days} days ago"
+
+                    parts.append(f"Last conversation ({time_ago}): {last_session}")
                 except:
-                    parts.append(f"Son sohbet: {last_session}")
+                    parts.append(f"Last conversation: {last_session}")
             else:
-                parts.append(f"Son sohbet: {last_session}")
+                parts.append(f"Last conversation: {last_session}")
 
         if not parts:
             return ""

@@ -33,17 +33,18 @@ class SystemConfig:
     TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
     TOGETHER_MODEL = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
 
-    # OpenRouter (Claude)
+    # OpenRouter
     OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-    OPENROUTER_MODEL = "google/gemma-3-27b-it"  # Test: Gemma 3 27B (açık kaynak)
+    OPENROUTER_MODEL = "mistralai/mistral-large"  # Mistral Large 2 (123B)
 
     MODEL_NAME = OPENROUTER_MODEL if LLM_PROVIDER == "openrouter" else (TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL)
 
-    # Model Parametreleri (Gemma 3 - tutarlı ayar)
-    TEMPERATURE = 0.69  # Dengeli: doğal ve akıcı
-    TOP_P = 0.95       # Gemma resmi
-    TOP_K = 64         # Gemma resmi
-    MAX_TOKENS = 4000
+    # Model Parametreleri - Mistral Large 2
+    TEMPERATURE = 0.7   # Dengeli
+    TOP_P = 0.9         # Mistral için
+    TOP_K = 50          # Mistral için
+    MAX_TOKENS = 8000
+    REPETITION_PENALTY = 1.0
 
     ENABLE_VISION = True
 
@@ -233,7 +234,7 @@ class LocalLLM:
             return "[HATA] Bağlantı sorunu oluştu."
 
     async def _generate_openrouter(self, prompt: str) -> str:
-        """OpenRouter API (Claude)"""
+        """OpenRouter API (Gemma 3 27B)"""
         try:
             headers = {
                 "Authorization": f"Bearer {self.openrouter_api_key}",
@@ -247,8 +248,7 @@ class LocalLLM:
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
                 "top_p": SystemConfig.TOP_P,
-                "top_k": SystemConfig.TOP_K,
-                "repetition_penalty": 1.1
+                "top_k": SystemConfig.TOP_K
             }
 
             async with aiohttp.ClientSession() as session:
@@ -271,8 +271,34 @@ class LocalLLM:
             print(f"⚠️ OpenRouter hatası: {e}")
             return "[HATA] Bağlantı sorunu oluştu."
 
+    def _convert_to_gemma_format(self, messages: list) -> str:
+        """Messages'ı Gemma 3 chat formatına çevir"""
+        prompt_parts = []
+        system_content = ""
+
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            if role == "system":
+                # System mesajını sakla, ilk user mesajına eklenecek
+                system_content = content
+            elif role == "user":
+                # System varsa user'ın başına ekle
+                if system_content:
+                    content = f"{system_content}\n\n{content}"
+                    system_content = ""  # Bir kez ekle
+                prompt_parts.append(f"<start_of_turn>user\n{content}<end_of_turn>")
+            elif role == "assistant":
+                prompt_parts.append(f"<start_of_turn>model\n{content}<end_of_turn>")
+
+        # Son olarak model'in cevap vermesi için aç
+        prompt_parts.append("<start_of_turn>model\n")
+
+        return "\n".join(prompt_parts)
+
     async def _generate_openrouter_messages(self, messages: list) -> str:
-        """OpenRouter API - Messages formatı (Claude)"""
+        """OpenRouter API - Gemma 3 27B"""
         try:
             headers = {
                 "Authorization": f"Bearer {self.openrouter_api_key}",
@@ -280,6 +306,7 @@ class LocalLLM:
                 "HTTP-Referer": "https://github.com/personal-ai",
                 "X-Title": "PersonalAI"
             }
+            # OpenRouter'a güven - messages'ı direkt gönder
             payload = {
                 "model": SystemConfig.OPENROUTER_MODEL,
                 "messages": messages,
@@ -287,7 +314,7 @@ class LocalLLM:
                 "temperature": SystemConfig.TEMPERATURE,
                 "top_p": SystemConfig.TOP_P,
                 "top_k": SystemConfig.TOP_K,
-                "repetition_penalty": 1.1
+                "repetition_penalty": SystemConfig.REPETITION_PENALTY
             }
 
             async with aiohttp.ClientSession() as session:
