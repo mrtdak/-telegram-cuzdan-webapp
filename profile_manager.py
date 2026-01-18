@@ -142,7 +142,7 @@ class ProfileManager:
 
         name = self.get_name()
         if name:
-            parts.append(f"Kullanıcının adı: {name}")
+            parts.append(f"Kullanıcının adı: {name} (ismini nadiren kullan, her mesajda değil)")
 
         interests = self.get_interests()
         if interests:
@@ -151,21 +151,6 @@ class ProfileManager:
         facts = self.get_important_facts()
         if facts:
             parts.append(f"Bilinen gerçekler: {'; '.join(facts)}")
-
-        last_session = self.get_last_session_summary()
-        last_session_date = self.profile.get("last_session_date", "")
-
-        if last_session:
-            if last_session_date:
-                # Tarihi okunabilir formata çevir
-                try:
-                    dt = datetime.fromisoformat(last_session_date)
-                    tarih_str = dt.strftime("%d %B %Y, %H:%M")
-                    parts.append(f"Son sohbet ({tarih_str}): {last_session}")
-                except:
-                    parts.append(f"Son sohbet: {last_session}")
-            else:
-                parts.append(f"Son sohbet: {last_session}")
 
         if not parts:
             return ""

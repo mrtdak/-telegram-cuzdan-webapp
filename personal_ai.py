@@ -33,16 +33,16 @@ class SystemConfig:
     TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
     TOGETHER_MODEL = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
 
-    # OpenRouter (Claude)
+    # OpenRouter (Gemma 3 27B)
     OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-    OPENROUTER_MODEL = "google/gemma-3-27b-it"  # Test: Gemma 3 27B (açık kaynak)
+    OPENROUTER_MODEL = "google/gemma-3-27b-it"  # Gemma 3 27B
 
     MODEL_NAME = OPENROUTER_MODEL if LLM_PROVIDER == "openrouter" else (TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL)
 
-    # Model Parametreleri (Gemma 3 - tutarlı ayar)
-    TEMPERATURE = 0.69  # Dengeli: doğal ve akıcı
-    TOP_P = 0.95       # Gemma resmi
-    TOP_K = 64         # Gemma resmi
+    # Model Parametreleri (Gemma 3 27B)
+    TEMPERATURE = 0.7   # Sohbet/genel kullanım için
+    TOP_P = 0.95
+    TOP_K = 64          # Ollama için (Mistral kullanmaz)
     MAX_TOKENS = 4000
 
     ENABLE_VISION = True
@@ -185,7 +185,7 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
-                        return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                        return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ Together.ai hatası: {resp.status} - {error_text[:200]}")
@@ -221,7 +221,7 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
-                        return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                        return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ Together.ai hatası: {resp.status} - {error_text[:200]}")
@@ -246,9 +246,7 @@ class LocalLLM:
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
-                "top_p": SystemConfig.TOP_P,
-                "top_k": SystemConfig.TOP_K,
-                "repetition_penalty": 1.1
+                "top_p": SystemConfig.TOP_P
             }
 
             async with aiohttp.ClientSession() as session:
@@ -260,7 +258,7 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
-                        return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                        return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
@@ -285,9 +283,7 @@ class LocalLLM:
                 "messages": messages,
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
-                "top_p": SystemConfig.TOP_P,
-                "top_k": SystemConfig.TOP_K,
-                "repetition_penalty": 1.1
+                "top_p": SystemConfig.TOP_P
             }
 
             async with aiohttp.ClientSession() as session:
@@ -299,7 +295,7 @@ class LocalLLM:
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
-                        return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                        return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
