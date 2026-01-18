@@ -33,17 +33,17 @@ class SystemConfig:
     TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
     TOGETHER_MODEL = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo"
 
-    # OpenRouter
+    # OpenRouter (Claude)
     OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-    OPENROUTER_MODEL = "mistralai/mistral-large"  # Mistral Large 2 (123B)
+    OPENROUTER_MODEL = "google/gemma-3-27b-it"  # Test: Gemma 3 27B (açık kaynak)
 
     MODEL_NAME = OPENROUTER_MODEL if LLM_PROVIDER == "openrouter" else (TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL)
 
-    # Model Parametreleri - Mistral Large 2
-    TEMPERATURE = 0.7   # Dengeli
-    TOP_P = 0.9         # Mistral için
-    TOP_K = 50          # Mistral için
-    MAX_TOKENS = 8000
+    # Model Parametreleri (Gemma 3 - tutarlı ayar)
+    TEMPERATURE = 0.69  # Dengeli: doğal ve akıcı
+    TOP_P = 0.95       # Gemma resmi
+    TOP_K = 64         # Gemma resmi
+    MAX_TOKENS = 4000
 
     ENABLE_VISION = True
 

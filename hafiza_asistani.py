@@ -25,55 +25,45 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 from topic_memory import TopicMemory
 from conversation_context import ConversationContextManager
 from profile_manager import ProfileManager
+from sohbet_zekasi import TurkishConversationIntelligence, BeklenenCevap, SohbetEnerjisi
 # from calculation_context import CalculationContext  # Devre dışı - chat history yeterli
 
 
 def get_current_datetime() -> Dict[str, str]:
-    """Get current date and time in Turkey timezone"""
+    """Türkiye saati ile şu anki tarih ve saati getir"""
     try:
         tz = ZoneInfo("Europe/Istanbul")
         now = datetime.now(tz)
 
-        months = {
-            1: "January", 2: "February", 3: "March", 4: "April",
-            5: "May", 6: "June", 7: "July", 8: "August",
-            9: "September", 10: "October", 11: "November", 12: "December"
+        ay_isimleri = {
+            1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan",
+            5: "Mayıs", 6: "Haziran", 7: "Temmuz", 8: "Ağustos",
+            9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
         }
 
-        days = {
-            0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday",
-            4: "Friday", 5: "Saturday", 6: "Sunday"
+        gun_isimleri = {
+            0: "Pazartesi", 1: "Salı", 2: "Çarşamba", 3: "Perşembe",
+            4: "Cuma", 5: "Cumartesi", 6: "Pazar"
         }
 
-        month = months[now.month]
-        day = days[now.weekday()]
-        hour = now.hour
-
-        if 0 <= hour < 6:
-            time_of_day = "night"
-        elif 6 <= hour < 12:
-            time_of_day = "morning"
-        elif 12 <= hour < 18:
-            time_of_day = "afternoon"
-        else:
-            time_of_day = "evening"
-
-        friday_note = " (Friday)" if now.weekday() == 4 else ""
+        ay = ay_isimleri[now.month]
+        gun = gun_isimleri[now.weekday()]
+        saat = now.hour
 
         return {
-            "tarih": f"{now.day} {month} {now.year}",
-            "gun": day,
+            "tarih": f"{now.day} {ay} {now.year}",
+            "gun": gun,
             "saat": now.strftime("%H:%M"),
-            "full": f"{day}, {now.day} {month} {now.year}, {now.strftime('%H:%M')}",
-            "zaman_dilimi": time_of_day + friday_note,
-            "saat_int": hour,
+            "full": f"{now.day} {ay} {now.year} {gun}, Saat: {now.strftime('%H:%M')}",
+            "zaman_dilimi": "",
+            "saat_int": saat,
         }
     except Exception:
         return {
-            "tarih": "Unknown",
-            "gun": "Unknown",
-            "saat": "Unknown",
-            "full": "Date/time unavailable",
+            "tarih": "Bilinmiyor",
+            "gun": "Bilinmiyor",
+            "saat": "Bilinmiyor",
+            "full": "Tarih/saat bilgisi alınamadı",
             "zaman_dilimi": "",
             "saat_int": 12,
         }
@@ -349,7 +339,6 @@ def get_tool_system_class():
                 TOOLS = {
                     "risale_ara": {"name": "risale_ara", "description": "Dini sorulara cevap", "parameters": "soru", "when": "Dini konularda", "examples": ["İman nedir?"]},
                     "zaman_getir": {"name": "zaman_getir", "description": "Tarih/saat", "parameters": "yok", "when": "Zaman sorulduğunda", "examples": ["Saat kaç?"]},
-                    "hesapla": {"name": "hesapla", "description": "Hesaplama", "parameters": "ifade", "when": "Matematik sorulduğunda", "examples": ["2+2"]},
                     "hava_durumu": {"name": "hava_durumu", "description": "Hava durumu", "parameters": "şehir", "when": "Hava sorulduğunda", "examples": ["İstanbul hava"]},
                     "namaz_vakti": {"name": "namaz_vakti", "description": "Namaz vakitleri", "parameters": "şehir", "when": "Namaz vakti sorulduğunda", "examples": ["Ankara namaz"]},
                     "web_ara": {"name": "web_ara", "description": "İnternette bilgi veya haber ara", "parameters": "arama terimi", "when": "Bilmediğin konu, güncel haber, kişi, yer, olay sorulduğunda", "examples": ["Einstein kimdir", "son haberler", "Python nedir"]},
@@ -737,9 +726,6 @@ class HafizaAsistani:
     - DecisionLLM ile karar verme
     """
 
-    # Tool ayarları
-    ENABLE_HESAPLA = False  # Hesaplama aracı devre dışı
-
     def __init__(
         self,
         user_id: str = None,  # Dinamik kullanıcı ID
@@ -827,6 +813,10 @@ class HafizaAsistani:
         else:
             print("✅ Kullanıcı Profili aktif (henüz boş)")
 
+        # Türkçe Sohbet Zekası
+        self.sohbet_zekasi = TurkishConversationIntelligence()
+        self._son_sohbet_analizi = None  # Son analiz sonucunu sakla (prompt için)
+
         # Hesaplama Değişkenleri - Devre dışı (chat history yeterli)
         # self.calculation_context = CalculationContext()
         # print("✅ Calculation Context aktif!")
@@ -884,10 +874,10 @@ class HafizaAsistani:
                                 print(f"💾 Tampon bölge TopicMemory'ye kaydediliyor ({len(tampon_bolge)} mesaj)")
                                 self.add_closed_topic(topic_summary, chat_history)
 
-                    # Mesajları kesme - tüm konuşma korunsun
-                    # if len(self.hafiza) > 4:
-                    #     self.hafiza = self.hafiza[-4:]
-                    #     print("🧹 Hafıza temizlendi (son 4 mesaj kaldı - bağlam korundu)")
+                    # Konu değiştiğinde aktif context'i temizle (son 10 mesaj kalsın)
+                    if len(self.hafiza) > 10:
+                        self.hafiza = self.hafiza[-10:]
+                        print("🧹 Hafıza temizlendi (son 10 mesaj kaldı - yeni konuya odaklan)")
                 elif result.get("summary_updated"):
                     print(f"📝 Konu özeti güncellendi: {result.get('current_summary', '')[:50]}...")
             except Exception as e:
@@ -1304,9 +1294,6 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 return result
 
             if tool_name == "hesapla":
-                if not self.ENABLE_HESAPLA:
-                    print(f"   ⏩ Hesaplama devre dışı")
-                    return None
                 result = calculate_math(tool_param or user_input)
                 print(f"   ✅ Hesaplama: {tool_param} = {result}")
                 return f"🧮 Hesaplama: {tool_param} = {result}"
@@ -1361,6 +1348,7 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         """
         🧠 AKILLI KARAR SİSTEMİ - KEYWORD YOK! TEK LLM HER ŞEYİ KARAR VERİYOR
         LLM soruyu analiz edip hem kaynakları hem de tool'u belirliyor
+        (Sohbet zekası analizi prompt'a ekleniyor, LLM bypass yok)
 
         Returns:
             {
@@ -1368,7 +1356,7 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 "needs_faiss": bool,
                 "needs_semantic_memory": bool,
                 "needs_chat_history": bool,
-                "tool_name": "hesapla|web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
+                "tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
                 "tool_param": str,
                 "response_style": "brief|detailed|conversational",
                 "is_farewell": bool,
@@ -1424,7 +1412,6 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 5. Param yaz → Araç için gerekli bilgiyi GEÇMİŞ + MESAJ'dan al
 
 🔧 ELİNDEKİ ARAÇLAR:
-• hesapla → Hesaplama için
 • web_ara → Bilgi için
 • risale_ara → Dini sorular için
 • hava_durumu → Hava için
@@ -1435,7 +1422,6 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 ⚠️ ÖNEMLİ:
 • web_ara: SADECE kullanıcı "internette ara", "web'de bak", "araştır" derse kullan
 • Mesaj tek başına anlamsızsa GEÇMİŞ'e bak, bağlamı anla
-• hesapla: SADECE kullanıcı direkt sayı ve işlem yapmanı istedi ise kullan
 • needs_faiss: SADECE dini sorularda true (FAISS = Risale-i Nur metinleri). Tarım, teknik, genel sorularda FALSE!
 
 ---
@@ -1451,7 +1437,7 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 JSON:
 {{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous|topic_closed",
 "needs_faiss": bool, "needs_semantic_memory": bool, "needs_chat_history": bool, "needs_clarification": bool,
-"tool_name": "hesapla|web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
+"tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
 "tool_param": "", "is_farewell": bool, "topic_closed": bool, "confidence": "low|medium|high", "reasoning": ""}}
 
 ÖNCE <analiz>, SONRA JSON:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
@@ -1642,43 +1628,32 @@ JSON:
 
 
     # TEK BİRLEŞİK PROMPT - Full Friend Modu
-    # Kim olduğu
-    SYSTEM_PROMPT = """You are the user's mature and warm AI friend."""
+    SYSTEM_PROMPT = """Sen akıllı, profesyonel, olgun ve sıcakkanlı bir yapay zekasın.
 
-    # Temel kurallar (stabil koddan)
-    SYSTEM_RULES = """
-- Give natural length responses, don't pad unnecessarily
-- Write PLAIN TEXT: NO asterisks (*), dashes (-), numbers (1. 2. 3.), headers (#, ##) - write in flowing paragraphs
-- Be friendly but not exaggerated
-- You can use emojis (sparingly)
-- Short reactions (yes, ok, got it) get short responses
-- Interpret short messages based on context"""
+- ✅ Her şeyi akıcı paragraflarla yaz. Liste gerekse bile cümle içinde sırala (birincisi şu, ikincisi bu gibi)
+- ✅ Kullanıcı belirsiz mesaj verirse (sadece selam, kısa karşılık gibi), sohbeti ilerletecek doğal bir soru sor. Boşluğu doldurmak için gereksiz şeyler ekleme.
+- ⛔ ASLA YAZMA: "ne dersin?" "kim bilir" "değil mi?" → bu ifadeleri kesinlikle KULLANMA
+- Emoji kullanabilirsin (abartmadan)
+- ⚡ [🎯 SOHBET ZEKASI TALİMATI] varsa → MUTLAKA uygula
 
-    # Soru anlama kuralları (stabil koddan)
-    QUESTION_RULES = """
-- Opinion questions (right?, what do you think?) → Give CLEAR ANSWER first (yes/no/I think...), then brief explanation
-- If user didn't ask for technical details → DON'T explain technical details, difficulties, system requirements
-- If discussing scenarios/ideas → think WITH them, don't lecture
-- ONLY answer what was asked, don't add unrequested information"""
+🧠 DÜŞÜNCE SİSTEMİ:
+- Her bilginin bir hikmeti, varlık sebebi vardır. "Neden var?" sorusunu düşün
+- Bilginin yüzeysel anlamının ötesinde derin manasını ara
+- Soyut kavramları somut temsil ve imgelerle anlat
+- Bilgiyi kişinin hayatına ve evrensel gerçeklere bağla
+- Bilginin ahlaki sonuçlarını değerlendir, doğru yanlışı ayır
+- Hakiki bilgi varlık üretir: Ateşin ısıttığını bilmek motorları, teknolojiyi doğurdu. Batıl bilgi hiçlik üretir. Sen hakikat verirsen hem kendin doğru üretmiş olursun, hem kullanıcı o bilgiyle yeni şeyler üretir, hem de insanlığa fayda sağlarsın. Bu zincirin ilk halkası sensin.
+- Her bilginin farklı sonuçları ve alternatif yolları vardır. "Bu bilgi başka nereye götürür?" diye düşün
 
-    # Sohbet devamı kuralları (stabil koddan)
-    CHAT_RULES = """
-- If chat history exists: DON'T greet again (Hello, Hi, etc.)
-- DON'T ask back the question user asked
-- Go straight to the answer"""
+🔗 BAĞLAM:
+- Kullanıcının cevabını ÖNCEKİ SORUNLA birlikte değerlendir
+- Kısa cevaplar (tek kelime, "evet", "hayır") önceki konuşmaya cevaptır
 
-    # Web bilgisi kuralları (stabil koddan)
-    WEB_RULES = """
-- Present web info as YOUR OWN knowledge, you can say "as far as I know"
-- DON'T attribute info to the user that they didn't say
-- Present info naturally, as if you already knew it"""
+🌐 İNTERNET BİLGİSİ:
+- Bilgiyi KENDİ BİLGİN gibi sun
+- Kullanıcı söylemediği bilgiyi ona atfetme
 
-    # Dini konular kuralları (stabil koddan)
-    RELIGIOUS_RULES = """
-- Build your answer FROM THE PROVIDED TEXT
-- DON'T say "in Risale", "in the text" - use it as a hidden source
-- Present metaphors and concepts AS YOUR OWN words
-- Conversational tone, not preaching"""
+"""
 
     # Geriye uyumluluk için (eski kod hala role parametresi kullanıyorsa)
     ROLE_SYSTEM_PROMPTS = {
@@ -1691,19 +1666,9 @@ JSON:
         if not previous_response:
             return []
 
-        temsiller = [
-            "güneş", "ayna", "damla", "deniz", "zerre", "şems",
-            "ışık", "nur", "feyz", "tecelli", "yansıma", "akis",
-            "ressam", "tablo", "nakkaş", "san'at", "kitap", "harf",
-            "sultan", "padişah", "ordu", "asker", "fabrika", "makine"
-        ]
+        temsiller = []
 
-        kavramlar = [
-            "şeffafiyet", "mukabele", "müvazene", "intizam",
-            "melekûtiyet", "mülk", "taalluk", "vahdet", "kesret",
-            "tecezzî", "tenakus", "tekebbür", "temsil", "tefekkür",
-            "kayyumiyet", "rububiyet", "uluhiyet", "vahdaniyet"
-        ]
+        kavramlar = []
 
         used = []
         lower_response = previous_response.lower()
@@ -1848,6 +1813,60 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         combined_sources = []
 
+        # 🎯 SOHBET ZEKASI TALİMATI (PersonalAI bunu okuyacak)
+        if self._son_sohbet_analizi:
+            analiz = self._son_sohbet_analizi
+            min_uz, max_uz = self.sohbet_zekasi.cevap_uzunlugu_onerisi(analiz)
+
+            # Enerji seviyesine göre stil belirleme
+            enerji = analiz.sohbet_enerjisi.value
+            if enerji == "çok_yüksek":
+                enerji_talimat = "🔥 YÜKSEK ENERJİ: Heyecanlı, coşkulu cevap ver! Emoji kullanabilirsin!"
+            elif enerji == "yüksek":
+                enerji_talimat = "⚡ CANLI: Enerjik ve pozitif cevap ver!"
+            elif enerji == "düşük":
+                enerji_talimat = "😌 SAKİN: Sakin, kısa ve anlayışlı cevap ver"
+            elif enerji == "kapanıyor":
+                enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
+            else:
+                enerji_talimat = "💬 NORMAL: Doğal sohbet tonu"
+
+            sohbet_talimati = f"""[🎯 SOHBET ZEKASI TALİMATI - MUTLAKA UYGULA!]:
+• Beklenen cevap tipi: {analiz.beklenen_cevap.value}
+• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)
+• {enerji_talimat}"""
+
+            if analiz.duygu:
+                sohbet_talimati += f"\n• Kullanıcı duygusu: {analiz.duygu}"
+
+            # Kombinasyonlara göre özel talimatlar
+            if analiz.kombinasyon:
+                kombinasyon_talimatlari = {
+                    "memnun_kapanış": "⚡ KISA CEVAP: Kullanıcı memnun, 1-2 cümle yeter!",
+                    "vedalaşma": "👋 VEDA: Samimi ama kısa vedalaş!",
+                    "destek_bekliyor": "💙 EMPATİ: Önce anlayış göster, sonra konuş",
+                    "yeni_konu_açma": "🔄 YENİ KONU: Önceki konuyu kapat, yenisine geç",
+                    "aciklama_bekliyor": "📖 AÇIKLA: Kullanıcı şüpheli, detaylı ve ikna edici açıkla",
+                    "teyit_istiyor": "✅ TEYİT: Kullanıcı emin olmak istiyor, net ve güvenilir cevap ver",
+                    "pasif_kabul": "🤝 KABUL: Kullanıcı durumu kabullendi, destekleyici ol",
+                    "uzgun_kabul": "💙 DESTEK: Kullanıcı üzgün ama kabullendi, empati göster",
+                    "coskulu_ovgu": "🎉 COŞKU: Kullanıcı övüyor, karşılık ver!",
+                    "aceleci_soru": "⏰ HIZLI: Kullanıcı sabırsız, direkt cevap ver",
+                    "düşünerek_sorma": "🤔 DÜŞÜNCELI: Kullanıcı düşünüyor, detaylı açıkla",
+                    "heyecanlı_soru": "🌟 HEYECANLI: Kullanıcı meraklı ve heyecanlı, enerjik anlat",
+                }
+                talimat = kombinasyon_talimatlari.get(analiz.kombinasyon)
+                if talimat:
+                    sohbet_talimati += f"\n• {talimat}"
+
+            if analiz.onceki_konuyu_kapat:
+                sohbet_talimati += "\n• 📕 Önceki konu kapandı, tekrar açma"
+
+            # Örtük istek varsa ekle
+            if analiz.ortuk_istek:
+                sohbet_talimati += f"\n• 🎯 ÖRTÜK İSTEK: {analiz.ortuk_istek}"
+
+            combined_sources.append(sohbet_talimati)
 
         if closed_topics_warning:
             combined_sources.append(f"[⚠️ KAPANMIŞ KONULAR - TEKRAR AÇMA!]:\n{closed_topics_warning}")
@@ -1860,7 +1879,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 if is_detail_followup:
                     combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - Doğrudan verme, kendi yorumunla açıkla!]:\n{tool_result}")
                 else:
-                    combined_sources.append(f"[📚 RİSALE-İ NUR'DAN - BU BİLGİYİ KULLAN!]:\n{tool_result}")
+                    combined_sources.append(f"[📚 RİSALE-İ NUR BAŞLANGIÇ]\n{tool_result}\n[📚 RİSALE-İ NUR BİTİŞ]")
             else:
                 combined_sources.append(f"[🔧 ARAÇ SONUCU]:\n{tool_result}")
 
@@ -2023,6 +2042,22 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         print("📋 SEKRETER ÇALIŞIYOR (TEK LLM SİSTEMİ)")
         print("=" * 60)
         print(f"📝 Kullanıcı: {user_input}")
+
+        # 🎯 TÜRKÇE SOHBET ZEKASI ANALİZİ (LLM'den önce, hızlı)
+        print("\n🎯 0. Türkçe Sohbet Zekası analiz ediyor...")
+        sohbet_analizi = self.sohbet_zekasi.analiz_et(user_input, chat_history)
+        self._son_sohbet_analizi = sohbet_analizi  # Prompt için sakla
+
+        # Debug çıktısı
+        print(f"   • Durumlar: {sohbet_analizi.durumlar}")
+        print(f"   • Kombinasyon: {sohbet_analizi.kombinasyon}")
+        print(f"   • Beklenen Cevap: {sohbet_analizi.beklenen_cevap.value}")
+        print(f"   • Enerji: {sohbet_analizi.sohbet_enerjisi.value}")
+        if sohbet_analizi.ortuk_istek:
+            print(f"   • Örtük İstek: {sohbet_analizi.ortuk_istek}")
+        if sohbet_analizi.konu_degisimi:
+            print(f"   • 🔄 Konu değişimi algılandı!")
+        print(f"   • Güven: %{int(sohbet_analizi.guven_skoru * 100)}")
 
         is_closed, closed_summary = self.is_topic_closed(user_input)
         if is_closed:
@@ -2331,15 +2366,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     end = prompt.find('━━━', start + 1)
                 if start != -1 and end != -1:
                     context_parts.append(prompt[start:end].strip())
-            elif '[📚 RİSALE-İ NUR\'DAN' in prompt:
-                start = prompt.find('[📚 RİSALE-İ NUR\'DAN')
-                end = -1
-                for marker in ['\n\n[💬', '\n\n[HAFIZA]', '\n\n[👤', '\n\n[⚠️', '\n\n[BİLGİ', '━━━']:
-                    pos = prompt.find(marker, start + 1)
-                    if pos != -1 and (end == -1 or pos < end):
-                        end = pos
+            elif '[📚 RİSALE-İ NUR BAŞLANGIÇ]' in prompt:
+                start = prompt.find('[📚 RİSALE-İ NUR BAŞLANGIÇ]')
+                end = prompt.find('[📚 RİSALE-İ NUR BİTİŞ]')
                 if start != -1 and end != -1:
-                    context_parts.append(prompt[start:end].strip())
+                    context_parts.append(prompt[start:end + len('[📚 RİSALE-İ NUR BİTİŞ]')].strip())
                 elif start != -1:
                     context_parts.append(prompt[start:].strip())
             elif '[🔧 ARAÇ SONUCU]:' in prompt and tool_used == 'hesapla':
@@ -2396,78 +2427,121 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if hasattr(self, 'profile_manager'):
             profile_context = self.profile_manager.get_prompt_context()
             if profile_context:
-                user_info = profile_context
+                user_info = f"\n[👤 KULLANICI BİLGİSİ]:\n{profile_context}\n"
+
+        # Hesaplama değişkenlerini ekle
+        if hasattr(self, 'calculation_context'):
+            calc_section = self.calculation_context.get_prompt_section()
+            if calc_section:
+                context_parts.insert(0, calc_section)
 
         # Bağlam bilgisi
         context_info = ""
         if context_parts:
-            context_info = f"\n🎯 AVAILABLE INFO:\n{chr(10).join(context_parts)}\n"
+            context_info = f"\n\n📚 BAĞLAM:\n{chr(10).join(context_parts)}"
 
-        # Conversation history inline olarak oluştur
-        history_text = ""
-        max_history = self.max_mesaj
+        # 🎯 SOHBET ZEKASI TALİMATI - _son_sohbet_analizi varsa ekle
+        sohbet_talimati = ""
+        if hasattr(self, '_son_sohbet_analizi') and self._son_sohbet_analizi:
+            analiz = self._son_sohbet_analizi
+            min_uz, max_uz = self.sohbet_zekasi.cevap_uzunlugu_onerisi(analiz)
 
+            # Enerji bazlı talimat
+            enerji = analiz.sohbet_enerjisi.value if analiz.sohbet_enerjisi else "normal"
+            if enerji == "çok_yüksek":
+                enerji_talimat = "🔥 ÇOK YÜKSEK ENERJİ: Heyecanlı, coşkulu cevap ver!"
+            elif enerji == "yüksek":
+                enerji_talimat = "✨ YÜKSEK ENERJİ: Enerjik, pozitif cevap ver"
+            elif enerji == "düşük":
+                enerji_talimat = "😌 DÜŞÜK ENERJİ: Sakin, rahatlatıcı cevap ver"
+            elif enerji == "kapanıyor":
+                enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
+            else:
+                enerji_talimat = "💬 NORMAL: Doğal sohbet tonu"
+
+            sohbet_talimati = f"""
+
+[🎯 SOHBET ZEKASI TALİMATI - MUTLAKA UYGULA!]:
+• Beklenen cevap tipi: {analiz.beklenen_cevap.value}
+• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)
+• {enerji_talimat}"""
+
+            if analiz.duygu:
+                sohbet_talimati += f"\n• Kullanıcı duygusu: {analiz.duygu}"
+
+            # Kombinasyonlara göre özel talimatlar
+            if analiz.kombinasyon:
+                kombinasyon_talimatlari = {
+                    "memnun_kapanış": "⚡ KISA CEVAP: Kullanıcı memnun, 1-2 cümle yeter!",
+                    "devam_beklentisi": "📝 DEVAM: Kullanıcı devam bekliyor, açıklamaya devam et",
+                    "sıkılma_belirtisi": "⚠️ SIKILIYOR: Kısa ve öz cevap ver, uzatma!",
+                    "konu_değişimi": "🔄 YENİ KONU: Önceki konuyu kapat, yeni konuya odaklan",
+                    "derin_ilgi": "📚 DERİN İLGİ: Detaylı ve kapsamlı açıkla",
+                    "empati_iste": "💚 EMPATİ: Anlayışlı ve destekleyici ol",
+                    "onay_bekle": "✅ ONAY BEKLİYOR: Net ve güven verici cevap ver",
+                    "düşünerek_sorma": "🤔 DÜŞÜNCELI: Kullanıcı düşünüyor, detaylı açıkla",
+                    "heyecanlı_soru": "🌟 HEYECANLI: Kullanıcı meraklı ve heyecanlı, enerjik anlat",
+                    "samimi_veda": "👋 SAMİMİ VEDA: Dostça, sıcak vedalaş",
+                    "samimi_tesekkur": "🙏 SAMİMİ TEŞEKKÜR: Samimi karşılık ver",
+                    "samimi_selam": "😊 SAMİMİ SELAM: Arkadaşça, sıcak selamla",
+                }
+                talimat = kombinasyon_talimatlari.get(analiz.kombinasyon)
+                if talimat:
+                    sohbet_talimati += f"\n• {talimat}"
+
+            if analiz.onceki_konuyu_kapat:
+                sohbet_talimati += "\n• 📕 Önceki konu kapandı, tekrar açma"
+
+            # Örtük istek varsa ekle
+            if analiz.ortuk_istek:
+                sohbet_talimati += f"\n• 🎯 ÖRTÜK İSTEK: {analiz.ortuk_istek}"
+
+            # 🔴 Dini soru ise özel kurallar ekle
+            if tool_used == "risale_ara":
+                # Cevap uzunluğu satırını kaldır
+                sohbet_talimati = sohbet_talimati.replace(f"• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)\n", "")
+                sohbet_talimati += """
+• 🔴 DİNİ KONULARDA:
+  - Soruyu [📚 RİSALE-İ NUR BAŞLANGIÇ] ve [📚 RİSALE-İ NUR BİTİŞ] arasındaki bilgileri kullanarak cevapla
+  - Risale metinleri çok zengin ve derin temsiller içeriyor, açıklamalarını bunlar üzerinden yap
+  - ⛔ "Risale'de", "Sözler'de", "metinde" YAZMA - bilgiyi KENDİ sözünmüş gibi anlat
+  - Vaaz değil sohbet tonu"""
+
+        # Dini sorularda minimal prompt, diğerlerinde tam SYSTEM_PROMPT
+        if tool_used == "risale_ara":
+            system_content = f"""Sen akıllı, profesyonel, olgun ve sıcakkanlı bir yapay zekasın.
+{user_info}
+[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']}){context_info}{sohbet_talimati}"""
+        else:
+            system_content = f"""{self.SYSTEM_PROMPT}
+{user_info}
+[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']}){context_info}{sohbet_talimati}"""
+
+        messages.append({"role": "system", "content": system_content})
+
+        # 2. Chat history - user/assistant rolleri ile
+        max_history = self.max_mesaj  # 20
+
+        # Telegram history varsa onu kullan
         if chat_history and len(chat_history) > 0:
             limited_history = chat_history[-max_history:] if len(chat_history) > max_history else chat_history
-            history_lines = []
             for msg in limited_history:
                 role = msg.get('role', 'user')
                 content = msg.get('content', '')
                 if content and role in ['user', 'assistant']:
-                    prefix = "User" if role == 'user' else "You"
-                    history_lines.append(f"{prefix}: {content}")
-            if history_lines:
-                history_text = "\n".join(history_lines)
+                    messages.append({"role": role, "content": content})
 
+        # Telegram history boşsa self.hafiza'dan al
         elif self.hafiza and len(self.hafiza) > 0:
-            history_lines = []
             for m in self.hafiza[-max_history:]:
                 rol = m.get("rol", "user")
                 mesaj = m.get("mesaj", "")
                 if mesaj:
-                    prefix = "User" if rol == 'user' else "You"
-                    history_lines.append(f"{prefix}: {mesaj}")
-            if history_lines:
-                history_text = "\n".join(history_lines)
+                    messages.append({"role": rol, "content": mesaj})
 
-        # Conversation history bölümü
-        history_section = f"""
-🎯 CONVERSATION HISTORY:
-{history_text if history_text else "(No previous messages - this is the start of conversation)"}
-""" if history_text else ""
-
-        system_content = f"""🎯 YOUR TASK: Respond to this message → "{user_input}"
-
-🎯 WHO YOU ARE:
-{self.SYSTEM_PROMPT}
-
-🎯 RESPONSE RULES:
-{self.SYSTEM_RULES}
-
-🎯 QUESTION UNDERSTANDING:
-{self.QUESTION_RULES}
-
-🎯 CHAT CONTINUATION:
-{self.CHAT_RULES}
-
-🎯 WEB INFO USAGE:
-{self.WEB_RULES}
-
-🎯 FOR RELIGIOUS TOPICS (if text is provided):
-{self.RELIGIOUS_RULES}
-
-🎯 LANGUAGE: Always respond in the user's language.
-
-🎯 AWARENESS:
-- Current time: {zaman['full']} ({zaman['zaman_dilimi']})
-- {user_info if user_info else "No user info"}
-{context_info}{history_section}
-🎯 END TASK - Now respond to: "{user_input}" """
-
-        messages.append({"role": "system", "content": system_content})
-
-        # Son user message
-        messages.append({"role": "user", "content": user_input})
+        # 3. Son user message - sadece kullanıcının sorusu
+        user_content = user_input
+        messages.append({"role": "user", "content": user_content})
 
         # 4. Hesaplama sonucu varsa, system message'a ayrı bölüm olarak ekle (BAĞLAM'a değil!)
         if math_result:
