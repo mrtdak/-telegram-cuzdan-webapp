@@ -1423,6 +1423,7 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 • web_ara: SADECE kullanıcı "internette ara", "web'de bak", "araştır" derse kullan
 • Mesaj tek başına anlamsızsa GEÇMİŞ'e bak, bağlamı anla
 • needs_faiss: SADECE dini sorularda true (FAISS = Risale-i Nur metinleri). Tarım, teknik, genel sorularda FALSE!
+• espri: Kullanıcı şaka/espri yapıyorsa (gerçek olmayan şeyi gerçekmiş gibi soruyorsa, veya bağlamdan kopuk komik bir şey diyorsa) → question_type: "espri"
 
 ---
 {history_section}MESAJ: {user_input}
@@ -1435,7 +1436,7 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 </analiz>
 
 JSON:
-{{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous|topic_closed",
+{{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous|topic_closed|espri",
 "needs_faiss": bool, "needs_semantic_memory": bool, "needs_chat_history": bool, "needs_clarification": bool,
 "tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
 "tool_param": "", "is_farewell": bool, "topic_closed": bool, "confidence": "low|medium|high", "reasoning": ""}}
@@ -1539,6 +1540,10 @@ JSON:
                         decision['tool_name'] = 'yok'
                         decision['needs_clarification'] = True
 
+                    if decision.get('question_type') == 'espri':
+                        decision['is_espri'] = True
+                        decision['tool_name'] = 'yok'
+
                     word_count = len(user_input.split())
                     if word_count <= 4 and not decision.get('needs_chat_history'):
                         decision['needs_chat_history'] = True
@@ -1562,9 +1567,12 @@ JSON:
                         print(f"   • 👋 Vedalaşma algılandı!")
                     if decision.get('topic_closed'):
                         print(f"   • 📕 KONU KAPANDI: {decision.get('closed_topic_summary', 'özet yok')}")
+                    if decision.get('is_espri'):
+                        print(f"   • 😄 ESPRİ: Şaka/espri tespit edildi")
                     if "reasoning" in decision:
                         print(f"   • Sebep: {decision['reasoning']}")
 
+                    self._son_decision = decision
                     return decision
 
             print("⚠️ JSON parse hatası, fallback karar")
@@ -1628,11 +1636,13 @@ JSON:
 
 
     # TEK BİRLEŞİK PROMPT - Full Friend Modu
-    SYSTEM_PROMPT = """Sen akıllı, profesyonel, olgun ve sıcakkanlı bir yapay zekasın.
+    SYSTEM_PROMPT = """Sen akıllı, profesyonel, olgun ve sıcakkanlı bir yapay zekasın. Arkadaşsın.
+İnsanların şakacı yönleri de var - espri veya şaka yapıldığında sen de aynı tonda karşılık ver, ciddi açıklamaya geçme.
 
 - ✅ Her şeyi akıcı paragraflarla yaz. Liste gerekse bile cümle içinde sırala (birincisi şu, ikincisi bu gibi)
 - ✅ Kullanıcı belirsiz mesaj verirse (sadece selam, kısa karşılık gibi), sohbeti ilerletecek doğal bir soru sor. Boşluğu doldurmak için gereksiz şeyler ekleme.
 - ⛔ ASLA: "ne dersin?" "kim bilir" "değil mi?" → Sadece kullanıcı kararsızsa veya yardım gerekiyorsa soru sor, yoksa hiç sorma
+- ⚠️ Hatalı/anlamsız kelime görürsen tahmin etme, sor: "X derken şunu mu demek istedin?" (klavye hatası olabilir)
 - Emoji kullanabilirsin (abartmadan)
 - ⚡ [🎯 SOHBET ZEKASI TALİMATI] varsa → MUTLAKA uygula
 
@@ -1831,7 +1841,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             elif enerji == "kapanıyor":
                 enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
             else:
-                enerji_talimat = "💬 NORMAL: Doğal sohbet tonu"
+                enerji_talimat = "💬 NORMAL: Samimi sohbet tonu"
+
+            # Espri modunda özel ton
+            if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
+                enerji_talimat = "😄 ESPRİ: Şakacı ton"
 
             sohbet_talimati = f"""[🎯 SOHBET ZEKASI TALİMATI - MUTLAKA UYGULA!]:
 • Beklenen cevap tipi: {analiz.beklenen_cevap.value}
@@ -1862,7 +1876,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     sohbet_talimati += f"\n• {talimat}"
 
             if analiz.onceki_konuyu_kapat:
-                sohbet_talimati += "\n• 📕 Önceki konu kapandı, tekrar açma"
+                sohbet_talimati += "\n• 🔄 KONU GEÇİŞİ: Önceki konudan bu konuya doğal geçiş yap, giriş cümlesi yapma, sohbet akıyormuş gibi devam et."
+
+            # Espri/şaka kontrolü
+            if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
+                sohbet_talimati += "\n• 😄 ESPRİ MODU: Kanka gibi şakacı cevap ver! Ciddi açıklama YAPMA, kısa tut, eğlen."
 
             # Örtük istek varsa ekle
             if analiz.ortuk_istek:
@@ -2459,7 +2477,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             elif enerji == "kapanıyor":
                 enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
             else:
-                enerji_talimat = "💬 NORMAL: Doğal sohbet tonu"
+                enerji_talimat = "💬 NORMAL: Samimi sohbet tonu"
+
+            # Espri modunda özel ton
+            if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
+                enerji_talimat = "😄 ESPRİ: Şakacı ton"
 
             sohbet_talimati = f"""
 
@@ -2492,7 +2514,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     sohbet_talimati += f"\n• {talimat}"
 
             if analiz.onceki_konuyu_kapat:
-                sohbet_talimati += "\n• 📕 Önceki konu kapandı, tekrar açma"
+                sohbet_talimati += "\n• 🔄 KONU GEÇİŞİ: Önceki konudan bu konuya doğal geçiş yap, giriş cümlesi yapma, sohbet akıyormuş gibi devam et."
+
+            # Espri/şaka kontrolü
+            if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
+                sohbet_talimati += "\n• 😄 ESPRİ MODU: Kanka gibi şakacı cevap ver! Ciddi açıklama YAPMA, kısa tut, eğlen."
 
             # Örtük istek varsa ekle
             if analiz.ortuk_istek:
