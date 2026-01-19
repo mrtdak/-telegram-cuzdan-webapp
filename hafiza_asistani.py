@@ -186,7 +186,7 @@ async def web_ara(query: str, context: str = "") -> str:
 
 
 async def get_weather(city: str) -> str:
-    """Şehir için hava durumu bilgisi getir"""
+    """Şehir için hava durumu bilgisi getir (wttr.in API)"""
     try:
         city = (
             city.replace("hava durumu", "")
@@ -195,31 +195,29 @@ async def get_weather(city: str) -> str:
             .strip()
         )
 
-        api_key = os.getenv("OPENWEATHER_API_KEY", "")
+        # wttr.in API - ücretsiz, key gerektirmez, kar tespiti daha iyi
+        url = f"https://wttr.in/{city}?format=j1&lang=tr"
 
-        if not api_key:
-            return await get_weather_fallback(city)
-
-        url = "http://api.openweathermap.org/data/2.5/weather"
-        params = {
-            "q": f"{city},TR",
-            "appid": api_key,
-            "units": "metric",
-            "lang": "tr",
-        }
-
-        timeout = aiohttp.ClientTimeout(total=5)
+        timeout = aiohttp.ClientTimeout(total=8)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, params=params) as response:
+            async with session.get(url) as response:
                 if response.status != 200:
-                    return await get_weather_fallback(city)
+                    return f"❌ {city} için hava durumu alınamadı."
                 data = await response.json()
 
-        temp = data["main"]["temp"]
-        feels_like = data["main"]["feels_like"]
-        humidity = data["main"]["humidity"]
-        description = data["weather"][0]["description"].capitalize()
-        wind_speed = data["wind"]["speed"]
+        current = data["current_condition"][0]
+
+        # Türkçe açıklama al
+        desc_list = current.get("lang_tr", [])
+        if desc_list:
+            description = desc_list[0].get("value", current["weatherDesc"][0]["value"])
+        else:
+            description = current["weatherDesc"][0]["value"]
+
+        temp = float(current["temp_C"])
+        feels_like = float(current["FeelsLikeC"])
+        humidity = current["humidity"]
+        wind_speed = float(current["windspeedKmph"]) / 3.6  # km/h -> m/s
 
         result = "[KORUNACAK_FORMAT]\n"
         result += f"🌤️ {city.title()} Hava Durumu\n"
@@ -233,13 +231,8 @@ async def get_weather(city: str) -> str:
 
         return result
 
-    except Exception:
-        return await get_weather_fallback(city)
-
-
-async def get_weather_fallback(city: str) -> str:
-    """Fallback: hava durumu - Web search kaldırıldı"""
-    return f"❌ {city} için hava durumu servisi kullanılamıyor. Web arama devre dışı."
+    except Exception as e:
+        return f"❌ {city} için hava durumu alınamadı: {str(e)}"
 
 
 async def get_prayer_times(city: str, specific_prayer: str = None) -> str:
@@ -1656,18 +1649,9 @@ JSON:
 İnsanların şakacı yönleri de var - espri veya şaka yapıldığında sen de aynı tonda karşılık ver, ciddi açıklamaya geçme.
 
 - ✅ Her şeyi akıcı paragraflarla yaz. Liste gerekse bile cümle içinde sırala (birincisi şu, ikincisi bu gibi)
-- ✅ Kullanıcı belirsiz mesaj verirse (sadece selam, kısa karşılık gibi), sohbeti ilerletecek doğal bir soru sor. Boşluğu doldurmak için gereksiz şeyler ekleme.
-- ⚠️ Hatalı/anlamsız kelime görürsen tahmin etme, sor: "X derken şunu mu demek istedin?" (klavye hatası olabilir)
+- ⚠️ Hatalı/anlamsız kelime görürsen tahmin etme, sor: "X derken şunu mu demek istedin?"
 - Emoji kullanabilirsin (abartmadan)
 - ⚡ [🎯 SOHBET ZEKASI TALİMATI] varsa → MUTLAKA uygula
-
-🚫 YASAK İFADELER - ASLA KULLANMA:
-"ne dersin?" ❌
-"değil mi?" ❌
-"kim bilir?" ❌
-"nasıl fikir?" ❌
-"sence?" ❌
-Bu ifadelerle cümle BİTİRME. Bilgiyi ver, sus. Gereksiz soru sorma.
 
 🧠 DÜŞÜNCE SİSTEMİ:
 - Her bilginin bir hikmeti, varlık sebebi vardır. "Neden var?" sorusunu düşün

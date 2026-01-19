@@ -14,8 +14,45 @@ from typing import Dict
 
 from hafiza_asistani import HafizaAsistani
 from personal_ai import PersonalAI
+import re
 
 load_dotenv()
+
+
+def temizle_cikti(text: str) -> str:
+    """Yasak ifadeleri ve markdown formatlamalarını temizle"""
+
+    # 1. Markdown temizle
+    # **kalın** → kalın
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    # *italik* → italik (tek yıldız, ama madde işareti değil)
+    text = re.sub(r'(?<!\n)\*([^\*\n]+?)\*(?!\*)', r'\1', text)
+    # Satır başı madde işaretleri: * veya -
+    text = re.sub(r'^\s*[\*\-]\s+', '', text, flags=re.MULTILINE)
+    # Numaralı liste: 1. 2. 3.
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+
+    # 2. Yasak ifadeleri temizle
+    yasak_pattern = r',?\s*(ne dersin\??|değil mi\??|kim bilir\??|nasıl fikir\??|sence\??)\s*$'
+    cumle_sonu = r'([.!?])\s*'
+    cumleler = re.split(cumle_sonu, text)
+
+    temiz = []
+    for parca in cumleler:
+        if parca in '.!?':
+            temiz.append(parca)
+            continue
+        temiz_cumle = re.sub(yasak_pattern, '', parca, flags=re.IGNORECASE)
+        temiz.append(temiz_cumle)
+
+    sonuc = ''.join(temiz).strip()
+
+    # 3. Çoklu boş satırları tek satıra indir
+    sonuc = re.sub(r'\n{3,}', '\n\n', sonuc)
+
+    if sonuc and sonuc[-1] not in '.!?':
+        sonuc += '.'
+    return sonuc
 
 # Kullanıcı izolasyonu: Her kullanıcının kendi AI'ı
 user_instances: Dict[int, Dict] = {}
@@ -101,7 +138,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=TIMEOUT
         )
 
-        # 3. HafizaAsistani hafızaya kaydetsin
+        # 3. Çıktıyı temizle (markdown + yasak ifadeler)
+        response = temizle_cikti(response)
+
+        # 4. HafizaAsistani hafızaya kaydetsin
         hafiza.save(user_input, response, [])
 
     except asyncio.TimeoutError:
