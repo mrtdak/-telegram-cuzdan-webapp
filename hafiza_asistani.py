@@ -738,7 +738,8 @@ class HafizaAsistani:
         decision_model: str = "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     ):
         print("=" * 60)
-        print("🧠 HafizaAsistani v3.0 - Genişletilmiş Sekreter")
+        print("🧠 HafizaAsistani v3.1 - Akıllı Sekreter")
+        print("   • LLM Karar Sistemi + Akıllı Web Arama")
         print("=" * 60)
 
         # Kullanıcı ID - None ise varsayılan kullan
@@ -825,11 +826,14 @@ class HafizaAsistani:
         print(f"   • Zaman limiti: {saat_limiti} saat")
         print(f"   • Benzerlik eşiği: {esik}")
         print(f"   • Max mesaj: {max_mesaj}")
-        print("   • Tool System: ✅")
-        print("   • Web Arama (web_ara): ✅")
-        print("   • Multi-Role: ✅")
-        print("   • DecisionLLM: ✅")
-        print("   • Topic Memory (v2.0): ✅")
+        print("   • DecisionLLM: ✅ (Together.ai)")
+        print("   • Sohbet Zekası: ✅")
+        print("\n🔧 Aktif Tool'lar:")
+        print("   • web_ara: ✅ (Akıllı Karar - LLM belirler)")
+        print("   • risale_ara: ✅ (FAISS)")
+        print("   • hava_durumu: ✅ (OpenWeatherMap)")
+        print("   • namaz_vakti: ✅ (Aladhan)")
+        print("   • zaman_getir: ✅")
         print("=" * 60 + "\n")
 
 
@@ -1312,13 +1316,9 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 return result or None
 
             if tool_name == "web_ara":
-                # Sadece kullanıcı açıkça isterse web araması yap
-                web_keywords = ["internette ara", "web'de ara", "webde ara", "internetten bak", "araştır", "aratır", "google", "ara bak"]
-                user_lower = user_input.lower()
-                if not any(kw in user_lower for kw in web_keywords):
-                    print(f"   ⏩ web_ara engellendi: Kullanıcı açıkça istemedi")
-                    return None
+                # LLM akıllı karar verdi, keyword kontrolü yok artık
                 query = tool_param or user_input
+                print(f"   🌐 Web araması başlatılıyor: '{query}'")
                 raw_data = await web_ara(query)
 
                 # Process raw web data
@@ -1412,18 +1412,31 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 5. Param yaz → Araç için gerekli bilgiyi GEÇMİŞ + MESAJ'dan al
 
 🔧 ELİNDEKİ ARAÇLAR:
-• web_ara → Bilgi için
+• web_ara → Güncel/faktüel bilgi (aşağıya bak!)
 • risale_ara → Dini sorular için
-• hava_durumu → Hava için
+• hava_durumu → Hava durumu için
 • namaz_vakti → Namaz vakti için
 • zaman_getir → Tarih/saat için
-• yok → Araç gerekmiyorsa
+• yok → Sohbet, espri, genel bilgi (sen biliyorsun)
 
-⚠️ ÖNEMLİ:
-• web_ara: SADECE kullanıcı "internette ara", "web'de bak", "araştır" derse kullan
+🌐 web_ara AKILLI KARAR:
+✅ KULLAN (kendin karar ver, kullanıcı demese bile):
+• Güncel bilgi: fiyat, kur, haber, skor, etkinlik ("dolar kaç", "maç skoru", "son haberler")
+• Bilmediğin konu: tanımadığın kişi, olay, yer, film, şarkı ("X kim", "Y nerde", "Z ne zaman")
+• Kesin rakam: istatistik, nüfus, mesafe, tarihsel veri isteniyorsa
+• Zaman referansı: "son", "şu an", "bugün", "dün", "bu hafta", "yeni" içeren sorular
+• Doğrulama: Kullanıcı bir iddia söylüyor ve sen emin değilsen
+❌ KULLANMA:
+• Genel kavram açıklaması (Python nedir, aşk nedir - sen biliyorsun)
+• Sohbet, espri, selamlama, günlük konuşma
+• Dini sorular (risale_ara kullan)
+• Hava durumu (hava_durumu kullan)
+• Namaz vakti (namaz_vakti kullan)
+
+⚠️ DİĞER KURALLAR:
 • Mesaj tek başına anlamsızsa GEÇMİŞ'e bak, bağlamı anla
-• needs_faiss: SADECE dini sorularda true (FAISS = Risale-i Nur metinleri). Tarım, teknik, genel sorularda FALSE!
-• espri: Kullanıcı şaka/espri yapıyorsa (gerçek olmayan şeyi gerçekmiş gibi soruyorsa, veya bağlamdan kopuk komik bir şey diyorsa) → question_type: "espri"
+• needs_faiss: SADECE dini sorularda true
+• espri: Şaka/espri yapılıyorsa → question_type: "espri"
 
 ---
 {history_section}MESAJ: {user_input}
@@ -1641,10 +1654,17 @@ JSON:
 
 - ✅ Her şeyi akıcı paragraflarla yaz. Liste gerekse bile cümle içinde sırala (birincisi şu, ikincisi bu gibi)
 - ✅ Kullanıcı belirsiz mesaj verirse (sadece selam, kısa karşılık gibi), sohbeti ilerletecek doğal bir soru sor. Boşluğu doldurmak için gereksiz şeyler ekleme.
-- ⛔ ASLA: "ne dersin?" "kim bilir" "değil mi?" → Sadece kullanıcı kararsızsa veya yardım gerekiyorsa soru sor, yoksa hiç sorma
 - ⚠️ Hatalı/anlamsız kelime görürsen tahmin etme, sor: "X derken şunu mu demek istedin?" (klavye hatası olabilir)
 - Emoji kullanabilirsin (abartmadan)
 - ⚡ [🎯 SOHBET ZEKASI TALİMATI] varsa → MUTLAKA uygula
+
+🚫 YASAK İFADELER - ASLA KULLANMA:
+"ne dersin?" ❌
+"değil mi?" ❌
+"kim bilir?" ❌
+"nasıl fikir?" ❌
+"sence?" ❌
+Bu ifadelerle cümle BİTİRME. Bilgiyi ver, sus. Gereksiz soru sorma.
 
 🧠 DÜŞÜNCE SİSTEMİ:
 - Her bilginin bir hikmeti, varlık sebebi vardır. "Neden var?" sorusunu düşün
@@ -1660,10 +1680,6 @@ JSON:
 🔗 BAĞLAM:
 - Kullanıcının cevabını ÖNCEKİ SORUNLA birlikte değerlendir
 - Kısa cevaplar (tek kelime, "evet", "hayır") önceki konuşmaya cevaptır
-
-🌐 İNTERNET BİLGİSİ:
-- Bilgiyi KENDİ BİLGİN gibi sun
-- Kullanıcı söylemediği bilgiyi ona atfetme
 
 """
 
@@ -1894,7 +1910,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if tool_result:
             if tool_name == "web_ara":
                 # Data already cleaned by _process_web_result
-                combined_sources.append(f"[🌐 İNTERNET BİLGİSİ]:\n{tool_result}")
+                combined_sources.append(f"[🌐 WEB SONUCU - İnternet bilgisine göre... diye sun, sahiplenme!]:\n{tool_result}")
             elif tool_name == "risale_ara":
                 if is_detail_followup:
                     combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - Doğrudan verme, kendi yorumunla açıkla!]:\n{tool_result}")
@@ -1981,7 +1997,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             dynamic_rules_str = "\n" + "\n".join([f"• {r}" for r in dynamic_rules])
 
         if (tool_name == "web_ara") and tool_result:
-            context_header = "Bağlam (İNTERNET BİLGİSİ - alakalıysa kullan, değilse kullanma!):"
+            context_header = "Bağlam (WEB SONUCU - 'İnternet bilgisine göre...' diye sun):"
         elif is_detail_followup and tool_result:
             context_header = "Bağlam (Arka plan - kendi yorumunla açıkla):"
         elif tool_result:
@@ -2129,6 +2145,10 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         tool_result = await self._tool_calistir(tool_name, tool_param, user_input)
         if tool_result:
             print(f"   📦 Tool sonucu alındı: {len(tool_result)} karakter")
+        elif tool_name == "web_ara":
+            # Web araması yapıldı ama sonuç gelmedi - LLM'e uyar ki uydurmasın!
+            tool_result = "⚠️ İNTERNET ARAMASI YAPILDI AMA SONUÇ BULUNAMADI. Bu konuda güncel/kesin bilgi verme, bilmiyorsan 'bu konuda güncel bilgim yok' de."
+            print(f"   ⚠️ Web araması sonuç döndürmedi - uydurma engelleme uyarısı eklendi")
 
         print("\n📚 3. Bağlam toplanıyor (LLM kararına göre)...")
 
@@ -2233,7 +2253,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         else:
             print("   • Kapanmış Konu: Yok veya ilgisiz ⏩")
 
-        print("\n📝 6. Prompt hazırlanıyor...")
+        print("\n📝 5. Prompt hazırlanıyor...")
         needs_clarification = decision.get('needs_clarification', False)
         llm_reasoning = decision.get('reasoning', '')  # 🧠 DecisionLLM'in ön araştırması
         is_topic_closed = decision.get('topic_closed', False)  # 📕 Konu kapandı mı?
@@ -2379,8 +2399,8 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         math_result = None  # Hesaplama sonucu ayrı tutulacak
 
         if metadata.get('has_tool_result'):
-            if '[🌐 İNTERNET BİLGİSİ]:' in prompt:
-                start = prompt.find('[🌐 İNTERNET BİLGİSİ]:')
+            if '[🌐 WEB SONUCU' in prompt:
+                start = prompt.find('[🌐 WEB SONUCU')
                 end = prompt.find('\n\n[', start + 1)
                 if end == -1:
                     end = prompt.find('━━━', start + 1)
