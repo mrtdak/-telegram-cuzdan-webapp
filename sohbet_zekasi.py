@@ -218,6 +218,17 @@ class TurkishConversationIntelligence:
         "takdir": [
             "helal", "bravo", "aferin", "tebrikler", "alkış",
             "iyi iş", "süpersin", "harikasın", "efsanesin"
+        ],
+
+        # Bilgi Testi (kullanıcı AI'ı test ediyor, belirsiz referans olabilir, önce netleştir)
+        "bilgi_testi": [
+            "bildin mi", "bildinmi", "biliyor musun", "biliyo musun", "biliyomusun",
+            "biliyon mu", "biliyonmu", "bilir misin", "bilirmisin",
+            "duydun mu", "duydunmu", "duymuş muydun",
+            "haberin var mı", "haberin varmı",
+            "farkında mısın", "gördün mü", "gordunmu",
+            "tanıyor musun", "tanıyon mu",
+            "hatırlıyor musun", "hatırlıyon mu"
         ]
     }
 

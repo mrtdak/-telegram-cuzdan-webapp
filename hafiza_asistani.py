@@ -795,6 +795,9 @@ class HafizaAsistani:
         self._message_counter = 0  # Toplam mesaj sayacı
         self._injection_cooldown = 5  # Kaç mesaj sonra tekrar enjekte edilebilir
 
+        # 🔍 Netleştirme sonrası otomatik web arama flag'i
+        self._netlistirme_bekleniyor = False
+
         self.conversation_context = ConversationContextManager(
             user_id=self.user_id,
             base_dir="user_data",
@@ -2138,8 +2141,26 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             else:
                 print("⚠️ topic_closed=true ama özet çıkarılamadı, kayıt atlandı")
 
-        tool_name = decision.get('tool_name', 'yok')
-        tool_param = decision.get('tool_param', '')
+        # 🔍 Bilgi testi / Netleştirme sonrası otomatik web arama mantığı
+        if "bilgi_testi" in sohbet_analizi.durumlar:
+            print("\n🔍 Bilgi testi algılandı - tool çalıştırılmayacak, önce netleştirme!")
+            tool_name = "yok"
+            tool_param = ""
+            self._netlistirme_bekleniyor = True  # Sonraki mesajda kontrol edilecek
+        elif self._netlistirme_bekleniyor:
+            # Netleştirme sonrası - LLM'in kararına bak
+            self._netlistirme_bekleniyor = False  # Flag'i sıfırla
+            tool_name = decision.get('tool_name', 'yok')
+            tool_param = decision.get('tool_param', '')
+
+            if tool_name == "yok":
+                # LLM tool seçmediyse, otomatik web araması yap
+                print("\n🌐 Netleştirme sonrası - LLM tool seçmedi, otomatik web araması yapılıyor!")
+                tool_name = "web_ara"
+                tool_param = user_input  # Kullanıcının netleştirme mesajını sorgu olarak kullan
+        else:
+            tool_name = decision.get('tool_name', 'yok')
+            tool_param = decision.get('tool_param', '')
 
         print(f"\n🛠️ 2. Araç çalıştırılıyor (LLM kararı: {tool_name})...")
         tool_result = await self._tool_calistir(tool_name, tool_param, user_input)
@@ -2503,46 +2524,56 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
                 enerji_talimat = "😄 ESPRİ: Şakacı ton"
 
-            sohbet_talimati = f"""
+            # 🔍 Bilgi testi varsa SADECE netleştirme talimatı (diğer her şeyi atla)
+            if "bilgi_testi" in analiz.durumlar:
+                sohbet_talimati = f"""
+
+[🎯 SOHBET ZEKASI TALİMATI - MUTLAKA UYGULA!]:
+• Beklenen cevap tipi: {analiz.beklenen_cevap.value}
+• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)
+• 🔍 NETLEŞTİRME: Belirsiz referans var. Tahmin cevabı verme, önce durumu netleştir!"""
+            else:
+                # Normal talimat oluşturma
+                sohbet_talimati = f"""
 
 [🎯 SOHBET ZEKASI TALİMATI - MUTLAKA UYGULA!]:
 • Beklenen cevap tipi: {analiz.beklenen_cevap.value}
 • Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)
 • {enerji_talimat}"""
 
-            if analiz.duygu:
-                sohbet_talimati += f"\n• Kullanıcı duygusu: {analiz.duygu}"
+                if analiz.duygu:
+                    sohbet_talimati += f"\n• Kullanıcı duygusu: {analiz.duygu}"
 
-            # Kombinasyonlara göre özel talimatlar
-            if analiz.kombinasyon:
-                kombinasyon_talimatlari = {
-                    "memnun_kapanış": "⚡ KISA CEVAP: Kullanıcı memnun, 1-2 cümle yeter!",
-                    "devam_beklentisi": "📝 DEVAM: Kullanıcı devam bekliyor, açıklamaya devam et",
-                    "sıkılma_belirtisi": "⚠️ SIKILIYOR: Kısa ve öz cevap ver, uzatma!",
-                    "konu_değişimi": "🔄 YENİ KONU: Önceki konuyu kapat, yeni konuya odaklan",
-                    "derin_ilgi": "📚 DERİN İLGİ: Detaylı ve kapsamlı açıkla",
-                    "empati_iste": "💚 EMPATİ: Anlayışlı ve destekleyici ol",
-                    "onay_bekle": "✅ ONAY BEKLİYOR: Net ve güven verici cevap ver",
-                    "düşünerek_sorma": "🤔 DÜŞÜNCELI: Kullanıcı düşünüyor, detaylı açıkla",
-                    "heyecanlı_soru": "🌟 HEYECANLI: Kullanıcı meraklı ve heyecanlı, enerjik anlat",
-                    "samimi_veda": "👋 SAMİMİ VEDA: Dostça, sıcak vedalaş",
-                    "samimi_tesekkur": "🙏 SAMİMİ TEŞEKKÜR: Samimi karşılık ver",
-                    "samimi_selam": "😊 SAMİMİ SELAM: Arkadaşça, sıcak selamla",
-                }
-                talimat = kombinasyon_talimatlari.get(analiz.kombinasyon)
-                if talimat:
-                    sohbet_talimati += f"\n• {talimat}"
+                # Kombinasyonlara göre özel talimatlar
+                if analiz.kombinasyon:
+                    kombinasyon_talimatlari = {
+                        "memnun_kapanış": "⚡ KISA CEVAP: Kullanıcı memnun, 1-2 cümle yeter!",
+                        "devam_beklentisi": "📝 DEVAM: Kullanıcı devam bekliyor, açıklamaya devam et",
+                        "sıkılma_belirtisi": "⚠️ SIKILIYOR: Kısa ve öz cevap ver, uzatma!",
+                        "konu_değişimi": "🔄 YENİ KONU: Önceki konuyu kapat, yeni konuya odaklan",
+                        "derin_ilgi": "📚 DERİN İLGİ: Detaylı ve kapsamlı açıkla",
+                        "empati_iste": "💚 EMPATİ: Anlayışlı ve destekleyici ol",
+                        "onay_bekle": "✅ ONAY BEKLİYOR: Net ve güven verici cevap ver",
+                        "düşünerek_sorma": "🤔 DÜŞÜNCELI: Kullanıcı düşünüyor, detaylı açıkla",
+                        "heyecanlı_soru": "🌟 HEYECANLI: Kullanıcı meraklı ve heyecanlı, enerjik anlat",
+                        "samimi_veda": "👋 SAMİMİ VEDA: Dostça, sıcak vedalaş",
+                        "samimi_tesekkur": "🙏 SAMİMİ TEŞEKKÜR: Samimi karşılık ver",
+                        "samimi_selam": "😊 SAMİMİ SELAM: Arkadaşça, sıcak selamla",
+                    }
+                    talimat = kombinasyon_talimatlari.get(analiz.kombinasyon)
+                    if talimat:
+                        sohbet_talimati += f"\n• {talimat}"
 
-            if analiz.onceki_konuyu_kapat:
-                sohbet_talimati += "\n• 🔄 KONU GEÇİŞİ: Önceki konudan bu konuya doğal geçiş yap, giriş cümlesi yapma, sohbet akıyormuş gibi devam et."
+                if analiz.onceki_konuyu_kapat:
+                    sohbet_talimati += "\n• 🔄 KONU GEÇİŞİ: Önceki konudan bu konuya doğal geçiş yap, giriş cümlesi yapma, sohbet akıyormuş gibi devam et."
 
-            # Espri/şaka kontrolü
-            if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
-                sohbet_talimati += "\n• 😄 ESPRİ MODU: Kanka gibi şakacı cevap ver! Ciddi açıklama YAPMA, kısa tut, eğlen."
+                # Espri/şaka kontrolü
+                if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
+                    sohbet_talimati += "\n• 😄 ESPRİ MODU: Kanka gibi şakacı cevap ver! Ciddi açıklama YAPMA, kısa tut, eğlen."
 
-            # Örtük istek varsa ekle
-            if analiz.ortuk_istek:
-                sohbet_talimati += f"\n• 🎯 ÖRTÜK İSTEK: {analiz.ortuk_istek}"
+                # Örtük istek varsa ekle
+                if analiz.ortuk_istek:
+                    sohbet_talimati += f"\n• 🎯 ÖRTÜK İSTEK: {analiz.ortuk_istek}"
 
             # 🔴 Dini soru ise özel kurallar ekle
             if tool_used == "risale_ara":
