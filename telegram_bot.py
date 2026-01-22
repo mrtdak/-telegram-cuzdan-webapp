@@ -18,8 +18,116 @@ from hafiza_asistani import HafizaAsistani
 from yazar_asistani import YazarAsistani
 from personal_ai import PersonalAI
 import re
+import threading
 
 load_dotenv()
+
+# ============== KAMERA SİSTEMİ ==============
+kamera_thread = None
+kamera_calisiyormu = False
+
+def kamera_izleme_baslat(chat_id: int, kamera_kaynak=0):
+    """Kamera izlemeyi arka planda başlat"""
+    global kamera_calisiyormu
+
+    import cv2
+    import base64
+    import requests
+    import time
+    from datetime import datetime
+    from ultralytics import YOLO
+
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+    KAYIT_KLASORU = "kamera_kayitlar"
+    os.makedirs(KAYIT_KLASORU, exist_ok=True)
+
+    # YOLO
+    yolo_model = YOLO("yolov8n.pt")
+    INSAN_SINIF_ID = 0
+    YOLO_GUVEN_ESIK = 0.5
+    BILDIRIM_BEKLEME = 30
+
+    def yolo_insan_tespit(frame):
+        results = yolo_model(frame, verbose=False)
+        insanlar = []
+        for result in results:
+            for box in result.boxes:
+                sinif_id = int(box.cls[0])
+                guven = float(box.conf[0])
+                if sinif_id == INSAN_SINIF_ID and guven >= YOLO_GUVEN_ESIK:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    insanlar.append({"bbox": (x1, y1, x2, y2), "guven": guven})
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        return insanlar, frame
+
+    def llm_dogrula(foto_path):
+        prompt = """Bu güvenlik kamerası görüntüsünde insan var mı?
+SADECE: "EVET: [açıklama]" veya "HAYIR" yaz."""
+        try:
+            with open(foto_path, 'rb') as f:
+                img_base64 = base64.b64encode(f.read()).decode()
+            response = requests.post(
+                'https://openrouter.ai/api/v1/chat/completions',
+                headers={'Authorization': f'Bearer {OPENROUTER_API_KEY}', 'Content-Type': 'application/json'},
+                json={'model': 'google/gemini-2.0-flash-001', 'messages': [{'role': 'user', 'content': [
+                    {'type': 'text', 'text': prompt},
+                    {'type': 'image_url', 'image_url': {'url': f'data:image/jpeg;base64,{img_base64}'}}
+                ]}], 'max_tokens': 100},
+                timeout=30
+            )
+            if response.status_code == 200:
+                return response.json()['choices'][0]['message']['content'].strip()
+        except:
+            pass
+        return None
+
+    def telegram_bildirim(foto_path, mesaj):
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+            with open(foto_path, 'rb') as foto:
+                requests.post(url, data={'chat_id': chat_id, 'caption': mesaj}, files={'photo': foto}, timeout=30)
+        except:
+            pass
+
+    # Kamera aç
+    cap = cv2.VideoCapture(kamera_kaynak)
+    if not cap.isOpened():
+        return
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    print(f"📹 Kamera izleme başladı (chat_id: {chat_id})")
+    son_bildirim = 0
+
+    while kamera_calisiyormu:
+        ret, frame = cap.read()
+        if not ret:
+            continue
+
+        insanlar, frame_isaretli = yolo_insan_tespit(frame)
+
+        if insanlar:
+            simdi = time.time()
+            if simdi - son_bildirim >= BILDIRIM_BEKLEME:
+                son_bildirim = simdi
+                tarih = datetime.now().strftime("%Y%m%d_%H%M%S")
+                foto_path = f"{KAYIT_KLASORU}/tespit_{tarih}.jpg"
+                cv2.imwrite(foto_path, frame_isaretli)
+
+                llm_cevap = llm_dogrula(foto_path)
+                if llm_cevap and llm_cevap.upper().startswith("EVET"):
+                    mesaj = f"🚨 İNSAN ALGILANDI!\n📍 {datetime.now().strftime('%H:%M:%S')}\n🤖 {llm_cevap}"
+                    telegram_bildirim(foto_path, mesaj)
+                    print(f"  📤 Bildirim gönderildi: {llm_cevap}")
+                else:
+                    os.remove(foto_path)
+
+        time.sleep(0.1)
+
+    cap.release()
+    print("📹 Kamera izleme durduruldu")
 
 
 def temizle_cikti(text: str) -> str:
@@ -275,7 +383,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     get_user_ai(user_id)
 
-    # Kalıcı menü butonları
     keyboard = ReplyKeyboardMarkup(
         [
             [KeyboardButton("📍 Konum Paylaş", request_location=True)],
@@ -402,6 +509,55 @@ async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text="📍 Konum paylaşmak için butona bas:",
         reply_markup=keyboard
     )
+
+
+# === KAMERA KOMUTLARI ===
+
+async def kamera_baslat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/kamera_baslat - Kamera izlemeyi başlat"""
+    global kamera_thread, kamera_calisiyormu
+
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    if not is_allowed(user_id):
+        return
+
+    if kamera_calisiyormu:
+        await update.message.reply_text("⚠️ Kamera zaten çalışıyor!")
+        return
+
+    kamera_calisiyormu = True
+    kamera_thread = threading.Thread(
+        target=kamera_izleme_baslat,
+        args=(chat_id, 0),  # 0 = webcam, sonra IP kamera eklenecek
+        daemon=True
+    )
+    kamera_thread.start()
+
+    await update.message.reply_text(
+        "📹 Kamera izleme başlatıldı!\n\n"
+        "• YOLO insan algılayacak\n"
+        "• LLM doğrulayacak\n"
+        "• Sana bildirim gelecek\n\n"
+        "Durdurmak için: /kamera_durdur"
+    )
+
+
+async def kamera_durdur_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/kamera_durdur - Kamera izlemeyi durdur"""
+    global kamera_calisiyormu
+
+    user_id = update.effective_user.id
+    if not is_allowed(user_id):
+        return
+
+    if not kamera_calisiyormu:
+        await update.message.reply_text("⚠️ Kamera zaten kapalı!")
+        return
+
+    kamera_calisiyormu = False
+    await update.message.reply_text("⏹️ Kamera izleme durduruldu!")
 
 
 # === KONUM HANDLER ===
@@ -804,10 +960,23 @@ def main():
 
     # Telegram menüsüne komutları ekle
     async def post_init(application):
+        from telegram import BotCommandScopeChat
+
+        # Herkes için menü
         await application.bot.set_my_commands([
             BotCommand("yeni", "🗑️ Sohbeti temizle"),
             BotCommand("konum", "📍 Konum paylaş")
         ])
+
+        # Sadece admin için kamera komutları
+        ADMIN_ID = 6505503887
+        await application.bot.set_my_commands([
+            BotCommand("yeni", "🗑️ Sohbeti temizle"),
+            BotCommand("konum", "📍 Konum paylaş"),
+            BotCommand("kamera", "📹 Kamera aç"),
+            BotCommand("kamerakapat", "⏹️ Kamera kapat")
+        ], scope=BotCommandScopeChat(chat_id=ADMIN_ID))
+
         print("✅ Telegram menüsü güncellendi!")
 
     app = Application.builder().token(token).post_init(post_init).build()
@@ -832,6 +1001,10 @@ def main():
     app.add_handler(CommandHandler("normal", normal_command))
     app.add_handler(CommandHandler("komedi", komedi_command))
     app.add_handler(CommandHandler("konum", konum_command))
+    app.add_handler(CommandHandler("kamera_baslat", kamera_baslat_command))
+    app.add_handler(CommandHandler("kamera_durdur", kamera_durdur_command))
+    app.add_handler(CommandHandler("kamera", kamera_baslat_command))
+    app.add_handler(CommandHandler("kamerakapat", kamera_durdur_command))
 
     # Mesaj
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
