@@ -92,7 +92,7 @@ class NotManager:
         self.notes.append(yeni_not)
         self._save_notes()
 
-        return f"✅ Not kaydedildi (#{yeni_not['id']}): {icerik[:50]}{'...' if len(icerik) > 50 else ''}"
+        return f"✅ Not kaydedildi:\n\n#{yeni_not['id']} [{yeni_not['tarih']} {yeni_not['gun']} - {yeni_not['saat']}]\n   {icerik}"
 
     def notlari_getir(self, arama: str = None) -> str:
         """Notları getir, opsiyonel arama"""
