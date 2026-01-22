@@ -925,6 +925,7 @@ class HafizaAsistani:
 
         # 📝 Not Yöneticisi
         self.not_manager = NotManager(user_id=self.user_id, base_dir="user_data")
+        self._pending_not = False  # "Not al" sonrası bekleme modu
         print(f"✅ Not Manager aktif ({len(self.not_manager.notes)} not)")
 
         # 📍 Konum Bilgisi
@@ -2891,6 +2892,17 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         """
         user_lower = user_input.lower().strip()
 
+        # 📝 PENDING MOD - Önceki "not al" sonrası bekleme
+        if self._pending_not:
+            self._pending_not = False
+            # "iptal", "vazgeç" gibi kelimeler hariç her şeyi not al
+            iptal_kelimeler = ["iptal", "vazgeç", "vazgec", "boşver", "bosver", "gerek yok", "tamam boşver"]
+            if not any(k in user_lower for k in iptal_kelimeler):
+                print(f"📝 Pending not kaydediliyor: '{user_input[:30]}...'")
+                return self.not_manager.not_al(user_input)
+            else:
+                return "👍 Tamam, iptal ettim."
+
         # 📝 NOT AL / TUT / EKLE (içerikli)
         not_patterns = [
             (r'^not\s+al[\s:,]+(.+)$', 'not_al'),
@@ -2908,9 +2920,10 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     print(f"📝 Not tetikleyici algılandı: {action} -> '{icerik[:30]}...'")
                     return self.not_manager.not_al(icerik)
 
-        # 📝 NOT AL TEK BAŞINA - içerik olmadan
+        # 📝 NOT AL TEK BAŞINA - içerik olmadan → pending moda geç
         if re.match(r'^not\s+(al|tut|ekle)\s*[?!.,]*$', user_lower, re.IGNORECASE):
-            print("📝 Not al (tek başına) algılandı - soru soruluyor")
+            print("📝 Not al (tek başına) algılandı - pending moda geçiliyor")
+            self._pending_not = True
             return "📝 Tamam, ne not edeyim?"
 
         # 📋 NOTLARIMI GETİR
