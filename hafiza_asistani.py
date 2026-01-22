@@ -307,7 +307,7 @@ async def get_weather(city: str) -> str:
         # wttr.in API - ücretsiz, key gerektirmez, kar tespiti daha iyi
         url = f"https://wttr.in/{city}?format=j1&lang=tr"
 
-        timeout = aiohttp.ClientTimeout(total=8)
+        timeout = aiohttp.ClientTimeout(total=20)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as response:
                 if response.status != 200:
