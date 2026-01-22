@@ -3032,20 +3032,35 @@ Kullanıcı adı: {kullanici_adi}
             "süpermarket": ("supermarket", "🛒"),
             "cami": ("place_of_worship", "🕌"),
             "mescit": ("place_of_worship", "🕌"),
+            "avm": ("mall", "🏬"),
+            "alışveriş merkezi": ("mall", "🏬"),
         }
         kategori_keywords = list(kategori_map.keys())
 
         # Fuzzy matching ile kategori bul
         if has_konum_signal:
-            from difflib import get_close_matches
+            from difflib import SequenceMatcher
             words = re.findall(r'\b\w+\b', user_lower)
             for word in words:
                 if len(word) >= 3:
-                    matches = get_close_matches(word, kategori_keywords, n=1, cutoff=0.6)
-                    if matches:
-                        matched_keyword = matches[0]
-                        print(f"📍 Yakın yer sorgusu (fuzzy): '{word}' → '{matched_keyword}'")
-                        return await self._get_yakin_yerler(lat, lon, matched_keyword)
+                    # En iyi eşleşmeyi ve skorunu bul
+                    best_match = None
+                    best_score = 0
+                    for keyword in kategori_keywords:
+                        score = SequenceMatcher(None, word, keyword).ratio()
+                        if score > best_score:
+                            best_score = score
+                            best_match = keyword
+
+                    # Tam eşleşme (skor >= 0.85) → direkt işlem
+                    if best_score >= 0.85 and best_match:
+                        print(f"📍 Yakın yer sorgusu (kesin): '{word}' → '{best_match}' (skor: {best_score:.2f})")
+                        return await self._get_yakin_yerler(lat, lon, best_match)
+
+                    # Belirsiz eşleşme (0.6 <= skor < 0.85) → doğrulama sor
+                    elif best_score >= 0.6 and best_match:
+                        print(f"📍 Belirsiz eşleşme: '{word}' → '{best_match}' (skor: {best_score:.2f})")
+                        return f"🤔 '{word}' derken '{best_match}' mi demek istedin?\n\nEvetse '{best_match}' yaz."
 
         # Exact match (fuzzy'den kaçanlar için)
         for keyword in kategori_keywords:
@@ -3073,6 +3088,8 @@ Kullanıcı adı: {kullanici_adi}
             "süpermarket": ("supermarket", "🛒"),
             "cami": ("place_of_worship", "🕌"),
             "mescit": ("place_of_worship", "🕌"),
+            "avm": ("mall", "🏬"),
+            "alışveriş merkezi": ("mall", "🏬"),
         }
 
         if kategori not in kategori_map:
