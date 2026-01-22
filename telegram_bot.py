@@ -123,6 +123,7 @@ def hesapla_mesafe(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 async def adres_cozumle(lat: float, lon: float) -> Optional[str]:
     """
     Koordinattan adres çözümle (Reverse Geocoding - Nominatim).
+    Cadde/sokak bilgisi dahil detaylı adres döndürür.
     """
     try:
         url = f"https://nominatim.openstreetmap.org/reverse"
@@ -130,7 +131,8 @@ async def adres_cozumle(lat: float, lon: float) -> Optional[str]:
             "lat": lat,
             "lon": lon,
             "format": "json",
-            "accept-language": "tr"
+            "accept-language": "tr",
+            "addressdetails": 1
         }
         headers = {"User-Agent": "PersonalAI-TelegramBot/1.0"}
 
@@ -139,6 +141,38 @@ async def adres_cozumle(lat: float, lon: float) -> Optional[str]:
             async with session.get(url, params=params, headers=headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
+
+                    # Detaylı adres bilgisi varsa, özel format oluştur
+                    address = data.get("address", {})
+                    if address:
+                        parts = []
+
+                        # Cadde/Sokak
+                        road = address.get("road") or address.get("street") or address.get("pedestrian")
+                        if road:
+                            parts.append(road)
+
+                        # Mahalle
+                        mahalle = address.get("suburb") or address.get("neighbourhood") or address.get("quarter")
+                        if mahalle:
+                            parts.append(mahalle)
+
+                        # İlçe
+                        ilce = address.get("town") or address.get("district") or address.get("county")
+                        if ilce:
+                            parts.append(ilce)
+
+                        # İl
+                        il = address.get("city") or address.get("province") or address.get("state")
+                        if il:
+                            parts.append(il)
+
+                        parts.append("Türkiye")
+
+                        if parts:
+                            return ", ".join(parts)
+
+                    # Fallback: display_name
                     return data.get("display_name", "Adres bulunamadı")
     except Exception as e:
         print(f"Adres çözümleme hatası: {e}")
