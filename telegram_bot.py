@@ -10,8 +10,8 @@ import asyncio
 import math
 import aiohttp
 from dotenv import load_dotenv
-from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from typing import Dict, Tuple, Optional
 
 from hafiza_asistani import HafizaAsistani
@@ -275,27 +275,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     get_user_ai(user_id)
 
-    # İzinli kullanıcıya tam menü, diğerlerine sadece sohbet
-    if is_allowed(user_id):
-        await update.message.reply_text(
-            "🤖 Merhaba!\n\n"
-            "📌 Modlar:\n"
-            "/normal - 💬 Sohbet modu\n"
-            "/yazar - ✍️ QuantumTree yazar modu\n"
-            "/komedi - 😂 Komedi yazarı modu\n\n"
-            "📍 Konum:\n"
-            "/konum - Konum hizmetleri rehberi\n"
-            "📎 → Konum gönder = Hava + Namaz + Kıble\n\n"
-            "⚙️ Ayarlar:\n"
-            "/yeni - Hafızayı sıfırla\n"
-            "/firlama - 🚀 Fırlama modu aç/kapat"
-        )
-    else:
-        await update.message.reply_text(
-            "🤖 Merhaba!\n\n"
-            "💬 Sohbet modundasın. Bana bir şey sor!\n\n"
-            "/yeni - Hafızayı sıfırla"
-        )
+    # Kalıcı menü butonları
+    keyboard = ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("📍 Konum Paylaş", request_location=True)],
+            [KeyboardButton("🗑️ Sohbeti Temizle")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
+    await update.message.reply_text(
+        "🤖 Merhaba! Sana nasıl yardımcı olabilirim?",
+        reply_markup=keyboard
+    )
 
 
 async def yeni_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -304,7 +297,12 @@ async def yeni_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user_ai(user_id)
     user["hafiza"].clear()
     user["yazar"].clear()
-    await update.message.reply_text("✅ Hafıza sıfırlandı!")
+    # Komut mesajını sil
+    try:
+        await update.message.delete()
+    except:
+        pass
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Sohbet temizlendi!")
 
 
 async def firlama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -387,19 +385,22 @@ async def komedi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/konum - Konum paylaşma rehberi"""
-    await update.message.reply_text(
-        "📍 KONUM HİZMETLERİ\n"
-        "═" * 28 + "\n\n"
-        "Konum paylaşınca şunları alırsın:\n\n"
-        "🌤️ Hava durumu\n"
-        "🕌 Namaz vakitleri\n"
-        "🧭 Kıble yönü ve açısı\n"
-        "🕋 Kabe'ye mesafe\n"
-        "🗺️ Adres bilgisi\n"
-        "📏 Önceki konumdan mesafe\n\n"
-        "📎 Konum göndermek için:\n"
-        "Ataç simgesi → Konum → Gönder"
+    """/konum - Konum paylaş butonu"""
+    chat_id = update.effective_chat.id
+    # Komut mesajını sil
+    try:
+        await update.message.delete()
+    except:
+        pass
+    keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("📍 Konumumu Paylaş", request_location=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="📍 Konum paylaşmak için butona bas:",
+        reply_markup=keyboard
     )
 
 
@@ -522,6 +523,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # 🗑️ SOHBETİ SIFIRLA butonu
+    if user_input == "🗑️ Sohbeti Temizle":
+        user = get_user_ai(user_id)
+        user["hafiza"].clear()
+        await update.message.reply_text("✅ Sohbet temizlendi!")
+        return
+
     # Kullanıcının AI'larını al
     user = get_user_ai(user_id)
     aktif_mod = user.get("aktif_mod", "normal")
@@ -594,6 +602,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 asistan.save(user_input, f"[Konum gönderildi: {loc['ad']}]", [])
                 return
 
+            # 📍 KONUM DOĞRULAMA - Belirsiz eşleşmede inline buton göster
+            if paket.get("konum_dogrulama"):
+                dogrulama = paket["konum_dogrulama"]
+                kategori = dogrulama["kategori"]
+                mesaj = dogrulama["mesaj"]
+
+                # Status mesajını sil
+                try:
+                    await context.bot.delete_message(chat_id, status.message_id)
+                except:
+                    pass
+
+                # Inline keyboard oluştur
+                keyboard = [[InlineKeyboardButton(f"✅ Evet, {kategori} ara", callback_data=f"konum_ara:{kategori}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                await update.message.reply_text(mesaj, reply_markup=reply_markup)
+                return
+
+            # 📍 YAKIN YERLER LİSTESİ - Inline butonlarla göster
+            if paket.get("yakin_yerler"):
+                data = paket["yakin_yerler"]
+                emoji = data["emoji"]
+                kategori = data["kategori"]
+                yerler = data["yerler"]
+
+                # Status mesajını sil
+                try:
+                    await context.bot.delete_message(chat_id, status.message_id)
+                except:
+                    pass
+
+                # Mesaj oluştur
+                mesaj = f"{emoji} Yakınındaki {kategori}ler:\n\n"
+                buttons = []
+                for i, yer in enumerate(yerler, 1):
+                    mesaj += f"{i}. {yer['ad']} ({yer['mesafe']}m)\n"
+                    buttons.append([InlineKeyboardButton(
+                        f"{i}. {yer['ad'][:25]}{'...' if len(yer['ad']) > 25 else ''} ({yer['mesafe']}m)",
+                        callback_data=f"konum_gonder:{i-1}"
+                    )])
+
+                reply_markup = InlineKeyboardMarkup(buttons)
+                await update.message.reply_text(mesaj, reply_markup=reply_markup)
+
+                # History'e kaydet
+                asistan.save(user_input, mesaj, [])
+                return
+
             # 📝 Direct response kontrolü (not sistemi, konum araçları vs.)
             if paket.get("direct_response"):
                 response = paket["direct_response"]
@@ -632,6 +689,107 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response)
 
 
+# === CALLBACK HANDLER (Inline butonlar için) ===
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inline buton tıklamalarını işle"""
+    global user_instances
+
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
+    data = query.data
+
+    print(f"📍 Callback alındı: {data} (user: {user_id})")
+
+    # Konum arama callback'i: konum_ara:kategori
+    if data.startswith("konum_ara:"):
+        kategori = data.split(":")[1]
+
+        # Kullanıcıyı kontrol et
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce /start komutunu kullan.")
+            return
+
+        user = user_instances[user_id]
+        asistan = user["hafiza"]
+
+        # Konum kontrolü
+        if not asistan.user_location:
+            await query.edit_message_text("❌ Önce konum paylaş.")
+            return
+
+        lat, lon = asistan.user_location
+
+        # Arama yap
+        try:
+            result = await asistan._get_yakin_yerler(lat, lon, kategori)
+
+            # Dict döndüyse inline butonlarla göster
+            if isinstance(result, dict) and result.get("type") == "yakin_yerler_listesi":
+                emoji = result["emoji"]
+                yerler = result["yerler"]
+
+                mesaj = f"{emoji} Yakınındaki {kategori}ler:\n\n"
+                buttons = []
+                for i, yer in enumerate(yerler, 1):
+                    mesaj += f"{i}. {yer['ad']} ({yer['mesafe']}m)\n"
+                    buttons.append([InlineKeyboardButton(
+                        f"{i}. {yer['ad'][:25]}{'...' if len(yer['ad']) > 25 else ''} ({yer['mesafe']}m)",
+                        callback_data=f"konum_gonder:{i-1}"
+                    )])
+
+                reply_markup = InlineKeyboardMarkup(buttons)
+                await query.edit_message_text(mesaj, reply_markup=reply_markup)
+            else:
+                # String döndüyse (hata mesajı vs.)
+                await query.edit_message_text(result if result else f"❌ {kategori} bulunamadı.")
+        except Exception as e:
+            print(f"❌ Callback hata: {e}")
+            await query.edit_message_text(f"❌ {kategori} araması başarısız.")
+
+    # Konum gönderme callback'i: konum_gonder:index
+    elif data.startswith("konum_gonder:"):
+        index = int(data.split(":")[1])
+
+        # Kullanıcıyı kontrol et
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce /start komutunu kullan.")
+            return
+
+        user = user_instances[user_id]
+        asistan = user["hafiza"]
+
+        # Son arama sonuçları kontrolü
+        if not asistan.son_yakin_yerler:
+            await query.edit_message_text("❌ Önce yakın yer araması yap.")
+            return
+
+        if index < 0 or index >= len(asistan.son_yakin_yerler):
+            await query.edit_message_text("❌ Geçersiz seçim.")
+            return
+
+        yer = asistan.son_yakin_yerler[index]
+
+        # Mesajı güncelle
+        await query.edit_message_text(f"📍 {yer['ad']} konumu gönderiliyor...")
+
+        # Konum mesajı gönder
+        await context.bot.send_location(
+            chat_id=chat_id,
+            latitude=yer["lat"],
+            longitude=yer["lon"]
+        )
+
+        # Bilgi mesajı
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"📍 {yer['ad']}\n📏 {yer['mesafe']}m uzaklıkta"
+        )
+
+
 # === MAIN ===
 
 def main():
@@ -644,7 +802,15 @@ def main():
         print("❌ TELEGRAM_TOKEN bulunamadı!")
         return
 
-    app = Application.builder().token(token).build()
+    # Telegram menüsüne komutları ekle
+    async def post_init(application):
+        await application.bot.set_my_commands([
+            BotCommand("yeni", "🗑️ Sohbeti temizle"),
+            BotCommand("konum", "📍 Konum paylaş")
+        ])
+        print("✅ Telegram menüsü güncellendi!")
+
+    app = Application.builder().token(token).post_init(post_init).build()
 
     # 🔴 GLOBAL ERROR HANDLER
     async def error_handler(update, context):
@@ -673,20 +839,8 @@ def main():
     # 📍 Konum
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 
-    # Telegram menüsüne komutları ekle
-    async def post_init(application):
-        await application.bot.set_my_commands([
-            BotCommand("start", "Botu başlat"),
-            BotCommand("yeni", "Hafızayı sıfırla"),
-            BotCommand("konum", "📍 Konum hizmetleri"),
-            BotCommand("firlama", "🚀 Fırlama modunu aç/kapat"),
-            BotCommand("yazar", "✍️ QuantumTree yazar modu"),
-            BotCommand("normal", "💬 Normal sohbet modu"),
-            BotCommand("komedi", "😂 Komedi yazarı modu")
-        ])
-        print("✅ Telegram menüsü güncellendi!")
-
-    app.post_init = post_init
+    # 📍 Callback (inline butonlar)
+    app.add_handler(CallbackQueryHandler(handle_callback))
 
     print("✅ Bot hazır!")
     print("=" * 50)

@@ -929,7 +929,7 @@ class HafizaAsistani:
 
         # 📍 Konum Bilgisi
         self.user_location: Optional[Tuple[float, float]] = None  # (lat, lon)
-        self.user_location_adres: Optional[str] = None  # Çözümlenmiş adres (Serdivan, Sakarya vs.)
+        self.konum_adres: Optional[str] = None  # Konum adresi (mahalle, ilçe, il)
         self.son_yakin_yerler: List[Dict] = []  # Son yakın yer arama sonuçları
         print("✅ Konum Hizmetleri aktif")
 
@@ -2621,38 +2621,16 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 user_info = f"\n[👤 Kullanıcının bilgisi]:\n{profile_context}\n"
 
         # 📍 Konum bilgisini ekle
-        if self.user_location and self.user_location_adres:
-            lat, lon = self.user_location
-            adres = self.user_location_adres
-
-            # Adresi parse et (sondan sayma)
-            parcalar = [p.strip() for p in adres.split(",")]
-            kisa_konum = ""
-            detayli_adres = ""
-
-            if len(parcalar) >= 5:
-                ilce = parcalar[-5]
-                il = parcalar[-4]
-                kisa_konum = f"{ilce}, {il}"
-                if len(parcalar) >= 7:
-                    detayli_adres = f"{parcalar[1]}, {parcalar[0]}"
-                elif len(parcalar) >= 6:
-                    detayli_adres = parcalar[0]
-            else:
-                kisa_konum = adres[:50]
-
+        if self.user_location and self.konum_adres:
             user_info += f"""📍 KONUM BİLGİSİ (SİSTEM TARAFINDAN ÇÖZÜMLENDI - KESİN BİLGİ):
-- Konum: {kisa_konum}
-- Tam adres: {adres}
+- Konum: {self.konum_adres}
 
 ⚠️ ÖNEMLİ TALİMATLAR:
 - Ciddi ve direkt bilgi ver
 - Bu adres GPS'ten otomatik çözümlendi, %100 doğru
 - Bu konumu sen biliyorsun, kendi bilgin gibi kesin ve emin sun
-- İlk satır: "{kisa_konum}'dasın."
-- İkinci satır: "Adres: {detayli_adres}" (varsa)
+- "{self.konum_adres}'dasın." yaz, sonra kısaca ne istediğini sor
 - Onay sorma, tereddüt gösterme
-- Sonra kısaca ne istediğini sor
 """
 
         # Hesaplama değişkenlerini ekle
@@ -2845,6 +2823,19 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if self.user_location:
             konum_result = await self._check_konum_sorgusu(user_input)
             if konum_result:
+                # Belirsiz eşleşme - doğrulama butonu gösterilecek
+                if isinstance(konum_result, dict) and konum_result.get("type") == "konum_dogrulama":
+                    return {
+                        "messages": [],
+                        "paket": {"konum_dogrulama": konum_result}
+                    }
+                # Yakın yerler listesi - inline butonlarla gösterilecek
+                if isinstance(konum_result, dict) and konum_result.get("type") == "yakin_yerler_listesi":
+                    return {
+                        "messages": [],
+                        "paket": {"yakin_yerler": konum_result}
+                    }
+                # Normal sonuç (string)
                 return {
                     "messages": [
                         {"role": "system", "content": "Sen bir konum asistanısın."},
@@ -2943,31 +2934,33 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
     def set_location(self, lat: float, lon: float, adres: str = None):
         """Kullanıcı konumunu kaydet"""
         self.user_location = (lat, lon)
-        self.user_location_adres = adres
-        print(f"📍 Konum kaydedildi: {lat:.4f}, {lon:.4f}")
-        if adres:
-            print(f"   Adres: {adres}")
 
-    async def prepare_konum_alindi(self, lat: float, lon: float, adres: str) -> Dict[str, Any]:
-        """Konum alındığında LLM için prompt hazırla"""
-        self.set_location(lat, lon, adres)
-
-        # Adresi parse et (sondan sayma - format değişkenliğine dayanıklı)
-        kisa_konum = ""
-        detayli_adres = ""
+        # Adresi parse et (TEK SEFER)
+        self.konum_adres = ""
         if adres:
             parcalar = [p.strip() for p in adres.split(",")]
             if len(parcalar) >= 5:
-                ilce = parcalar[-5]  # Sondan 5. = ilçe
-                il = parcalar[-4]    # Sondan 4. = il
-                kisa_konum = f"{ilce}, {il}"
-                # Detaylı adres (mahalle + cadde varsa)
+                ilce = parcalar[-5]
+                il = parcalar[-4]
                 if len(parcalar) >= 7:
-                    detayli_adres = f"{parcalar[1]}, {parcalar[0]}"  # Mahalle, Cadde
+                    cadde = parcalar[-7]
+                    mahalle = parcalar[-6]
+                    self.konum_adres = f"{cadde}, {mahalle}, {ilce}, {il}"
                 elif len(parcalar) >= 6:
-                    detayli_adres = parcalar[0]  # Sadece ilk parça
+                    mahalle = parcalar[-6]
+                    self.konum_adres = f"{mahalle}, {ilce}, {il}"
+                else:
+                    self.konum_adres = f"{ilce}, {il}"
             else:
-                kisa_konum = adres[:50]
+                self.konum_adres = adres[:50]
+
+        print(f"📍 Konum kaydedildi: {lat:.4f}, {lon:.4f}")
+        if self.konum_adres:
+            print(f"   Adres: {self.konum_adres}")
+
+    async def prepare_konum_alindi(self, lat: float, lon: float, adres: str) -> Dict[str, Any]:
+        """Konum alındığında LLM için prompt hazırla"""
+        self.set_location(lat, lon, adres)  # konum_adres burada oluşturuldu
 
         # Kullanıcı adını al
         kullanici_adi = ""
@@ -2978,19 +2971,17 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         system_content = f"""{self.SYSTEM_PROMPT}
 Kullanıcı adı: {kullanici_adi}
 📍 KONUM BİLGİSİ (SİSTEM TARAFINDAN ÇÖZÜMLENDI - KESİN BİLGİ):
-- Konum: {kisa_konum}
-- Tam adres: {adres}
+- Konum: {self.konum_adres}
 
 ⚠️ ÖNEMLİ TALİMATLAR:
 - Ciddi ve direkt bilgi ver
 - Bu adres GPS'ten otomatik çözümlendi, %100 doğru
 - Bu konumu sen biliyorsun, kendi bilgin gibi kesin ve emin sun
-- İlk satır: "{kisa_konum}'dasın."
-- İkinci satır: "Adres: {detayli_adres}" (varsa)
+- "{self.konum_adres}'dasın." yaz, sonra kısaca ne istediğini sor
 - Onay sorma, tereddüt gösterme
-- Sonra kısaca ne istediğini sor"""
+"""
 
-        user_content = f"[Kullanıcı GPS konumunu paylaştı → Sistem çözümledi: {kisa_konum}]"
+        user_content = f"[Kullanıcı GPS konumunu paylaştı → Sistem çözümledi: {self.konum_adres}]"
 
         messages = [
             {"role": "system", "content": system_content},
@@ -3057,10 +3048,16 @@ Kullanıcı adı: {kullanici_adi}
                         print(f"📍 Yakın yer sorgusu (kesin): '{word}' → '{best_match}' (skor: {best_score:.2f})")
                         return await self._get_yakin_yerler(lat, lon, best_match)
 
-                    # Belirsiz eşleşme (0.6 <= skor < 0.85) → doğrulama sor
+                    # Belirsiz eşleşme (0.6 <= skor < 0.85) → doğrulama sor (inline buton ile)
                     elif best_score >= 0.6 and best_match:
                         print(f"📍 Belirsiz eşleşme: '{word}' → '{best_match}' (skor: {best_score:.2f})")
-                        return f"🤔 '{word}' derken '{best_match}' mi demek istedin?\n\nEvetse '{best_match}' yaz."
+                        # Özel format: telegram_bot.py inline keyboard gönderecek
+                        return {
+                            "type": "konum_dogrulama",
+                            "yazilan": word,
+                            "kategori": best_match,
+                            "mesaj": f"🤔 '{word}' derken '{best_match}' mi demek istedin?"
+                        }
 
         # Exact match (fuzzy'den kaçanlar için)
         for keyword in kategori_keywords:
@@ -3162,14 +3159,13 @@ Kullanıcı adı: {kullanici_adi}
             # Sonuçları kaydet (konum gönderme için)
             self.son_yakin_yerler = yerler
 
-            # Format
-            result = f"{emoji} En Yakın {kategori.title()}lar:\n{'─' * 28}\n\n"
-            for i, yer in enumerate(yerler, 1):
-                result += f"{i}. {yer['ad']} - {yer['mesafe']}m\n"
-
-            result += f"\n💡 Konum göndermek için numara yaz (örn: 1)"
-
-            return result
+            # Inline butonlu format döndür
+            return {
+                "type": "yakin_yerler_listesi",
+                "kategori": kategori,
+                "emoji": emoji,
+                "yerler": yerler
+            }
 
         except Exception as e:
             print(f"❌ Overpass API hatası: {e}")
