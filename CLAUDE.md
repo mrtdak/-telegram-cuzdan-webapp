@@ -127,7 +127,6 @@ GPS-based location services integrated with Telegram location sharing.
 "yakında eczane var mı?" → Nearby places (OpenStreetMap Overpass API)
 "1 numaranın konumunu gönder" → Telegram location message
 "1" veya "2" (sadece sayı) → Listeden konum gönder
-"Serdivan" (LLM sorduktan sonra) → Nominatim'de arayıp konum gönder
 ```
 
 **Nearby Places Categories:**
@@ -139,11 +138,8 @@ GPS-based location services integrated with Telegram location sharing.
 - hastane/acil (🏥)
 - cami/mescit (🕌)
 - market/süpermarket (🛒)
-- avm/alışveriş merkezi (🏬)
 
 **Fuzzy Matching:** Yazım hataları otomatik düzeltilir (örn: "ezhane" → "eczane", "benznilik" → "benzinlik")
-
-**LLM Context Location:** LLM bir yer önerip "hangisini istersin?" diye sorduğunda, kullanıcı yer adını yazınca Nominatim'de aranıp konum gönderilir.
 
 **Key Methods in `hafiza_asistani.py`:**
 - `set_location(lat, lon, adres)` - Store user location
@@ -151,9 +147,8 @@ GPS-based location services integrated with Telegram location sharing.
 - `_check_konum_sorgusu()` - Pattern matching for location queries
 - `_get_yakin_yerler()` - OpenStreetMap nearby search
 - `get_yakin_yer_konumu()` - Get coordinates for Telegram location message
-- `_search_location_by_name()` - Search location by name via Nominatim (context-aware)
 
-**Data stored:** `self.user_location`, `self.user_location_adres`, `self.son_yakin_yerler`, `self.son_llm_cevabi`
+**Data stored:** `self.user_location`, `self.user_location_adres`, `self.son_yakin_yerler`
 
 ## Turkish Language Handling
 

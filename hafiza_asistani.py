@@ -931,7 +931,6 @@ class HafizaAsistani:
         self.user_location: Optional[Tuple[float, float]] = None  # (lat, lon)
         self.user_location_adres: Optional[str] = None  # Çözümlenmiş adres (Serdivan, Sakarya vs.)
         self.son_yakin_yerler: List[Dict] = []  # Son yakın yer arama sonuçları
-        self.son_llm_cevabi: str = ""  # Son LLM cevabı (konum bağlamı için)
         print("✅ Konum Hizmetleri aktif")
 
         # Hesaplama Değişkenleri - Devre dışı (chat history yeterli)
@@ -2623,25 +2622,35 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         # 📍 Konum bilgisini ekle
         if self.user_location and self.user_location_adres:
+            lat, lon = self.user_location
             adres = self.user_location_adres
 
-            # Adresi parse et - Yeni format: Cadde, Mahalle, İlçe, İl, Türkiye
+            # Adresi parse et (sondan sayma)
             parcalar = [p.strip() for p in adres.split(",")]
-            # Türkiye'yi çıkar
-            if parcalar and parcalar[-1].lower() == "türkiye":
-                parcalar = parcalar[:-1]
+            kisa_konum = ""
+            detayli_adres = ""
 
-            # Kalan parçaları birleştir
-            kisa_konum = ", ".join(parcalar) if parcalar else adres[:50]
+            if len(parcalar) >= 5:
+                ilce = parcalar[-5]
+                il = parcalar[-4]
+                kisa_konum = f"{ilce}, {il}"
+                if len(parcalar) >= 7:
+                    detayli_adres = f"{parcalar[1]}, {parcalar[0]}"
+                elif len(parcalar) >= 6:
+                    detayli_adres = parcalar[0]
+            else:
+                kisa_konum = adres[:50]
 
             user_info += f"""📍 KONUM BİLGİSİ (SİSTEM TARAFINDAN ÇÖZÜMLENDI - KESİN BİLGİ):
 - Konum: {kisa_konum}
+- Tam adres: {adres}
 
 ⚠️ ÖNEMLİ TALİMATLAR:
 - Ciddi ve direkt bilgi ver
 - Bu adres GPS'ten otomatik çözümlendi, %100 doğru
 - Bu konumu sen biliyorsun, kendi bilgin gibi kesin ve emin sun
-- Tek satır yaz: "{kisa_konum}'dasın."
+- İlk satır: "{kisa_konum}'dasın."
+- İkinci satır: "Adres: {detayli_adres}" (varsa)
 - Onay sorma, tereddüt gösterme
 - Sonra kısaca ne istediğini sor
 """
@@ -2853,17 +2862,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     "paket": {"send_location": konum_gonder}
                 }
 
-            # 📍 KONUM GÖNDERME - Yer adı ile arama (LLM'in bahsettiği yerler için)
-            # Kısa mesajlarda (1-4 kelime) yer adı araması yap
-            kelime_sayisi = len(user_input.strip().split())
-            if 1 <= kelime_sayisi <= 4:
-                konum_gonder = await self._search_location_by_name(user_input)
-                if konum_gonder:
-                    return {
-                        "messages": [],
-                        "paket": {"send_location": konum_gonder}
-                    }
-
         # 1. Paket hazırla (karar, tool, bağlam)
         paket = await self.hazirla_ve_prompt_olustur(user_input, chat_history)
 
@@ -2954,17 +2952,20 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         """Konum alındığında LLM için prompt hazırla"""
         self.set_location(lat, lon, adres)
 
-        # Adresi parse et - Yeni format: Cadde, Mahalle, İlçe, İl, Türkiye
+        # Adresi parse et (sondan sayma - format değişkenliğine dayanıklı)
         kisa_konum = ""
+        detayli_adres = ""
         if adres:
             parcalar = [p.strip() for p in adres.split(",")]
-            # Türkiye'yi çıkar
-            if parcalar and parcalar[-1].lower() == "türkiye":
-                parcalar = parcalar[:-1]
-
-            # Kalan parçaları birleştir (Cadde, Mahalle, İlçe, İl)
-            if parcalar:
-                kisa_konum = ", ".join(parcalar)
+            if len(parcalar) >= 5:
+                ilce = parcalar[-5]  # Sondan 5. = ilçe
+                il = parcalar[-4]    # Sondan 4. = il
+                kisa_konum = f"{ilce}, {il}"
+                # Detaylı adres (mahalle + cadde varsa)
+                if len(parcalar) >= 7:
+                    detayli_adres = f"{parcalar[1]}, {parcalar[0]}"  # Mahalle, Cadde
+                elif len(parcalar) >= 6:
+                    detayli_adres = parcalar[0]  # Sadece ilk parça
             else:
                 kisa_konum = adres[:50]
 
@@ -2978,12 +2979,14 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 Kullanıcı adı: {kullanici_adi}
 📍 KONUM BİLGİSİ (SİSTEM TARAFINDAN ÇÖZÜMLENDI - KESİN BİLGİ):
 - Konum: {kisa_konum}
+- Tam adres: {adres}
 
 ⚠️ ÖNEMLİ TALİMATLAR:
 - Ciddi ve direkt bilgi ver
 - Bu adres GPS'ten otomatik çözümlendi, %100 doğru
 - Bu konumu sen biliyorsun, kendi bilgin gibi kesin ve emin sun
-- Tek satır yaz: "{kisa_konum}'dasın."
+- İlk satır: "{kisa_konum}'dasın."
+- İkinci satır: "Adres: {detayli_adres}" (varsa)
 - Onay sorma, tereddüt gösterme
 - Sonra kısaca ne istediğini sor"""
 
@@ -3029,8 +3032,6 @@ Kullanıcı adı: {kullanici_adi}
             "süpermarket": ("supermarket", "🛒"),
             "cami": ("place_of_worship", "🕌"),
             "mescit": ("place_of_worship", "🕌"),
-            "avm": ("mall", "🏬"),
-            "alışveriş merkezi": ("mall", "🏬"),
         }
         kategori_keywords = list(kategori_map.keys())
 
@@ -3072,8 +3073,6 @@ Kullanıcı adı: {kullanici_adi}
             "süpermarket": ("supermarket", "🛒"),
             "cami": ("place_of_worship", "🕌"),
             "mescit": ("place_of_worship", "🕌"),
-            "avm": ("mall", "🏬"),
-            "alışveriş merkezi": ("mall", "🏬"),
         }
 
         if kategori not in kategori_map:
@@ -3204,110 +3203,12 @@ Kullanıcı adı: {kullanici_adi}
             }
         return None
 
-    async def _search_location_by_name(self, query: str) -> Optional[Dict]:
-        """
-        Kullanıcının yazdığı yer adını Nominatim'de ara.
-        LLM bir yer söylediğinde, kullanıcı o ismi yazınca konum gönderebilmek için.
-
-        BAĞLAM KONTROLÜ: Sadece son LLM cevabında geçen yer adları için arama yapar.
-        """
-        if not self.user_location or not query:
-            return None
-
-        # Çok kısa veya çok uzun sorgular için arama yapma
-        query = query.strip()
-        if len(query) < 2 or len(query) > 50:
-            return None
-
-        # Sayı ise arama yapma (numara kontrolü başka yerde)
-        if query.isdigit():
-            return None
-
-        # ⭐ BAĞLAM KONTROLÜ: LLM konum ile ilgili soru sormuş mu?
-        if not self.son_llm_cevabi:
-            return None
-
-        cevap_lower = self.son_llm_cevabi.lower()
-
-        # LLM konum sorusu sormuş mu?
-        konum_sorulari = [
-            "hangisini",
-            "hangisinin konumu",
-            "konumunu göndermemi",
-            "konum göndermemi",
-            "nereye gitmek",
-            "hangisine gitmek",
-            "hangisini tercih",
-            "hangisini istersin",
-            "konumunu ister"
-        ]
-        konum_baglami = any(soru in cevap_lower for soru in konum_sorulari)
-
-        if not konum_baglami:
-            return None
-
-        print(f"📍 Konum bağlamı tespit edildi, '{query}' aranıyor...")
-
-        # Şehir bilgisini al (adres varsa)
-        sehir = ""
-        if self.user_location_adres:
-            parcalar = [p.strip() for p in self.user_location_adres.split(",")]
-            # İl genelde sondan 2. veya 3. parça (Türkiye'den önce)
-            if len(parcalar) >= 2:
-                for p in parcalar[-3:-1]:
-                    if p.lower() not in ["türkiye", "turkey"]:
-                        sehir = p
-                        break
-
-        # Nominatim'de ara
-        try:
-            import aiohttp
-
-            # Arama sorgusu: "yer adı, şehir"
-            search_query = f"{query}, {sehir}" if sehir else query
-
-            url = "https://nominatim.openstreetmap.org/search"
-            params = {
-                "q": search_query,
-                "format": "json",
-                "limit": 1,
-                "accept-language": "tr"
-            }
-            headers = {"User-Agent": "PersonalAI-TelegramBot/1.0"}
-
-            timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, params=params, headers=headers) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data and len(data) > 0:
-                            result = data[0]
-                            lat = float(result["lat"])
-                            lon = float(result["lon"])
-                            ad = result.get("display_name", query).split(",")[0]
-
-                            print(f"📍 Nominatim buldu: {ad} ({lat}, {lon})")
-
-                            return {
-                                "lat": lat,
-                                "lon": lon,
-                                "ad": ad,
-                                "mesafe": None  # Mesafe bilinmiyor
-                            }
-        except Exception as e:
-            print(f"📍 Nominatim arama hatası: {e}")
-
-        return None
-
     def save(self, user_input: str, response: str, chat_history: List[Dict] = None):
         """
         Cevabı hafızaya kaydet
 
         Akış: PersonalAI cevap verdi → HafizaAsistani.save() → hafızaya kaydet
         """
-        # Son LLM cevabını kaydet (konum bağlamı için)
-        self.son_llm_cevabi = response
-
         # Hata mesajlarını kaydetme (Telegram'a gider ama history'e eklenmedi)
         if response.startswith("[HATA]"):
             print("   ⚠️ Hata mesajı - history'e eklenmedi")
