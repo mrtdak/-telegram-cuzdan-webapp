@@ -1806,11 +1806,11 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 - Kullanıcının cevabını önceki cevabınla birlikte değerlendir
 
 🔧 KONUM ARAÇLARI:
-Kullanıcı konum paylaşınca yakın yer arayabilirsin (eczane, AVM, benzinlik vs. - 2km yarıçap)
+Kullanıcı konum paylaşınca yakın yer arayabilirsin (eczane, AVM, benzinlik vs. - 10km yarıçap)
 - Önceki mesajlarda "💊 Yakınındaki..." veya "❌ ... bulunamadı/başarısız" görürsen → BU SENİN ARAÇ SONUCUN
-- "bulunamadı" = 2km içinde o yer türü yok (OpenStreetMap verisinde kayıt yok)
+- "bulunamadı" = 10km içinde o yer türü yok (OpenStreetMap verisinde kayıt yok)
 - "başarısız" = Arama yapılamadı (teknik sorun)
-- Kullanıcı "noldu?" derse açıkla: "2km çevrede bulunamadı, daha uzakta olabilir" veya "arama başarısız oldu"
+- Kullanıcı "noldu?" derse açıkla: "10km çevrede bulunamadı, daha uzakta olabilir" veya "arama başarısız oldu"
 
 """
 
@@ -3107,7 +3107,7 @@ Kullanıcı adı: {kullanici_adi}
 
         # Overpass API sorgusu
         overpass_url = "https://overpass-api.de/api/interpreter"
-        radius = 2000  # 2km
+        radius = 10000  # 10km
 
         if osm_tag == "place_of_worship":
             query = f"""
@@ -3138,7 +3138,7 @@ Kullanıcı adı: {kullanici_adi}
 
             elements = data.get("elements", [])
             if not elements:
-                return f"📍 {radius}m içinde {kategori} bulunamadı."
+                return f"📍 {radius//1000}km içinde {kategori} bulunamadı."
 
             # Mesafe hesapla ve sırala
             import math
