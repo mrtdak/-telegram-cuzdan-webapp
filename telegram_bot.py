@@ -807,6 +807,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 asistan.save(user_input, mesaj, [])
                 return
 
+            # 📝 NOTLAR LİSTESİ - Inline butonlarla göster
+            if paket.get("notlar_listesi"):
+                data = paket["notlar_listesi"]
+                baslik = data["baslik"]
+                notlar = data["notlar"]
+
+                # Status mesajını sil
+                try:
+                    await context.bot.delete_message(chat_id, status.message_id)
+                except:
+                    pass
+
+                # Mesaj oluştur
+                mesaj = f"{baslik}\n\n"
+                buttons = []
+                for n in notlar:
+                    gun = n.get('gun', '')
+                    gun_str = f" {gun}" if gun else ""
+                    mesaj += f"#{n['id']} [{n['tarih']}{gun_str} - {n['saat']}]\n"
+                    mesaj += f"   {n['icerik']}\n\n"
+                    # Silme butonu
+                    buttons.append([InlineKeyboardButton(
+                        f"🗑️ #{n['id']} sil",
+                        callback_data=f"not_sil:{n['id']}"
+                    )])
+
+                reply_markup = InlineKeyboardMarkup(buttons)
+                await update.message.reply_text(mesaj.strip(), reply_markup=reply_markup)
+                return
+
             # 📝 Direct response kontrolü (not sistemi, konum araçları vs.)
             if paket.get("direct_response"):
                 response = paket["direct_response"]
@@ -944,6 +974,24 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             text=f"📍 {yer['ad']}\n📏 {yer['mesafe']}m uzaklıkta"
         )
+
+    # 📝 NOT SİL callback'i: not_sil:id
+    elif data.startswith("not_sil:"):
+        not_id = int(data.split(":")[1])
+
+        # Kullanıcıyı kontrol et
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce /start komutunu kullan.")
+            return
+
+        user = user_instances[user_id]
+        asistan = user["hafiza"]
+
+        # Notu sil
+        result = asistan.not_manager.not_sil(not_id)
+
+        # Mesajı güncelle
+        await query.edit_message_text(result)
 
 
 # === MAIN ===

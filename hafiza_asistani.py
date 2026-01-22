@@ -94,8 +94,8 @@ class NotManager:
 
         return f"✅ Not kaydedildi:\n\n#{yeni_not['id']} [{yeni_not['tarih']} {yeni_not['gun']} - {yeni_not['saat']}]\n   {icerik}"
 
-    def notlari_getir(self, arama: str = None) -> str:
-        """Notları getir, opsiyonel arama"""
+    def notlari_getir(self, arama: str = None):
+        """Notları getir - inline butonlu format döndürür"""
         if not self.notes:
             return "📝 Henüz hiç not almamışsın."
 
@@ -109,16 +109,14 @@ class NotManager:
             baslik = f"🔍 '{arama}' ile ilgili {len(notlar)} not:"
         else:
             notlar = self.notes[-10:]  # Son 10 not
-            baslik = f"📝 Notların ({len(self.notes)} toplam, son {len(notlar)} gösteriliyor):"
+            baslik = f"📝 Notların ({len(self.notes)} toplam):"
 
-        result = baslik + "\n\n"
-        for n in notlar:
-            gun = n.get('gun', '')
-            gun_str = f" {gun}" if gun else ""
-            result += f"#{n['id']} [{n['tarih']}{gun_str} - {n['saat']}]\n"
-            result += f"   {n['icerik']}\n\n"
-
-        return result.strip()
+        # Inline butonlu format döndür
+        return {
+            "type": "notlar_listesi",
+            "baslik": baslik,
+            "notlar": notlar
+        }
 
     def not_sil(self, not_id: int) -> str:
         """ID'ye göre not sil"""
@@ -2822,7 +2820,13 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         # 📝 NOT SİSTEMİ - Tetikleyici kontrolü
         not_result = self._check_not_tetikleyici(user_input)
         if not_result:
-            # Not komutu algılandı, direkt cevap dön
+            # Notlar listesi - inline butonlarla gösterilecek
+            if isinstance(not_result, dict) and not_result.get("type") == "notlar_listesi":
+                return {
+                    "messages": [],
+                    "paket": {"notlar_listesi": not_result}
+                }
+            # Normal sonuç (string) - direkt cevap dön
             return {
                 "messages": [
                     {"role": "system", "content": "Sen bir not asistanısın."},
@@ -2942,11 +2946,13 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 print("📋 Notları getir tetikleyici algılandı")
                 return self.not_manager.notlari_getir()
 
-        # 🗑️ NOT SİL
+        # 🗑️ NOT SİL - esnek pattern'ler
         sil_patterns = [
-            r'^(?:not\s+)?#?(\d+)\s*(?:numaral[ıi])?\s*not[ıi]?\s*sil',
-            r'^not\s+sil\s+#?(\d+)',
-            r'^#?(\d+)\s+not[ıi]?\s*sil',
+            r'^not\s+sil\s+#?(\d+)',           # "not sil 1", "not sil #1"
+            r'^#(\d+)\s*(?:not[ıiu]?)?\s*sil',  # "#1 sil", "#1 notu sil"
+            r'^(\d+)\.?\s*(?:numaral[ıi])?\s*(?:not[ıi]?)?\s*sil',  # "1 sil", "1. notu sil"
+            r'^(\d+).*(?:not|notu).*sil',      # "1 notu sil" (esnek)
+            r'sil.*#?(\d+)',                   # "sil 1", "sil #1"
         ]
 
         for pattern in sil_patterns:
