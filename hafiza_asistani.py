@@ -1998,7 +1998,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             elif enerji == "kapanıyor":
                 enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
             else:
-                enerji_talimat = "⚡ CANLI: Samimi sohbet tonu"
+                enerji_talimat = "Samimi sohbet tonu"
 
             # Espri modunda özel ton
             if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
@@ -2687,7 +2687,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             elif enerji == "kapanıyor":
                 enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
             else:
-                enerji_talimat = "⚡ CANLI: Samimi sohbet tonu"
+                enerji_talimat = "Samimi sohbet tonu"
 
             # Espri modunda özel ton
             if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
@@ -2891,7 +2891,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         """
         user_lower = user_input.lower().strip()
 
-        # 📝 NOT AL / TUT / EKLE
+        # 📝 NOT AL / TUT / EKLE (içerikli)
         not_patterns = [
             (r'^not\s+al[\s:,]+(.+)$', 'not_al'),
             (r'^not\s+tut[\s:,]+(.+)$', 'not_al'),
@@ -2908,13 +2908,20 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                     print(f"📝 Not tetikleyici algılandı: {action} -> '{icerik[:30]}...'")
                     return self.not_manager.not_al(icerik)
 
+        # 📝 NOT AL TEK BAŞINA - içerik olmadan
+        if re.match(r'^not\s+(al|tut|ekle)\s*[?!.,]*$', user_lower, re.IGNORECASE):
+            print("📝 Not al (tek başına) algılandı - soru soruluyor")
+            return "📝 Tamam, ne not edeyim?"
+
         # 📋 NOTLARIMI GETİR
         notlar_patterns = [
             r'^notlar[ıi]m[ıi]?\s*(ne|neler|nedir)?[\s?]*$',
             r'^notlar[ıi]ma?\s+bak',
             r'^notlar[ıi]m[ıi]?\s+göster',
             r'^notlar[ıi]m[ıi]?\s+listele',
-            r'^not(?:lar)?[ıi]m(?:da)?\s+ne\s+var',
+            r'^not(?:lar)?[ıi]m(?:da)?\s+ne(?:ler)?\s+va[er]',  # "neler var/vae" dahil
+            r'^not(?:lar)?[ıi]m(?:da)?\s+ne(?:ler)?\s+vard[ıi]',  # "neler vardı"
+            r'^notlar[ıi]m(?:da)?$',  # sadece "notlarımda"
         ]
 
         for pattern in notlar_patterns:
@@ -3036,43 +3043,51 @@ Kullanıcı adı: {kullanici_adi}
             "mescit": ("place_of_worship", "🕌"),
             "avm": ("mall", "🏬"),
             "alışveriş merkezi": ("mall", "🏬"),
+            "otopark": ("parking", "🅿️"),
+            "park yeri": ("parking", "🅿️"),
+            "otel": ("hotel", "🏨"),
+            "okul": ("school", "🏫"),
+            "lise": ("school", "🏫"),
+            "üniversite": ("university", "🎓"),
+            "istasyon": ("station", "🚉"),
+            "metro": ("station", "🚉"),
+            "tren": ("station", "🚉"),
+            "bakkal": ("convenience", "🏪"),
         }
         kategori_keywords = list(kategori_map.keys())
 
-        # Fuzzy matching ile kategori bul
-        if has_konum_signal:
-            from difflib import SequenceMatcher
-            words = re.findall(r'\b\w+\b', user_lower)
-            for word in words:
-                if len(word) >= 3:
-                    # En iyi eşleşmeyi ve skorunu bul
-                    best_match = None
-                    best_score = 0
-                    for keyword in kategori_keywords:
-                        score = SequenceMatcher(None, word, keyword).ratio()
-                        if score > best_score:
-                            best_score = score
-                            best_match = keyword
+        # Fuzzy matching ile kategori bul (yazım hatası toleranslı)
+        from difflib import SequenceMatcher
+        words = re.findall(r'\b\w+\b', user_lower)
+        for word in words:
+            if len(word) >= 4:  # Minimum 4 karakter
+                # En iyi eşleşmeyi ve skorunu bul
+                best_match = None
+                best_score = 0
+                for keyword in kategori_keywords:
+                    score = SequenceMatcher(None, word, keyword).ratio()
+                    if score > best_score:
+                        best_score = score
+                        best_match = keyword
 
-                    # Tam eşleşme (skor >= 0.85) → direkt işlem
-                    if best_score >= 0.85 and best_match:
-                        print(f"📍 Yakın yer sorgusu (kesin): '{word}' → '{best_match}' (skor: {best_score:.2f})")
-                        return await self._get_yakin_yerler(lat, lon, best_match)
+                # Yüksek eşleşme (skor >= 0.90) → direkt arama
+                if best_score >= 0.90 and best_match:
+                    print(f"📍 Yakın yer sorgusu (kesin): '{word}' → '{best_match}' (skor: {best_score:.2f})")
+                    return await self._get_yakin_yerler(lat, lon, best_match)
 
-                    # Belirsiz eşleşme (0.6 <= skor < 0.85) → doğrulama sor (inline buton ile)
-                    elif best_score >= 0.6 and best_match:
-                        print(f"📍 Belirsiz eşleşme: '{word}' → '{best_match}' (skor: {best_score:.2f})")
-                        # Özel format: telegram_bot.py inline keyboard gönderecek
-                        return {
-                            "type": "konum_dogrulama",
-                            "yazilan": word,
-                            "kategori": best_match,
-                            "mesaj": f"🤔 '{word}' derken '{best_match}' mi demek istedin?"
-                        }
+                # Orta eşleşme (0.75 <= skor < 0.90) → doğrulama sor
+                elif best_score >= 0.75 and best_match:
+                    print(f"📍 Belirsiz eşleşme: '{word}' → '{best_match}' (skor: {best_score:.2f})")
+                    return {
+                        "type": "konum_dogrulama",
+                        "yazilan": word,
+                        "kategori": best_match,
+                        "mesaj": f"🤔 '{word}' derken '{best_match}' mi demek istedin?"
+                    }
 
-        # Exact match (fuzzy'den kaçanlar için)
+        # Exact match (tam kelime eşleşmesi)
         for keyword in kategori_keywords:
-            if keyword in user_lower and has_konum_signal:
+            if keyword in user_lower:
                 print(f"📍 Yakın yer sorgusu (exact): {keyword}")
                 return await self._get_yakin_yerler(lat, lon, keyword)
 
@@ -3098,6 +3113,16 @@ Kullanıcı adı: {kullanici_adi}
             "mescit": ("place_of_worship", "🕌"),
             "avm": ("mall", "🏬"),
             "alışveriş merkezi": ("mall", "🏬"),
+            "otopark": ("parking", "🅿️"),
+            "park yeri": ("parking", "🅿️"),
+            "otel": ("hotel", "🏨"),
+            "okul": ("school", "🏫"),
+            "lise": ("school", "🏫"),
+            "üniversite": ("university", "🎓"),
+            "istasyon": ("station", "🚉"),
+            "metro": ("station", "🚉"),
+            "tren": ("station", "🚉"),
+            "bakkal": ("convenience", "🏪"),
         }
 
         if kategori not in kategori_map:
