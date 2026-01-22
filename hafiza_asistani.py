@@ -1805,6 +1805,13 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 🔗 BAĞLAM:
 - Kullanıcının cevabını önceki cevabınla birlikte değerlendir
 
+🔧 KONUM ARAÇLARI:
+Kullanıcı konum paylaşınca yakın yer arayabilirsin (eczane, AVM, benzinlik vs. - 2km yarıçap)
+- Önceki mesajlarda "💊 Yakınındaki..." veya "❌ ... bulunamadı/başarısız" görürsen → BU SENİN ARAÇ SONUCUN
+- "bulunamadı" = 2km içinde o yer türü yok (OpenStreetMap verisinde kayıt yok)
+- "başarısız" = Arama yapılamadı (teknik sorun)
+- Kullanıcı "noldu?" derse açıkla: "2km çevrede bulunamadı, daha uzakta olabilir" veya "arama başarısız oldu"
+
 """
 
     # Geriye uyumluluk için (eski kod hala role parametresi kullanıyorsa)
@@ -2639,6 +2646,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             if calc_section:
                 context_parts.insert(0, calc_section)
 
+        # 📍 Konum arama sonucu varsa context'e ekle
+        konum_context = paket.get('konum_context')
+        if konum_context:
+            context_parts.append(f"[📍 KONUM ARAMA SONUCU]:\n{konum_context}\n(Bu sonucu doğal şekilde kullanıcıya aktar)")
+
         # Bağlam bilgisi
         context_info = ""
         if context_parts:
@@ -2820,30 +2832,25 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             }
 
         # 📍 KONUM SİSTEMİ - Konum sorgusu kontrolü
+        # Konum sonuçları LLM'e context olarak gider, LLM doğal cevap verir
+        konum_context = None
         if self.user_location:
             konum_result = await self._check_konum_sorgusu(user_input)
             if konum_result:
-                # Belirsiz eşleşme - doğrulama butonu gösterilecek
+                # Belirsiz eşleşme - doğrulama butonu gösterilecek (UI gerekli)
                 if isinstance(konum_result, dict) and konum_result.get("type") == "konum_dogrulama":
                     return {
                         "messages": [],
                         "paket": {"konum_dogrulama": konum_result}
                     }
-                # Yakın yerler listesi - inline butonlarla gösterilecek
+                # Yakın yerler listesi - inline butonlarla gösterilecek (UI gerekli)
                 if isinstance(konum_result, dict) and konum_result.get("type") == "yakin_yerler_listesi":
                     return {
                         "messages": [],
                         "paket": {"yakin_yerler": konum_result}
                     }
-                # Normal sonuç (string)
-                return {
-                    "messages": [
-                        {"role": "system", "content": "Sen bir konum asistanısın."},
-                        {"role": "user", "content": user_input},
-                        {"role": "assistant", "content": konum_result}
-                    ],
-                    "paket": {"tool_used": "konum_hizmeti", "direct_response": konum_result}
-                }
+                # Normal sonuç (string) - LLM'e context olarak gönder
+                konum_context = konum_result
 
             # 📍 KONUM GÖNDERME - Numara ile yer seçimi
             konum_gonder = self._check_konum_gonder_istegi(user_input)
@@ -2855,6 +2862,10 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         # 1. Paket hazırla (karar, tool, bağlam)
         paket = await self.hazirla_ve_prompt_olustur(user_input, chat_history)
+
+        # 📍 Konum context varsa paket'e ekle (LLM görsün)
+        if konum_context:
+            paket["konum_context"] = konum_context
 
         # 2. Messages formatı oluştur
         messages = self._build_messages(user_input, paket, chat_history)
