@@ -468,13 +468,13 @@ class TurkishConversationIntelligence:
         if "heyecan" in durumlar:
             return "heyecan"
         elif "sikayet" in durumlar:
-            return "üzüntü"
+            return "şikayetçi/üzüntü"
         elif "sasirma" in durumlar:
             return "şaşkınlık"
         elif "tesekkur" in durumlar:
-            return "minnettarlık"
+            return "memnun"
         elif "olumsuz" in durumlar:
-            return "ret"
+            return "nötr"
         elif "merak" in durumlar:
             return "merak"
         elif "selamlasma" in durumlar:

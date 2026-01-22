@@ -36,11 +36,12 @@ class SystemConfig:
     # OpenRouter (Gemma 3 27B)
     OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
     OPENROUTER_MODEL = "google/gemma-3-27b-it"  # Gemma 3 27B
+    # OPENROUTER_MODEL = "meta-llama/llama-3.1-405b-instruct"  # Llama 3.1 405B (yedek)
 
     MODEL_NAME = OPENROUTER_MODEL if LLM_PROVIDER == "openrouter" else (TOGETHER_MODEL if LLM_PROVIDER == "together" else OLLAMA_MODEL)
 
     # Model Parametreleri (Gemma 3 27B)
-    TEMPERATURE = 0.7   # Sohbet/genel kullanım için
+    TEMPERATURE = 0.70  # Daha tutarlı cevaplar için
     TOP_P = 0.95
     TOP_K = 64          # Ollama için (Mistral kullanmaz)
     MAX_TOKENS = 4000

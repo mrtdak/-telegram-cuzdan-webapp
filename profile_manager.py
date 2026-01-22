@@ -142,7 +142,7 @@ class ProfileManager:
 
         name = self.get_name()
         if name:
-            parts.append(f"Kullanıcının adı: {name} (ismini nadiren kullan, her mesajda değil)")
+            parts.append(f"Kullanıcının adı: {name}")
 
         interests = self.get_interests()
         if interests:

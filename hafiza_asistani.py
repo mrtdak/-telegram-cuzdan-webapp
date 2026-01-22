@@ -29,6 +29,115 @@ from sohbet_zekasi import TurkishConversationIntelligence, BeklenenCevap, Sohbet
 # from calculation_context import CalculationContext  # Devre dışı - chat history yeterli
 
 
+# ============================================================
+# NOT YÖNETİCİSİ
+# ============================================================
+
+class NotManager:
+    """
+    Kullanıcının aldığı notları yöneten basit sistem.
+    Her kullanıcının notları ayrı dosyada tutulur.
+
+    Tetikleyiciler: "not al", "not tut", "not ekle"
+    """
+
+    def __init__(self, user_id: str = "default", base_dir: str = "user_data"):
+        self.user_id = user_id
+        self.notes_dir = os.path.join(base_dir, f"user_{user_id}", "notes")
+        self.notes_file = os.path.join(self.notes_dir, "notlar.json")
+
+        # Klasör yoksa oluştur
+        os.makedirs(self.notes_dir, exist_ok=True)
+
+        # Notları yükle
+        self.notes = self._load_notes()
+
+        # Onay bekleyen not
+        self.pending_note = None
+
+    def _load_notes(self) -> List[Dict]:
+        """Notları dosyadan yükle"""
+        if os.path.exists(self.notes_file):
+            try:
+                with open(self.notes_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except:
+                return []
+        return []
+
+    def _save_notes(self):
+        """Notları dosyaya kaydet"""
+        with open(self.notes_file, 'w', encoding='utf-8') as f:
+            json.dump(self.notes, f, ensure_ascii=False, indent=2)
+
+    def not_al(self, icerik: str) -> str:
+        """Yeni not kaydet (onay olmadan direkt kaydet)"""
+        if not icerik or len(icerik.strip()) < 2:
+            return "❌ Not içeriği boş olamaz."
+
+        now = datetime.now()
+        gun_isimleri = {
+            0: "Pazartesi", 1: "Salı", 2: "Çarşamba", 3: "Perşembe",
+            4: "Cuma", 5: "Cumartesi", 6: "Pazar"
+        }
+        yeni_not = {
+            "id": len(self.notes) + 1,
+            "icerik": icerik.strip(),
+            "tarih": now.strftime("%d.%m.%Y"),
+            "gun": gun_isimleri[now.weekday()],
+            "saat": now.strftime("%H:%M"),
+            "timestamp": now.isoformat()
+        }
+
+        self.notes.append(yeni_not)
+        self._save_notes()
+
+        return f"✅ Not kaydedildi (#{yeni_not['id']}): {icerik[:50]}{'...' if len(icerik) > 50 else ''}"
+
+    def notlari_getir(self, arama: str = None) -> str:
+        """Notları getir, opsiyonel arama"""
+        if not self.notes:
+            return "📝 Henüz hiç not almamışsın."
+
+        if arama:
+            # Arama yap
+            arama_lower = arama.lower()
+            bulunanlar = [n for n in self.notes if arama_lower in n['icerik'].lower()]
+            if not bulunanlar:
+                return f"🔍 '{arama}' ile ilgili not bulunamadı."
+            notlar = bulunanlar
+            baslik = f"🔍 '{arama}' ile ilgili {len(notlar)} not:"
+        else:
+            notlar = self.notes[-10:]  # Son 10 not
+            baslik = f"📝 Notların ({len(self.notes)} toplam, son {len(notlar)} gösteriliyor):"
+
+        result = baslik + "\n\n"
+        for n in notlar:
+            gun = n.get('gun', '')
+            gun_str = f" {gun}" if gun else ""
+            result += f"#{n['id']} [{n['tarih']}{gun_str} - {n['saat']}]\n"
+            result += f"   {n['icerik']}\n\n"
+
+        return result.strip()
+
+    def not_sil(self, not_id: int) -> str:
+        """ID'ye göre not sil"""
+        for i, n in enumerate(self.notes):
+            if n['id'] == not_id:
+                silinen = self.notes.pop(i)
+                self._save_notes()
+                return f"🗑️ Not #{not_id} silindi: {silinen['icerik'][:30]}..."
+        return f"❌ #{not_id} numaralı not bulunamadı."
+
+    def has_pending(self) -> bool:
+        """Bekleyen not var mı?"""
+        return self.pending_note is not None
+
+
+# ============================================================
+# YARDIMCI FONKSİYONLAR
+# ============================================================
+
 def get_current_datetime() -> Dict[str, str]:
     """Türkiye saati ile şu anki tarih ve saati getir"""
     try:
@@ -814,6 +923,16 @@ class HafizaAsistani:
         self.sohbet_zekasi = TurkishConversationIntelligence()
         self._son_sohbet_analizi = None  # Son analiz sonucunu sakla (prompt için)
 
+        # 📝 Not Yöneticisi
+        self.not_manager = NotManager(user_id=self.user_id, base_dir="user_data")
+        print(f"✅ Not Manager aktif ({len(self.not_manager.notes)} not)")
+
+        # 📍 Konum Bilgisi
+        self.user_location: Optional[Tuple[float, float]] = None  # (lat, lon)
+        self.user_location_adres: Optional[str] = None  # Çözümlenmiş adres (Serdivan, Sakarya vs.)
+        self.son_yakin_yerler: List[Dict] = []  # Son yakın yer arama sonuçları
+        print("✅ Konum Hizmetleri aktif")
+
         # Hesaplama Değişkenleri - Devre dışı (chat history yeterli)
         # self.calculation_context = CalculationContext()
         # print("✅ Calculation Context aktif!")
@@ -1059,7 +1178,7 @@ class HafizaAsistani:
             print(f"   📌 Geçmiş referansı tespit edildi")
             return True
 
-        # Minimum 30 karakter ve 4+ kelime olmalı
+        # Minimum 30 karakter (AŞMA!)ve 4+ kelime olmalı
         if len(user_input) > 30 and len(user_input.split()) >= 4 and self.topic_memory.index.get("categories"):
             return True
 
@@ -1312,7 +1431,12 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 return result or None
 
             if tool_name == "web_ara":
-                # LLM akıllı karar verdi, keyword kontrolü yok artık
+                # Keyword kontrolü - sadece kullanıcı açıkça isterse web araması yap
+                web_keywords = ["web", "araştır", "webe bak", "internete bak", "internete", "internetten"]
+                user_lower = user_input.lower()
+                if not any(kw in user_lower for kw in web_keywords):
+                    print(f"   ⏩ web_ara engellendi: Kullanıcı açıkça istemedi")
+                    return None
                 query = tool_param or user_input
                 print(f"   🌐 Web araması başlatılıyor: '{query}'")
                 raw_data = await web_ara(query)
@@ -1432,7 +1556,8 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 ⚠️ DİĞER KURALLAR:
 • Mesaj tek başına anlamsızsa GEÇMİŞ'e bak, bağlamı anla
 • needs_faiss: SADECE dini sorularda true
-• espri: Şaka/espri yapılıyorsa → question_type: "espri"
+• greeting: Selam/merhaba/naber gibi selamlama → question_type: "greeting" (espri DEĞİL!)
+• espri: SADECE açık şaka/komik söz/dalga geçme varsa → question_type: "espri"
 
 ---
 {history_section}MESAJ: {user_input}
@@ -1645,12 +1770,25 @@ JSON:
 
 
     # TEK BİRLEŞİK PROMPT - Full Friend Modu
-    SYSTEM_PROMPT = """Sen akıllı, profesyonel, olgun ve sıcakkanlı bir yapay zekasın. Arkadaşsın.
+    SYSTEM_PROMPT = """Sen akıllı, profesyonel, olgun ve sıcakkanlısın. Arkadaşsın.
 İnsanların şakacı yönleri de var - espri veya şaka yapıldığında sen de aynı tonda karşılık ver, ciddi açıklamaya geçme.
 
 - ✅ Her şeyi akıcı paragraflarla yaz. Liste gerekse bile cümle içinde sırala (birincisi şu, ikincisi bu gibi)
-- ⚠️ Hatalı/anlamsız kelime görürsen tahmin etme, sor: "X derken şunu mu demek istedin?"
-- Emoji kullanabilirsin (abartmadan)
+- ⚠️ Hatalı/anlamsız kelime görürsen tahmin etme, "X derken şunu mu demek istedin?" gibi sor
+- Emoji kullanabilirsin ama abartmamaya dikkat et
+
+🚫 YASAK İFADE TÜRLERİ (KESİNLİKLE KULLANMA):
+- Eklenti soru / onay sorusu: "değil mi?", "öyle değil mi?", "ha?", "di mi?"
+- Söylem belirleyicileri: "kim bilir?", "sence?", "ne dersin?", "nasıl yani?", "ilginç değil mi?"
+- Yapay ünlemler: "vay canına!", "vay be!", "hay Allah!", "aman!", "eyvah!"
+
+💬 SOHBET VE CEVAP KURALI:
+Gerçek sohbet karşılıklı ilgiden doğar, zorlamayla değil. Kullanıcının mesajına uygun uzunlukta ve tonda cevap ver.
+- Kullanıcı kısa cevap verirse → Sen de kısa cevap ver.
+- Kullanıcı bir şey sorarsa → Direkt cevap ver, gereksiz ekleme yapma.
+Sohbeti uzatmak için yapay sorular sorma. Bu samimiyet değil, zorlamadır. Her boşluğu doldurmaya çalışma.
+Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
+
 - ⚡ [🎯 SOHBET ZEKASI TALİMATI] varsa → MUTLAKA uygula
 
 🧠 DÜŞÜNCE SİSTEMİ:
@@ -1665,8 +1803,7 @@ JSON:
 - Sonuca varmadan önce zıttını da değerlendir, en doğru cevabı bulursun
 
 🔗 BAĞLAM:
-- Kullanıcının cevabını ÖNCEKİ SORUNLA birlikte değerlendir
-- Kısa cevaplar (tek kelime, "evet", "hayır") önceki konuşmaya cevaptır
+- Kullanıcının cevabını önceki cevabınla birlikte değerlendir
 
 """
 
@@ -1829,7 +1966,17 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         combined_sources = []
 
         # 🎯 SOHBET ZEKASI TALİMATI (PersonalAI bunu okuyacak)
-        if self._son_sohbet_analizi:
+        # 🚀 FIRLAMA MODU - Tüm sohbet zekası bypass!
+        if getattr(self, '_firlama_modu', False):
+            sohbet_talimati = """[🚀 FIRLAMA MODU AKTİF! - MUTLAKA UYGULA!]:
+• ENERJİK: Canlı, dinamik, hareketli ol - durgun değil!
+• ŞAKACI: Espri yap, eğlenceli ol, mizah kat - ama zeka kokan türden
+• ATARLI: Kendine güven, çekinme, cesur konuş - "bence" "galiba" yok!
+• REKABETÇİ: Rakip varsa geçmeye oyna, meydan oku, geri adım atma
+• COŞKULU: Heyecanını belli et, monoton konuşma - ama sahte coşku değil
+• SINIRSIZ: Karakter limiti yok, duruma göre kısa veya uzun yaz
+• YASAK: Sıkıcı, sakin, temkinli, çekingen cevaplar!"""
+        elif self._son_sohbet_analizi:
             analiz = self._son_sohbet_analizi
             min_uz, max_uz = self.sohbet_zekasi.cevap_uzunlugu_onerisi(analiz)
 
@@ -1844,7 +1991,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             elif enerji == "kapanıyor":
                 enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
             else:
-                enerji_talimat = "💬 NORMAL: Samimi sohbet tonu"
+                enerji_talimat = "⚡ CANLI: Samimi sohbet tonu"
 
             # Espri modunda özel ton
             if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
@@ -1852,8 +1999,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
             sohbet_talimati = f"""[🎯 SOHBET ZEKASI TALİMATI - MUTLAKA UYGULA!]:
 • Beklenen cevap tipi: {analiz.beklenen_cevap.value}
-• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)
-• {enerji_talimat}"""
+• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)• {enerji_talimat}"""
 
             if analiz.duygu:
                 sohbet_talimati += f"\n• Kullanıcı duygusu: {analiz.duygu}"
@@ -1883,11 +2029,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
             # Espri/şaka kontrolü
             if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
-                sohbet_talimati += "\n• 😄 ESPRİ MODU: Kanka gibi şakacı cevap ver! Ciddi açıklama YAPMA, kısa tut, eğlen."
+                sohbet_talimati += "\n• 😄 ESPRİ MODU: şakacı gibi cevap ver! Ciddi açıklama YAPMA, kısa tut, eğlen."
 
             # Örtük istek varsa ekle
             if analiz.ortuk_istek:
-                sohbet_talimati += f"\n• 🎯 ÖRTÜK İSTEK: {analiz.ortuk_istek}"
+                sohbet_talimati += f"\n• 🎯 ÖRTÜK İSTEK: {analiz.ortuk_istek} (ima da olabilir - mesajın altındaki anlamı da düşün)"
 
             combined_sources.append(sohbet_talimati)
 
@@ -1897,7 +2043,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if tool_result:
             if tool_name == "web_ara":
                 # Data already cleaned by _process_web_result
-                combined_sources.append(f"[🌐 WEB SONUCU - İnternet bilgisine göre... diye sun, sahiplenme!]:\n{tool_result}")
+                combined_sources.append(f"[🌐 WEB SONUCU]:\n{tool_result}")
             elif tool_name == "risale_ara":
                 if is_detail_followup:
                     combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - Doğrudan verme, kendi yorumunla açıkla!]:\n{tool_result}")
@@ -1984,7 +2130,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             dynamic_rules_str = "\n" + "\n".join([f"• {r}" for r in dynamic_rules])
 
         if (tool_name == "web_ara") and tool_result:
-            context_header = "Bağlam (WEB SONUCU - 'İnternet bilgisine göre...' diye sun):"
+            context_header = "Bağlam (WEB SONUCU):"
         elif is_detail_followup and tool_result:
             context_header = "Bağlam (Arka plan - kendi yorumunla açıkla):"
         elif tool_result:
@@ -2472,7 +2618,42 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if hasattr(self, 'profile_manager'):
             profile_context = self.profile_manager.get_prompt_context()
             if profile_context:
-                user_info = f"\n[👤 KULLANICI BİLGİSİ]:\n{profile_context}\n"
+                user_info = f"\n[👤 Kullanıcının bilgisi]:\n{profile_context}\n"
+
+        # 📍 Konum bilgisini ekle
+        if self.user_location and self.user_location_adres:
+            lat, lon = self.user_location
+            adres = self.user_location_adres
+
+            # Adresi parse et (sondan sayma)
+            parcalar = [p.strip() for p in adres.split(",")]
+            kisa_konum = ""
+            detayli_adres = ""
+
+            if len(parcalar) >= 5:
+                ilce = parcalar[-5]
+                il = parcalar[-4]
+                kisa_konum = f"{ilce}, {il}"
+                if len(parcalar) >= 7:
+                    detayli_adres = f"{parcalar[1]}, {parcalar[0]}"
+                elif len(parcalar) >= 6:
+                    detayli_adres = parcalar[0]
+            else:
+                kisa_konum = adres[:50]
+
+            user_info += f"""📍 KONUM BİLGİSİ (SİSTEM TARAFINDAN ÇÖZÜMLENDI - KESİN BİLGİ):
+- Konum: {kisa_konum}
+- Tam adres: {adres}
+
+⚠️ ÖNEMLİ TALİMATLAR:
+- Ciddi ve direkt bilgi ver
+- Bu adres GPS'ten otomatik çözümlendi, %100 doğru
+- Bu konumu sen biliyorsun, kendi bilgin gibi kesin ve emin sun
+- İlk satır: "{kisa_konum}'dasın."
+- İkinci satır: "Adres: {detayli_adres}" (varsa)
+- Onay sorma, tereddüt gösterme
+- Sonra kısaca ne istediğini sor
+"""
 
         # Hesaplama değişkenlerini ekle
         if hasattr(self, 'calculation_context'):
@@ -2487,7 +2668,21 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         # 🎯 SOHBET ZEKASI TALİMATI - _son_sohbet_analizi varsa ekle
         sohbet_talimati = ""
-        if hasattr(self, '_son_sohbet_analizi') and self._son_sohbet_analizi:
+
+        # 🚀 FIRLAMA MODU - Tüm sohbet zekası bypass!
+        if getattr(self, '_firlama_modu', False):
+            sohbet_talimati = """
+
+[🚀 FIRLAMA MODU AKTİF! - MUTLAKA UYGULA!]:
+• ENERJİK: Canlı, dinamik, hareketli ol - durgun değil!
+• ŞAKACI: Espri yap, eğlenceli ol, mizah kat - ama zeka kokan türden
+• ATARLI: Kendine güven, çekinme, cesur konuş - "bence" "galiba" yok!
+• REKABETÇİ: Rakip varsa geçmeye oyna, meydan oku, geri adım atma
+• COŞKULU: Heyecanını belli et, monoton konuşma - ama sahte coşku değil
+• SINIRSIZ: Karakter limiti yok, duruma göre kısa veya uzun yaz
+• YASAK: Sıkıcı, sakin, temkinli, çekingen cevaplar!"""
+
+        elif hasattr(self, '_son_sohbet_analizi') and self._son_sohbet_analizi:
             analiz = self._son_sohbet_analizi
             min_uz, max_uz = self.sohbet_zekasi.cevap_uzunlugu_onerisi(analiz)
 
@@ -2502,7 +2697,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             elif enerji == "kapanıyor":
                 enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
             else:
-                enerji_talimat = "💬 NORMAL: Samimi sohbet tonu"
+                enerji_talimat = "⚡ CANLI: Samimi sohbet tonu"
 
             # Espri modunda özel ton
             if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
@@ -2514,16 +2709,14 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
 [🎯 SOHBET ZEKASI TALİMATI - MUTLAKA UYGULA!]:
 • Beklenen cevap tipi: {analiz.beklenen_cevap.value}
-• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)
-• 🔍 NETLEŞTİRME: Belirsiz referans var. Tahmin cevabı verme, önce durumu netleştir!"""
+• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)• 🔍 NETLEŞTİRME: Belirsiz referans var. Tahmin cevabı verme, önce durumu netleştir!"""
             else:
                 # Normal talimat oluşturma
                 sohbet_talimati = f"""
 
 [🎯 SOHBET ZEKASI TALİMATI - MUTLAKA UYGULA!]:
 • Beklenen cevap tipi: {analiz.beklenen_cevap.value}
-• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)
-• {enerji_talimat}"""
+• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)• {enerji_talimat}"""
 
                 if analiz.duygu:
                     sohbet_talimati += f"\n• Kullanıcı duygusu: {analiz.duygu}"
@@ -2553,16 +2746,16 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
                 # Espri/şaka kontrolü
                 if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
-                    sohbet_talimati += "\n• 😄 ESPRİ MODU: Kanka gibi şakacı cevap ver! Ciddi açıklama YAPMA, kısa tut, eğlen."
+                    sohbet_talimati += "\n• 😄 ESPRİ MODU: şakacı gibi cevap ver! Ciddi açıklama YAPMA, kısa tut, eğlen."
 
                 # Örtük istek varsa ekle
                 if analiz.ortuk_istek:
-                    sohbet_talimati += f"\n• 🎯 ÖRTÜK İSTEK: {analiz.ortuk_istek}"
+                    sohbet_talimati += f"\n• 🎯 ÖRTÜK İSTEK: {analiz.ortuk_istek} (ima da olabilir - mesajın altındaki anlamı da düşün)"
 
             # 🔴 Dini soru ise özel kurallar ekle
             if tool_used == "risale_ara":
                 # Cevap uzunluğu satırını kaldır
-                sohbet_talimati = sohbet_talimati.replace(f"• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)\n", "")
+                sohbet_talimati = sohbet_talimati.replace(f"• Cevap uzunluğu: {min_uz}-{max_uz} karakter (AŞMA!)(AŞMA!)\n", "")
                 sohbet_talimati += """
 • 🔴 DİNİ KONULARDA:
   - Soruyu [📚 RİSALE-İ NUR BAŞLANGIÇ] ve [📚 RİSALE-İ NUR BİTİŞ] arasındaki bilgileri kullanarak cevapla
@@ -2574,11 +2767,13 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if tool_used == "risale_ara":
             system_content = f"""Sen akıllı, profesyonel, olgun ve sıcakkanlı bir yapay zekasın.
 {user_info}
-[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']}){context_info}{sohbet_talimati}"""
+[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']})
+↳ Zaman farkındalığı.{context_info}{sohbet_talimati}"""
         else:
             system_content = f"""{self.SYSTEM_PROMPT}
 {user_info}
-[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']}){context_info}{sohbet_talimati}"""
+[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']})
+↳ Zaman farkındalığı.{context_info}{sohbet_talimati}"""
 
         messages.append({"role": "system", "content": system_content})
 
@@ -2615,11 +2810,14 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         return messages
 
-    async def prepare(self, user_input: str, chat_history: List[Dict] = None) -> Dict[str, Any]:
+    async def prepare(self, user_input: str, chat_history: List[Dict] = None, firlama_modu: bool = False) -> Dict[str, Any]:
         """
         Prompt ve messages hazırla - LLM ÇAĞIRMA!
 
         Akış: Telegram → HafizaAsistani.prepare() → messages döner
+
+        Args:
+            firlama_modu: True ise sohbet zekası bypass edilir, enerjik mod aktif
 
         Returns:
             {
@@ -2628,6 +2826,41 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             }
         """
         chat_history = chat_history or []
+        self._firlama_modu = firlama_modu  # Instance'a kaydet
+
+        # 📝 NOT SİSTEMİ - Tetikleyici kontrolü
+        not_result = self._check_not_tetikleyici(user_input)
+        if not_result:
+            # Not komutu algılandı, direkt cevap dön
+            return {
+                "messages": [
+                    {"role": "system", "content": "Sen bir not asistanısın."},
+                    {"role": "user", "content": user_input},
+                    {"role": "assistant", "content": not_result}
+                ],
+                "paket": {"tool_used": "not_sistemi", "direct_response": not_result}
+            }
+
+        # 📍 KONUM SİSTEMİ - Konum sorgusu kontrolü
+        if self.user_location:
+            konum_result = await self._check_konum_sorgusu(user_input)
+            if konum_result:
+                return {
+                    "messages": [
+                        {"role": "system", "content": "Sen bir konum asistanısın."},
+                        {"role": "user", "content": user_input},
+                        {"role": "assistant", "content": konum_result}
+                    ],
+                    "paket": {"tool_used": "konum_hizmeti", "direct_response": konum_result}
+                }
+
+            # 📍 KONUM GÖNDERME - Numara ile yer seçimi
+            konum_gonder = self._check_konum_gonder_istegi(user_input)
+            if konum_gonder:
+                return {
+                    "messages": [],
+                    "paket": {"send_location": konum_gonder}
+                }
 
         # 1. Paket hazırla (karar, tool, bağlam)
         paket = await self.hazirla_ve_prompt_olustur(user_input, chat_history)
@@ -2640,13 +2873,343 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             "paket": paket
         }
 
+    def _check_not_tetikleyici(self, user_input: str) -> Optional[str]:
+        """
+        Not sistemi tetikleyicilerini kontrol et.
+
+        Tetikleyiciler:
+        - "not al: ...", "not al ...", "not al, ..."
+        - "not tut: ...", "not tut ...", "not tut, ..."
+        - "not ekle: ...", "not ekle ...", "not ekle, ..."
+        - "notlarım", "notlarıma bak", "notlarımı göster"
+        - "not sil #N", "N numaralı notu sil"
+
+        Returns:
+            str: Not işlemi sonucu veya None (tetikleyici yoksa)
+        """
+        user_lower = user_input.lower().strip()
+
+        # 📝 NOT AL / TUT / EKLE
+        not_patterns = [
+            (r'^not\s+al[\s:,]+(.+)$', 'not_al'),
+            (r'^not\s+tut[\s:,]+(.+)$', 'not_al'),
+            (r'^not\s+ekle[\s:,]+(.+)$', 'not_al'),
+            (r'^şunu\s+not\s+(?:al|et)[\s:,]*(.+)$', 'not_al'),
+            (r'^bunu\s+not\s+(?:al|et)[\s:,]*(.+)$', 'not_al'),
+        ]
+
+        for pattern, action in not_patterns:
+            match = re.match(pattern, user_lower, re.IGNORECASE)
+            if match:
+                icerik = match.group(1).strip()
+                if icerik:
+                    print(f"📝 Not tetikleyici algılandı: {action} -> '{icerik[:30]}...'")
+                    return self.not_manager.not_al(icerik)
+
+        # 📋 NOTLARIMI GETİR
+        notlar_patterns = [
+            r'^notlar[ıi]m[ıi]?\s*(ne|neler|nedir)?[\s?]*$',
+            r'^notlar[ıi]ma?\s+bak',
+            r'^notlar[ıi]m[ıi]?\s+göster',
+            r'^notlar[ıi]m[ıi]?\s+listele',
+            r'^not(?:lar)?[ıi]m(?:da)?\s+ne\s+var',
+        ]
+
+        for pattern in notlar_patterns:
+            if re.match(pattern, user_lower, re.IGNORECASE):
+                print("📋 Notları getir tetikleyici algılandı")
+                return self.not_manager.notlari_getir()
+
+        # 🗑️ NOT SİL
+        sil_patterns = [
+            r'^(?:not\s+)?#?(\d+)\s*(?:numaral[ıi])?\s*not[ıi]?\s*sil',
+            r'^not\s+sil\s+#?(\d+)',
+            r'^#?(\d+)\s+not[ıi]?\s*sil',
+        ]
+
+        for pattern in sil_patterns:
+            match = re.match(pattern, user_lower, re.IGNORECASE)
+            if match:
+                not_id = int(match.group(1))
+                print(f"🗑️ Not sil tetikleyici algılandı: #{not_id}")
+                return self.not_manager.not_sil(not_id)
+
+        return None
+
+    # ============================================================
+    # 📍 KONUM SİSTEMİ
+    # ============================================================
+
+    def set_location(self, lat: float, lon: float, adres: str = None):
+        """Kullanıcı konumunu kaydet"""
+        self.user_location = (lat, lon)
+        self.user_location_adres = adres
+        print(f"📍 Konum kaydedildi: {lat:.4f}, {lon:.4f}")
+        if adres:
+            print(f"   Adres: {adres}")
+
+    async def prepare_konum_alindi(self, lat: float, lon: float, adres: str) -> Dict[str, Any]:
+        """Konum alındığında LLM için prompt hazırla"""
+        self.set_location(lat, lon, adres)
+
+        # Adresi parse et (sondan sayma - format değişkenliğine dayanıklı)
+        kisa_konum = ""
+        detayli_adres = ""
+        if adres:
+            parcalar = [p.strip() for p in adres.split(",")]
+            if len(parcalar) >= 5:
+                ilce = parcalar[-5]  # Sondan 5. = ilçe
+                il = parcalar[-4]    # Sondan 4. = il
+                kisa_konum = f"{ilce}, {il}"
+                # Detaylı adres (mahalle + cadde varsa)
+                if len(parcalar) >= 7:
+                    detayli_adres = f"{parcalar[1]}, {parcalar[0]}"  # Mahalle, Cadde
+                elif len(parcalar) >= 6:
+                    detayli_adres = parcalar[0]  # Sadece ilk parça
+            else:
+                kisa_konum = adres[:50]
+
+        # Kullanıcı adını al
+        kullanici_adi = ""
+        if hasattr(self, 'profile_manager'):
+            kullanici_adi = self.profile_manager.get_name() or ""
+
+        # Sistem prompt'u - Ana SYSTEM_PROMPT + konum bilgisi
+        system_content = f"""{self.SYSTEM_PROMPT}
+Kullanıcı adı: {kullanici_adi}
+📍 KONUM BİLGİSİ (SİSTEM TARAFINDAN ÇÖZÜMLENDI - KESİN BİLGİ):
+- Konum: {kisa_konum}
+- Tam adres: {adres}
+
+⚠️ ÖNEMLİ TALİMATLAR:
+- Ciddi ve direkt bilgi ver
+- Bu adres GPS'ten otomatik çözümlendi, %100 doğru
+- Bu konumu sen biliyorsun, kendi bilgin gibi kesin ve emin sun
+- İlk satır: "{kisa_konum}'dasın."
+- İkinci satır: "Adres: {detayli_adres}" (varsa)
+- Onay sorma, tereddüt gösterme
+- Sonra kısaca ne istediğini sor"""
+
+        user_content = f"[Kullanıcı GPS konumunu paylaştı → Sistem çözümledi: {kisa_konum}]"
+
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content}
+        ]
+
+        return {"messages": messages, "paket": {"tool_used": "konum_alindi"}}
+
+    async def _check_konum_sorgusu(self, user_input: str) -> Optional[str]:
+        """
+        Konum bazlı sorguları kontrol et (fuzzy matching ile).
+        Yakın yer, hava, namaz, kıble vs.
+        """
+        if not self.user_location:
+            return None
+
+        user_lower = user_input.lower().strip()
+        lat, lon = self.user_location
+
+        # Konum sinyalleri
+        konum_sinyalleri = ["yakın", "yakin", "yakınım", "yakinim", "yakında", "yakinda",
+                           "nerede", "neresi", "bul", "ara", "var mı", "varmı"]
+        has_konum_signal = any(s in user_lower for s in konum_sinyalleri)
+
+        # Kategori keywords
+        kategori_map = {
+            "eczane": ("pharmacy", "💊"),
+            "benzinlik": ("fuel", "⛽"),
+            "akaryakıt": ("fuel", "⛽"),
+            "restoran": ("restaurant", "🍽️"),
+            "lokanta": ("restaurant", "🍽️"),
+            "kafe": ("cafe", "☕"),
+            "kahve": ("cafe", "☕"),
+            "atm": ("atm", "🏧"),
+            "bankamatik": ("atm", "🏧"),
+            "hastane": ("hospital", "🏥"),
+            "acil": ("hospital", "🏥"),
+            "market": ("supermarket", "🛒"),
+            "süpermarket": ("supermarket", "🛒"),
+            "cami": ("place_of_worship", "🕌"),
+            "mescit": ("place_of_worship", "🕌"),
+        }
+        kategori_keywords = list(kategori_map.keys())
+
+        # Fuzzy matching ile kategori bul
+        if has_konum_signal:
+            from difflib import get_close_matches
+            words = re.findall(r'\b\w+\b', user_lower)
+            for word in words:
+                if len(word) >= 3:
+                    matches = get_close_matches(word, kategori_keywords, n=1, cutoff=0.6)
+                    if matches:
+                        matched_keyword = matches[0]
+                        print(f"📍 Yakın yer sorgusu (fuzzy): '{word}' → '{matched_keyword}'")
+                        return await self._get_yakin_yerler(lat, lon, matched_keyword)
+
+        # Exact match (fuzzy'den kaçanlar için)
+        for keyword in kategori_keywords:
+            if keyword in user_lower and has_konum_signal:
+                print(f"📍 Yakın yer sorgusu (exact): {keyword}")
+                return await self._get_yakin_yerler(lat, lon, keyword)
+
+        return None
+
+    async def _get_yakin_yerler(self, lat: float, lon: float, kategori: str) -> str:
+        """OpenStreetMap Overpass API ile yakın yerleri bul"""
+        kategori_map = {
+            "eczane": ("pharmacy", "💊"),
+            "benzinlik": ("fuel", "⛽"),
+            "akaryakıt": ("fuel", "⛽"),
+            "restoran": ("restaurant", "🍽️"),
+            "lokanta": ("restaurant", "🍽️"),
+            "kafe": ("cafe", "☕"),
+            "kahve": ("cafe", "☕"),
+            "atm": ("atm", "🏧"),
+            "bankamatik": ("atm", "🏧"),
+            "hastane": ("hospital", "🏥"),
+            "acil": ("hospital", "🏥"),
+            "market": ("supermarket", "🛒"),
+            "süpermarket": ("supermarket", "🛒"),
+            "cami": ("place_of_worship", "🕌"),
+            "mescit": ("place_of_worship", "🕌"),
+        }
+
+        if kategori not in kategori_map:
+            return None
+
+        osm_tag, emoji = kategori_map[kategori]
+
+        # Overpass API sorgusu
+        overpass_url = "https://overpass-api.de/api/interpreter"
+        radius = 2000  # 2km
+
+        if osm_tag == "place_of_worship":
+            query = f"""
+            [out:json][timeout:10];
+            (
+              node["amenity"="{osm_tag}"]["religion"="muslim"](around:{radius},{lat},{lon});
+              way["amenity"="{osm_tag}"]["religion"="muslim"](around:{radius},{lat},{lon});
+            );
+            out center 10;
+            """
+        else:
+            query = f"""
+            [out:json][timeout:10];
+            (
+              node["amenity"="{osm_tag}"](around:{radius},{lat},{lon});
+              way["amenity"="{osm_tag}"](around:{radius},{lat},{lon});
+            );
+            out center 10;
+            """
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(overpass_url, data={"data": query}) as resp:
+                    if resp.status != 200:
+                        return f"❌ Yakın {kategori} araması başarısız oldu."
+                    data = await resp.json()
+
+            elements = data.get("elements", [])
+            if not elements:
+                return f"📍 {radius}m içinde {kategori} bulunamadı."
+
+            # Mesafe hesapla ve sırala
+            import math
+            def haversine(lat1, lon1, lat2, lon2):
+                R = 6371000  # metre
+                phi1, phi2 = math.radians(lat1), math.radians(lat2)
+                dphi = math.radians(lat2 - lat1)
+                dlambda = math.radians(lon2 - lon1)
+                a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+                return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+            yerler = []
+            for el in elements:
+                el_lat = el.get("lat") or el.get("center", {}).get("lat")
+                el_lon = el.get("lon") or el.get("center", {}).get("lon")
+                if el_lat and el_lon:
+                    mesafe = haversine(lat, lon, el_lat, el_lon)
+                    ad = el.get("tags", {}).get("name", f"{kategori.title()} #{len(yerler)+1}")
+                    yerler.append({
+                        "ad": ad,
+                        "mesafe": int(mesafe),
+                        "lat": el_lat,
+                        "lon": el_lon
+                    })
+
+            yerler.sort(key=lambda x: x["mesafe"])
+            yerler = yerler[:5]  # İlk 5
+
+            # Sonuçları kaydet (konum gönderme için)
+            self.son_yakin_yerler = yerler
+
+            # Format
+            result = f"{emoji} En Yakın {kategori.title()}lar:\n{'─' * 28}\n\n"
+            for i, yer in enumerate(yerler, 1):
+                result += f"{i}. {yer['ad']} - {yer['mesafe']}m\n"
+
+            result += f"\n💡 Konum göndermek için numara yaz (örn: 1)"
+
+            return result
+
+        except Exception as e:
+            print(f"❌ Overpass API hatası: {e}")
+            return f"❌ Yakın {kategori} araması sırasında hata oluştu."
+
+    def _check_konum_gonder_istegi(self, user_input: str) -> Optional[Dict]:
+        """
+        Kullanıcının konum gönderme isteğini kontrol et.
+        "1", "2 numaralı yerin konumunu gönder" vs.
+        """
+        if not self.son_yakin_yerler:
+            return None
+
+        user_lower = user_input.lower().strip()
+
+        # Numara çıkar
+        sira = None
+        match = re.search(r'(\d+)', user_lower)
+        if match:
+            sira = int(match.group(1))
+
+        if sira:
+            # Sadece sayı yazılmış mı? ("1", "2", vs.)
+            sadece_sayi = user_lower.strip() in ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+            # Veya konum isteği keyword'ü var mı?
+            konum_keywords = ['konum', 'gönder', 'göster', 'nerede', 'git', 'yol']
+            konum_istegi = any(kw in user_lower for kw in konum_keywords)
+
+            if sadece_sayi or konum_istegi:
+                yer = self.get_yakin_yer_konumu(sira)
+                if yer:
+                    return yer
+
+        return None
+
+    def get_yakin_yer_konumu(self, sira: int) -> Optional[Dict]:
+        """Sıra numarasına göre yakın yer koordinatlarını döndür"""
+        if not self.son_yakin_yerler:
+            return None
+
+        if 1 <= sira <= len(self.son_yakin_yerler):
+            yer = self.son_yakin_yerler[sira - 1]
+            return {
+                "lat": yer["lat"],
+                "lon": yer["lon"],
+                "ad": yer["ad"],
+                "mesafe": yer["mesafe"]
+            }
+        return None
+
     def save(self, user_input: str, response: str, chat_history: List[Dict] = None):
         """
         Cevabı hafızaya kaydet
 
         Akış: PersonalAI cevap verdi → HafizaAsistani.save() → hafızaya kaydet
         """
-        # Hata mesajlarını kaydetme (Telegram'a gider ama history'e eklenmez)
+        # Hata mesajlarını kaydetme (Telegram'a gider ama history'e eklenmedi)
         if response.startswith("[HATA]"):
             print("   ⚠️ Hata mesajı - history'e eklenmedi")
             return
