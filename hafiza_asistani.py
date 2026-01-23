@@ -1654,20 +1654,9 @@ JSON:
 
 
                     if decision.get('question_type') == 'religious':
-                        decision['tool_name'] = 'risale_ara'
+                        # LLM kararına dokunma - ne seçtiyse o kalsın
                         decision['needs_faiss'] = True  # FAISS her zaman açık
                         decision['is_religious'] = True  # Dini konu flag'i
-
-                        is_detail_followup, followup_confidence, matched_concepts = self._detect_detail_followup(
-                            user_input, chat_history
-                        )
-                        if is_detail_followup:
-                            decision['is_detail_followup'] = True
-                            decision['followup_confidence'] = followup_confidence
-                            decision['matched_concepts'] = matched_concepts
-                            print(f"   🔄 TAKİP MODU AKTİF: FAISS arka plan olarak kullanılacak")
-                        else:
-                            decision['is_detail_followup'] = False
 
                     if decision.get('question_type') == 'ambiguous' or decision.get('needs_clarification'):
                         decision['tool_name'] = 'yok'
@@ -1830,88 +1819,6 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 
         return used
 
-    def _detect_detail_followup(self, user_input: str, chat_history: List[Dict[str, Any]]) -> Tuple[bool, float, List[str]]:
-        """
-        İki katmanlı takip sorusu tespiti
-
-        KATMAN 1 (ÖNCELİKLİ): Kavram eşleşmesi
-        - Kullanıcının sorusundaki anahtar kelimeler önceki cevabında geçiyor mu?
-
-        KATMAN 2: Soru kalıpları
-        - "bu ne demek?", "nasıl yani?", "örnek verir misin?" gibi kalıplar
-
-        Returns:
-            (is_followup, confidence_score, matched_concepts)
-        """
-        if not chat_history:
-            return False, 0.0, []
-
-        user_lower = user_input.lower()
-
-        last_ai_response = ""
-        for msg in reversed(chat_history):
-            if msg.get('role') == 'assistant':
-                last_ai_response = msg.get('content', '')
-                break
-
-        if not last_ai_response:
-            return False, 0.0, []
-
-        used_concepts = self._extract_used_concepts(last_ai_response)
-        matched_concepts = []
-
-        for concept in used_concepts:
-            concept_variants = [concept]
-            if 'b' in concept:
-                concept_variants.append(concept.replace('b', 'p'))
-            if 'p' in concept:
-                concept_variants.append(concept.replace('p', 'b'))
-
-            for variant in concept_variants:
-                if variant in user_lower:
-                    matched_concepts.append(concept)
-                    break
-
-        followup_patterns = [
-            "bu ne demek", "nasıl oluyor", "neden böyle",
-            "örnek verir misin", "örnek ver", "anlamadım",
-            "açıkla", "açıklar mısın", "tam olarak", "nasıl yani",
-            "ne demek istedi", "ne demek bu", "yani nasıl",
-            "biraz daha", "detay ver", "mesela", "peki nasıl",
-            "nedir bu", "ne anlama", "açar mısın"
-        ]
-        pattern_match = any(p in user_lower for p in followup_patterns)
-
-
-        if matched_concepts and pattern_match:
-            confidence = 0.95
-            is_followup = True
-            print(f"   🎯 TAKİP TESPİT: Kavram + Kalıp eşleşti (güven: %{int(confidence*100)})")
-            print(f"      Eşleşen kavramlar: {matched_concepts}")
-
-        elif len(matched_concepts) >= 2:
-            confidence = 0.85
-            is_followup = True
-            print(f"   🎯 TAKİP TESPİT: 2+ kavram eşleşti (güven: %{int(confidence*100)})")
-            print(f"      Eşleşen kavramlar: {matched_concepts}")
-
-        elif matched_concepts:
-            confidence = 0.70
-            is_followup = True
-            print(f"   🎯 TAKİP TESPİT: 1 kavram eşleşti (güven: %{int(confidence*100)})")
-            print(f"      Eşleşen kavram: {matched_concepts}")
-
-        elif pattern_match and len(chat_history) >= 2:
-            confidence = 0.55
-            is_followup = True
-            print(f"   🎯 TAKİP TESPİT: Soru kalıbı (güven: %{int(confidence*100)})")
-
-        else:
-            confidence = 0.0
-            is_followup = False
-
-        return is_followup, confidence, matched_concepts
-
     def _add_exclusion_to_prompt(self, role_prompt: str, used_concepts: List[str]) -> str:
         """Kullanılmış kavramları prompt'a yasak olarak ekle"""
         if not used_concepts:
@@ -1941,7 +1848,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         needs_clarification: bool = False,  # 🆕 Netleştirme gerekli mi?
         llm_reasoning: str = "",  # 🧠 DecisionLLM'in ön araştırması
         is_topic_closed: bool = False,  # 🆕 Konu kapandı mı? (kısa cevap ver)
-        is_detail_followup: bool = False,  # 🆕 Takip sorusu mu? (FAISS arka plan olarak)
         tool_name: str = "yok",  # 🆕 Kullanılan araç (web_ara için özel mod)
     ) -> str:
         """Final prompt'u oluştur (rol'e göre)"""
@@ -1954,13 +1860,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         # Dini konularda tekrar yasağı kontrolü
         is_religious = role in ["religious_teacher", "religious"] or "risale_ara" in str(tool_name)
-        if is_religious and chat_history and not is_detail_followup:
+        if is_religious and chat_history:
             used_concepts = self._extract_used_concepts(chat_history)
             if used_concepts:
                 role_prompt = self._add_exclusion_to_prompt(role_prompt, used_concepts)
                 print(f"🚫 Tekrar yasağına eklenen kavramlar: {', '.join(used_concepts)}")
-        elif is_detail_followup:
-            print(f"   ⏩ Tekrar yasağı atlandı (takip modu - kullanıcı kavramı soruyor)")
 
         combined_sources = []
 
@@ -2044,10 +1948,9 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 # Data already cleaned by _process_web_result
                 combined_sources.append(f"[🌐 WEB SONUCU]:\n{tool_result}")
             elif tool_name == "risale_ara":
-                if is_detail_followup:
-                    combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - Doğrudan verme, kendi yorumunla açıkla!]:\n{tool_result}")
-                else:
-                    combined_sources.append(f"[📚 RİSALE-İ NUR BAŞLANGIÇ]\n{tool_result}\n[📚 RİSALE-İ NUR BİTİŞ]")
+                combined_sources.append(f"[📚 RİSALE-İ NUR BAŞLANGIÇ]\n{tool_result}\n[📚 RİSALE-İ NUR BİTİŞ]")
+            elif tool_name == "namaz_vakti":
+                combined_sources.append(f"[🔧 ARAÇ SONUCU]:\n{tool_result}\n\n📌 Bu vakitleri kullanıcıya aynen göster.")
             else:
                 combined_sources.append(f"[🔧 ARAÇ SONUCU]:\n{tool_result}")
 
@@ -2130,8 +2033,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 
         if (tool_name == "web_ara") and tool_result:
             context_header = "Bağlam (WEB SONUCU):"
-        elif is_detail_followup and tool_result:
-            context_header = "Bağlam (Arka plan - kendi yorumunla açıkla):"
         elif tool_result:
             context_header = "Bağlam (ARAÇ SONUCUNU MUTLAKA KULLAN!):"
         else:
@@ -2141,17 +2042,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         is_religious_topic = is_religious or tool_name == "risale_ara"
 
         if is_religious_topic:
-            if is_detail_followup:
-                rules_text = """KURALLAR (TAKİP SORUSU - AÇIKLAMA MODU):
-1. 🔇 ARKA PLAN bilgisini DOĞRUDAN VERME, referans olarak kullan
-2. ✅ KENDİ YORUMUNLA ve ÖRNEKLERLE açıkla
-3. ✅ Önceki cevabından devam et, bağlamı koru
-4. ✅ Günlük hayattan somut örnekler ver
-5. ✅ Samimi Türkçe konuş
-6. ❌ Metni kopyala-yapıştır YAPMA, sindirerek anlat
-7. 🎭 Bir arkadaşına anlatır gibi açıkla"""
-            else:
-                rules_text = """KURALLAR:
+            rules_text = """KURALLAR:
 1. ⚠️ Yanlış bilgiyi onaylama, nazikçe düzelt
 2. ❌ Soruyu tekrarlama, liste yapma (*, -, 1. 2. 3.)
 3. ✅ VERİLEN METİNDEN anlat - metindeki kavramları MUTLAKA kullan
@@ -2407,11 +2298,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         needs_clarification = decision.get('needs_clarification', False)
         llm_reasoning = decision.get('reasoning', '')  # 🧠 DecisionLLM'in ön araştırması
         is_topic_closed = decision.get('topic_closed', False)  # 📕 Konu kapandı mı?
-        is_detail_followup = decision.get('is_detail_followup', False)  # 🆕 Takip sorusu mu?
-
-        if is_detail_followup:
-            print(f"   • 🔄 TAKİP MODU: FAISS arka plan olarak kullanılacak")
-            print(f"   • 📊 Güven: %{int(decision.get('followup_confidence', 0) * 100)}")
 
         final_prompt = self._prompt_olustur(
             user_input,
@@ -2425,7 +2311,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             needs_clarification,  # 🆕 Netleştirme gerekli mi?
             llm_reasoning,  # 🧠 DecisionLLM'in ön araştırması - KOPUKLUK DÜZELTMESİ!
             is_topic_closed,  # 📕 Konu kapandı mı? (kısa cevap ver)
-            is_detail_followup,  # 🆕 Takip sorusu mu? (FAISS arka plan olarak)
             tool_name,  # 🌐 Kullanılan araç (web_ara için özel mod)
         )
         print(f"   • Prompt uzunluğu: {len(final_prompt)} karakter")
@@ -2443,7 +2328,6 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
                 "has_context_memory": bool(combined_silent_context),  # 🧠🔇 Birleşik bağlam
                 "closed_topic_filtered": is_closed,  # Kapanmış konu filtresi uygulandı mı
                 "needs_clarification": needs_clarification,  # 🆕 Netleştirme gerekli mi?
-                "is_detail_followup": is_detail_followup,  # 🆕 Takip sorusu mu?
             },
         }
 
@@ -2837,13 +2721,7 @@ Senin görevin:
         if self.user_location:
             konum_result = await self._check_konum_sorgusu(user_input)
             if konum_result:
-                # Belirsiz eşleşme - doğrulama butonu gösterilecek (UI gerekli)
-                if isinstance(konum_result, dict) and konum_result.get("type") == "konum_dogrulama":
-                    return {
-                        "messages": [],
-                        "paket": {"konum_dogrulama": konum_result}
-                    }
-                # Yakın yerler listesi - inline butonlarla gösterilecek (UI gerekli)
+                # Yakın yerler listesi - inline butonlarla gösterilecek
                 if isinstance(konum_result, dict) and konum_result.get("type") == "yakin_yerler_listesi":
                     return {
                         "messages": [],
@@ -3026,7 +2904,7 @@ Senin görevin:
 
     async def _check_konum_sorgusu(self, user_input: str) -> Optional[str]:
         """
-        Konum bazlı sorguları kontrol et (fuzzy matching ile).
+        Konum bazlı sorguları kontrol et.
         Yakın yer, hava, namaz, kıble vs.
         """
         if not self.user_location:
@@ -3070,41 +2948,13 @@ Senin görevin:
             "tren": ("station", "🚉"),
             "bakkal": ("convenience", "🏪"),
         }
+        # Artık inline butonlar kullanılıyor, fuzzy matching kaldırıldı
+        # Sadece exact match (tam kelime) kontrolü
         kategori_keywords = list(kategori_map.keys())
 
-        # Fuzzy matching ile kategori bul (yazım hatası toleranslı)
-        from difflib import SequenceMatcher
-        words = re.findall(r'\b\w+\b', user_lower)
-        for word in words:
-            if len(word) >= 4:  # Minimum 4 karakter
-                # En iyi eşleşmeyi ve skorunu bul
-                best_match = None
-                best_score = 0
-                for keyword in kategori_keywords:
-                    score = SequenceMatcher(None, word, keyword).ratio()
-                    if score > best_score:
-                        best_score = score
-                        best_match = keyword
-
-                # Yüksek eşleşme (skor >= 0.90) → direkt arama
-                if best_score >= 0.90 and best_match:
-                    print(f"📍 Yakın yer sorgusu (kesin): '{word}' → '{best_match}' (skor: {best_score:.2f})")
-                    return await self._get_yakin_yerler(lat, lon, best_match)
-
-                # Orta eşleşme (0.75 <= skor < 0.90) → doğrulama sor
-                elif best_score >= 0.75 and best_match:
-                    print(f"📍 Belirsiz eşleşme: '{word}' → '{best_match}' (skor: {best_score:.2f})")
-                    return {
-                        "type": "konum_dogrulama",
-                        "yazilan": word,
-                        "kategori": best_match,
-                        "mesaj": f"🤔 '{word}' derken '{best_match}' mi demek istedin?"
-                    }
-
-        # Exact match (tam kelime eşleşmesi)
         for keyword in kategori_keywords:
             if keyword in user_lower:
-                print(f"📍 Yakın yer sorgusu (exact): {keyword}")
+                print(f"📍 Yakın yer sorgusu: {keyword}")
                 return await self._get_yakin_yerler(lat, lon, keyword)
 
         return None

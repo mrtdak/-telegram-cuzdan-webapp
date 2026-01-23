@@ -7,7 +7,6 @@ Telegram → HafizaAsistani.prepare() → PersonalAI.generate() → HafizaAsista
 
 import os
 import asyncio
-import math
 import aiohttp
 from dotenv import load_dotenv
 from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
@@ -25,6 +24,16 @@ load_dotenv()
 
 # Admin ID'leri - rate limit yok, tüm özellikler açık
 ADMIN_IDS = [6505503887]
+
+# Konum arama kategorileri (inline butonlar için)
+KONUM_KATEGORILERI = [
+    ("⛽ Benzinlik", "benzinlik"), ("💊 Eczane", "eczane"),
+    ("🍽️ Restoran", "restoran"), ("☕ Kafe", "kafe"),
+    ("🏧 ATM", "atm"), ("🏥 Hastane", "hastane"),
+    ("🕌 Cami", "cami"), ("🛒 Market", "market"),
+    ("🅿️ Otopark", "otopark"), ("🏨 Otel", "otel"),
+    ("🏬 AVM", "avm"), ("🏫 Okul", "okul"),
+]
 
 
 # ============== KAMERA MANAGER (Multi-User) ==============
@@ -361,65 +370,6 @@ def temizle_cikti(text: str) -> str:
 # 📍 KONUM HİZMETLERİ
 # ============================================================
 
-# Kabe koordinatları
-KABE_LAT = 21.4225
-KABE_LON = 39.8262
-
-def hesapla_kible_yonu(lat: float, lon: float) -> Tuple[float, str]:
-    """
-    Verilen koordinattan Kabe'ye kıble yönünü hesapla.
-
-    Returns:
-        (açı_derece, yön_metni)
-    """
-    # Radyana çevir
-    lat1 = math.radians(lat)
-    lon1 = math.radians(lon)
-    lat2 = math.radians(KABE_LAT)
-    lon2 = math.radians(KABE_LON)
-
-    # Kıble açısı hesaplama (bearing formula)
-    dlon = lon2 - lon1
-    x = math.sin(dlon) * math.cos(lat2)
-    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
-
-    bearing = math.atan2(x, y)
-    bearing = math.degrees(bearing)
-    bearing = (bearing + 360) % 360  # 0-360 arası normalize
-
-    # Yön metni
-    yonler = [
-        (0, "Kuzey"), (45, "Kuzeydoğu"), (90, "Doğu"), (135, "Güneydoğu"),
-        (180, "Güney"), (225, "Güneybatı"), (270, "Batı"), (315, "Kuzeybatı"), (360, "Kuzey")
-    ]
-
-    yon_metni = "Kuzey"
-    for aci, yon in yonler:
-        if bearing >= aci - 22.5 and bearing < aci + 22.5:
-            yon_metni = yon
-            break
-
-    return bearing, yon_metni
-
-
-def hesapla_mesafe(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    İki koordinat arası mesafe (Haversine formülü).
-
-    Returns:
-        Mesafe (km)
-    """
-    R = 6371  # Dünya yarıçapı (km)
-
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-
-    return R * c
-
-
 async def adres_cozumle(lat: float, lon: float) -> Optional[str]:
     """
     Koordinattan adres çözümle (Reverse Geocoding - Nominatim).
@@ -444,90 +394,6 @@ async def adres_cozumle(lat: float, lon: float) -> Optional[str]:
         print(f"Adres çözümleme hatası: {e}")
     return None
 
-
-async def hava_durumu_koordinat(lat: float, lon: float) -> str:
-    """Koordinata göre hava durumu (wttr.in)"""
-    try:
-        url = f"https://wttr.in/{lat},{lon}?format=j1&lang=tr"
-
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return "❌ Hava durumu alınamadı."
-                data = await resp.json()
-
-        current = data["current_condition"][0]
-        area = data.get("nearest_area", [{}])[0]
-        sehir = area.get("areaName", [{}])[0].get("value", "Bilinmeyen")
-
-        desc_list = current.get("lang_tr", [])
-        if desc_list:
-            description = desc_list[0].get("value", current["weatherDesc"][0]["value"])
-        else:
-            description = current["weatherDesc"][0]["value"]
-
-        temp = current["temp_C"]
-        feels = current["FeelsLikeC"]
-        humidity = current["humidity"]
-
-        return (
-            f"🌤️ {sehir} Hava Durumu\n"
-            f"{'─' * 28}\n"
-            f"☁️ Durum: {description}\n"
-            f"🌡️ Sıcaklık: {temp}°C\n"
-            f"🤚 Hissedilen: {feels}°C\n"
-            f"💧 Nem: {humidity}%"
-        )
-    except Exception as e:
-        print(f"Hava durumu hatası: {e}")
-        return "❌ Hava durumu alınamadı."
-
-
-async def namaz_vakti_koordinat(lat: float, lon: float) -> str:
-    """Koordinata göre namaz vakitleri (Aladhan API)"""
-    try:
-        url = "http://api.aladhan.com/v1/timings"
-        params = {
-            "latitude": lat,
-            "longitude": lon,
-            "method": 13  # Diyanet metodu
-        }
-
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    return "❌ Namaz vakitleri alınamadı."
-                data = await resp.json()
-
-        if data.get("code") != 200:
-            return "❌ Namaz vakitleri alınamadı."
-
-        timings = data["data"]["timings"]
-
-        prayer_names = {
-            "Fajr": ("İmsak", "🌙"),
-            "Sunrise": ("Güneş", "☀️"),
-            "Dhuhr": ("Öğle", "🌤️"),
-            "Asr": ("İkindi", "🌅"),
-            "Maghrib": ("Akşam", "🌆"),
-            "Isha": ("Yatsı", "🌃"),
-        }
-
-        result = f"🕌 Namaz Vakitleri\n{'─' * 28}\n\n"
-        for eng_name, (turkish_name, emoji) in prayer_names.items():
-            time_value = timings[eng_name]
-            result += f"{emoji} {turkish_name:<8} {time_value}\n"
-
-        return result.strip()
-    except Exception as e:
-        print(f"Namaz vakti hatası: {e}")
-        return "❌ Namaz vakitleri alınamadı."
-
-
-# Kullanıcı son konumları (mesafe hesaplama için)
-user_last_location: Dict[int, Tuple[float, float]] = {}
 
 # Kullanıcı izolasyonu: Her kullanıcının kendi AI'ı
 user_instances: Dict[int, Dict] = {}
@@ -868,8 +734,6 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lon = location.longitude
         print(f"[KONUM] Alinan: {lat:.4f}, {lon:.4f}")
 
-        # Kaydet
-        user_last_location[user_id] = (lat, lon)
         user = get_user_ai(user_id)
 
         # Adres çözümle
@@ -887,23 +751,13 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Kısa adres oluştur
         kisa_adres = asistan.konum_adres if hasattr(asistan, 'konum_adres') and asistan.konum_adres else adres[:50]
 
-        # Kategori butonları (2'li sıra)
-        kategoriler = [
-            ("⛽ Benzinlik", "benzinlik"), ("💊 Eczane", "eczane"),
-            ("🍽️ Restoran", "restoran"), ("☕ Kafe", "kafe"),
-            ("🏧 ATM", "atm"), ("🏥 Hastane", "hastane"),
-            ("🕌 Cami", "cami"), ("🛒 Market", "market"),
-            ("🅿️ Otopark", "otopark"), ("🏨 Otel", "otel"),
-            ("🏬 AVM", "avm"), ("🏫 Okul", "okul"),
-        ]
-
         # 2'li sıralar halinde inline keyboard oluştur
         keyboard = []
-        for i in range(0, len(kategoriler), 2):
+        for i in range(0, len(KONUM_KATEGORILERI), 2):
             row = []
-            row.append(InlineKeyboardButton(kategoriler[i][0], callback_data=f"konum_ara:{kategoriler[i][1]}"))
-            if i + 1 < len(kategoriler):
-                row.append(InlineKeyboardButton(kategoriler[i+1][0], callback_data=f"konum_ara:{kategoriler[i+1][1]}"))
+            row.append(InlineKeyboardButton(KONUM_KATEGORILERI[i][0], callback_data=f"konum_ara:{KONUM_KATEGORILERI[i][1]}"))
+            if i + 1 < len(KONUM_KATEGORILERI):
+                row.append(InlineKeyboardButton(KONUM_KATEGORILERI[i+1][0], callback_data=f"konum_ara:{KONUM_KATEGORILERI[i+1][1]}"))
             keyboard.append(row)
 
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1289,25 +1143,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             # History'e kaydet
             asistan.save(user_input, f"[Konum gönderildi: {loc['ad']}]", [])
-            return
-
-        # 📍 KONUM DOĞRULAMA - Belirsiz eşleşmede inline buton göster
-        if paket.get("konum_dogrulama"):
-            dogrulama = paket["konum_dogrulama"]
-            kategori = dogrulama["kategori"]
-            mesaj = dogrulama["mesaj"]
-
-            # Status mesajını sil
-            try:
-                await context.bot.delete_message(chat_id, status.message_id)
-            except:
-                pass
-
-            # Inline keyboard oluştur
-            keyboard = [[InlineKeyboardButton(f"✅ Evet, {kategori} ara", callback_data=f"konum_ara:{kategori}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await update.message.reply_text(mesaj, reply_markup=reply_markup)
             return
 
         # 📍 YAKIN YERLER LİSTESİ - Inline butonlarla göster
@@ -1860,22 +1695,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Kısa adres
         kisa_adres = asistan.konum_adres if hasattr(asistan, 'konum_adres') and asistan.konum_adres else "Konumun"
 
-        # Kategori butonları (2'li sıra)
-        kategoriler = [
-            ("⛽ Benzinlik", "benzinlik"), ("💊 Eczane", "eczane"),
-            ("🍽️ Restoran", "restoran"), ("☕ Kafe", "kafe"),
-            ("🏧 ATM", "atm"), ("🏥 Hastane", "hastane"),
-            ("🕌 Cami", "cami"), ("🛒 Market", "market"),
-            ("🅿️ Otopark", "otopark"), ("🏨 Otel", "otel"),
-            ("🏬 AVM", "avm"), ("🏫 Okul", "okul"),
-        ]
-
         keyboard = []
-        for i in range(0, len(kategoriler), 2):
+        for i in range(0, len(KONUM_KATEGORILERI), 2):
             row = []
-            row.append(InlineKeyboardButton(kategoriler[i][0], callback_data=f"konum_ara:{kategoriler[i][1]}"))
-            if i + 1 < len(kategoriler):
-                row.append(InlineKeyboardButton(kategoriler[i+1][0], callback_data=f"konum_ara:{kategoriler[i+1][1]}"))
+            row.append(InlineKeyboardButton(KONUM_KATEGORILERI[i][0], callback_data=f"konum_ara:{KONUM_KATEGORILERI[i][1]}"))
+            if i + 1 < len(KONUM_KATEGORILERI):
+                row.append(InlineKeyboardButton(KONUM_KATEGORILERI[i+1][0], callback_data=f"konum_ara:{KONUM_KATEGORILERI[i+1][1]}"))
             keyboard.append(row)
 
         reply_markup = InlineKeyboardMarkup(keyboard)
