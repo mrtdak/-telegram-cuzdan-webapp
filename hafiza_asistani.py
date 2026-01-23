@@ -2623,11 +2623,15 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if self.user_location and self.konum_adres:
             user_info += f"""
 🔧 KONUM SİSTEMİ:
-📍 Kullanıcının konumu: {self.konum_adres}
-- Kullanıcı konum paylaştığında otomatik olarak kategori butonları gösterilir (eczane, benzinlik, ATM vs.)
-- Kullanıcı butona basarak yakın yerleri arar (10km yarıçap)
-- Sen bu sisteme müdahale etmezsin, sistem otomatik çalışır
-- Kullanıcı konum hakkında soru sorarsa bilgilendirici cevap ver
+Kullanıcı Telegram'dan GPS konumunu paylaştı.
+📍 Adres: {self.konum_adres}
+
+Sistem otomatik olarak kategori butonları gösterdi (eczane, benzinlik, ATM vs.)
+Kullanıcı butonlara basarak yakın yer arar - bu süreç otomatik, sen karışma.
+
+Senin görevin:
+- "Neredeyim?" veya konum sorusu gelirse bu adresi kullan
+- Yakın yer sonuçları sana context olarak gelirse doğal şekilde aktar
 """
 
         # Hesaplama değişkenlerini ekle
@@ -3000,11 +3004,15 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
 Kullanıcı adı: {kullanici_adi}
 
 🔧 KONUM SİSTEMİ:
-📍 Kullanıcının konumu: {self.konum_adres}
-- Kullanıcı konum paylaştığında otomatik olarak kategori butonları gösterilir (eczane, benzinlik, ATM vs.)
-- Kullanıcı butona basarak yakın yerleri arar (10km yarıçap)
-- Sen bu sisteme müdahale etmezsin, sistem otomatik çalışır
-- Kullanıcı konum hakkında soru sorarsa bilgilendirici cevap ver
+Kullanıcı Telegram'dan GPS konumunu paylaştı.
+📍 Adres: {self.konum_adres}
+
+Sistem otomatik olarak kategori butonları gösterdi (eczane, benzinlik, ATM vs.)
+Kullanıcı butonlara basarak yakın yer arar - bu süreç otomatik, sen karışma.
+
+Senin görevin:
+- "Neredeyim?" veya konum sorusu gelirse bu adresi kullan
+- Yakın yer sonuçları sana context olarak gelirse doğal şekilde aktar
 """
 
         user_content = f"[Kullanıcı konumunu paylaştı: {self.konum_adres}]"
