@@ -1195,25 +1195,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_name=user_info.last_name
     )
 
-    # Admin kontrolü - patron rate limite takılmaz
-    if user_id not in ADMIN_IDS:
-        rate_check = db.check_rate_limit(user_id)
-        if not rate_check["allowed"]:
-            # Limit doldu - ödeme butonları göster
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⭐ Premium - 49₺/ay", callback_data="plan_premium")],
-                [InlineKeyboardButton("🚀 Pro - 99₺/ay", callback_data="plan_pro")],
-                [InlineKeyboardButton("📋 Plan Detayları", callback_data="plan_info")]
-            ])
-            await update.message.reply_text(
-                "⚠️ *Günlük 20 mesaj limitin doldu!*\n\n"
-                "Sınırsız mesaj için plan seç:",
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
-            return
-        # Kullanimi kaydet (admin değilse)
-        db.increment_usage(user_id, "message_count")
+    # 🔒 RATE LIMIT - Şimdilik kapalı (aktif etmek için yorumu kaldır)
+    # if user_id not in ADMIN_IDS:
+    #     rate_check = db.check_rate_limit(user_id)
+    #     if not rate_check["allowed"]:
+    #         keyboard = InlineKeyboardMarkup([
+    #             [InlineKeyboardButton("⭐ Premium - 49₺/ay", callback_data="plan_premium")],
+    #             [InlineKeyboardButton("🚀 Pro - 99₺/ay", callback_data="plan_pro")],
+    #             [InlineKeyboardButton("📋 Plan Detayları", callback_data="plan_info")]
+    #         ])
+    #         await update.message.reply_text(
+    #             "⚠️ *Günlük 20 mesaj limitin doldu!*\n\n"
+    #             "Sınırsız mesaj için plan seç:",
+    #             reply_markup=keyboard,
+    #             parse_mode="Markdown"
+    #         )
+    #         return
+    #     db.increment_usage(user_id, "message_count")
 
     # 📷 KAMERA WIZARD - Aktifse önce bunu işle
     if user_id in user_kamera_wizard:

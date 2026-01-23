@@ -234,78 +234,120 @@ class LocalLLM:
             return "[HATA] Bağlantı sorunu oluştu."
 
     async def _generate_openrouter(self, prompt: str) -> str:
-        """OpenRouter API (Claude)"""
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.openrouter_api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/personal-ai",
-                "X-Title": "PersonalAI"
-            }
-            payload = {
-                "model": SystemConfig.OPENROUTER_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": SystemConfig.MAX_TOKENS,
-                "temperature": SystemConfig.TEMPERATURE,
-                "top_p": SystemConfig.TOP_P
-            }
+        """OpenRouter API (Claude) - Otomatik retry ile"""
+        max_retries = 3
+        retry_delays = [2, 5, 10]  # saniye
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    SystemConfig.OPENROUTER_API_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=180)
-                ) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
-                    else:
-                        error_text = await resp.text()
-                        print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
-                        return "[HATA] Bir sorun oluştu, tekrar dener misin?"
-        except asyncio.TimeoutError:
-            return "[HATA] Bağlantı zaman aşımına uğradı."
-        except Exception as e:
-            print(f"⚠️ OpenRouter hatası: {e}")
-            return "[HATA] Bağlantı sorunu oluştu."
+        for attempt in range(max_retries):
+            try:
+                headers = {
+                    "Authorization": f"Bearer {self.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/personal-ai",
+                    "X-Title": "PersonalAI"
+                }
+                payload = {
+                    "model": SystemConfig.OPENROUTER_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": SystemConfig.MAX_TOKENS,
+                    "temperature": SystemConfig.TEMPERATURE,
+                    "top_p": SystemConfig.TOP_P
+                }
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        SystemConfig.OPENROUTER_API_URL,
+                        headers=headers,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=180)
+                    ) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                        elif resp.status == 429:
+                            # Rate limit - bekle ve tekrar dene
+                            if attempt < max_retries - 1:
+                                delay = retry_delays[attempt]
+                                print(f"   ⏳ API yoğun, {delay}s bekleyip tekrar deneniyor... ({attempt+1}/{max_retries})")
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                print(f"   ⚠️ {max_retries} deneme sonrası başarısız")
+                                return "Şu an yoğunluk var, biraz sonra tekrar yazar mısın? 🙏"
+                        else:
+                            error_text = await resp.text()
+                            print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
+                            return "Bir sorun oluştu, tekrar yazar mısın?"
+            except asyncio.TimeoutError:
+                if attempt < max_retries - 1:
+                    print(f"   ⏳ Timeout, tekrar deneniyor... ({attempt+1}/{max_retries})")
+                    continue
+                return "Bağlantı zaman aşımına uğradı, tekrar dener misin?"
+            except Exception as e:
+                print(f"⚠️ OpenRouter hatası: {e}")
+                if attempt < max_retries - 1:
+                    continue
+                return "Bağlantı sorunu oluştu, tekrar dener misin?"
+
+        return "Şu an yoğunluk var, biraz sonra tekrar yazar mısın? 🙏"
 
     async def _generate_openrouter_messages(self, messages: list) -> str:
-        """OpenRouter API - Messages formatı (Claude)"""
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.openrouter_api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/personal-ai",
-                "X-Title": "PersonalAI"
-            }
-            payload = {
-                "model": SystemConfig.OPENROUTER_MODEL,
-                "messages": messages,
-                "max_tokens": SystemConfig.MAX_TOKENS,
-                "temperature": SystemConfig.TEMPERATURE,
-                "top_p": SystemConfig.TOP_P
-            }
+        """OpenRouter API - Messages formatı - Otomatik retry ile"""
+        max_retries = 3
+        retry_delays = [2, 5, 10]  # saniye
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    SystemConfig.OPENROUTER_API_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=180)
-                ) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
-                    else:
-                        error_text = await resp.text()
-                        print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
-                        return "[HATA] Bir sorun oluştu, tekrar dener misin?"
-        except asyncio.TimeoutError:
-            return "[HATA] Bağlantı zaman aşımına uğradı."
-        except Exception as e:
-            print(f"⚠️ OpenRouter hatası: {e}")
-            return "[HATA] Bağlantı sorunu oluştu."
+        for attempt in range(max_retries):
+            try:
+                headers = {
+                    "Authorization": f"Bearer {self.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/personal-ai",
+                    "X-Title": "PersonalAI"
+                }
+                payload = {
+                    "model": SystemConfig.OPENROUTER_MODEL,
+                    "messages": messages,
+                    "max_tokens": SystemConfig.MAX_TOKENS,
+                    "temperature": SystemConfig.TEMPERATURE,
+                    "top_p": SystemConfig.TOP_P
+                }
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        SystemConfig.OPENROUTER_API_URL,
+                        headers=headers,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=180)
+                    ) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                        elif resp.status == 429:
+                            # Rate limit - bekle ve tekrar dene
+                            if attempt < max_retries - 1:
+                                delay = retry_delays[attempt]
+                                print(f"   ⏳ API yoğun, {delay}s bekleyip tekrar deneniyor... ({attempt+1}/{max_retries})")
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                print(f"   ⚠️ {max_retries} deneme sonrası başarısız")
+                                return "Şu an yoğunluk var, biraz sonra tekrar yazar mısın? 🙏"
+                        else:
+                            error_text = await resp.text()
+                            print(f"⚠️ OpenRouter hatası: {resp.status} - {error_text[:200]}")
+                            return "Bir sorun oluştu, tekrar yazar mısın?"
+            except asyncio.TimeoutError:
+                if attempt < max_retries - 1:
+                    print(f"   ⏳ Timeout, tekrar deneniyor... ({attempt+1}/{max_retries})")
+                    continue
+                return "Bağlantı zaman aşımına uğradı, tekrar dener misin?"
+            except Exception as e:
+                print(f"⚠️ OpenRouter hatası: {e}")
+                if attempt < max_retries - 1:
+                    continue
+                return "Bağlantı sorunu oluştu, tekrar dener misin?"
+
+        return "Şu an yoğunluk var, biraz sonra tekrar yazar mısın? 🙏"
 
     async def _generate_ollama(self, prompt: str) -> str:
         """Ollama API"""
