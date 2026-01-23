@@ -21,3 +21,4 @@ __pycache__/
 
 # Windows ozel dosyasi
 nul
+bot_database.db
