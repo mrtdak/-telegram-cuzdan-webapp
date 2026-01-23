@@ -19,8 +19,12 @@ from personal_ai import PersonalAI
 import re
 import threading
 import json
+from db_manager import get_db, PlanType
 
 load_dotenv()
+
+# Admin ID'leri - rate limit yok, tüm özellikler açık
+ADMIN_IDS = [6505503887]
 
 
 # ============== KAMERA MANAGER (Multi-User) ==============
@@ -597,6 +601,83 @@ async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/limit - Kullanım limitini göster"""
+    user_id = update.effective_user.id
+    db = get_db()
+
+    rate_check = db.check_rate_limit(user_id)
+    usage = db.get_daily_usage(user_id)
+
+    plan_names = {
+        "free": "Ücretsiz",
+        "premium": "Premium",
+        "pro": "Pro"
+    }
+    plan_name = plan_names.get(rate_check["plan"], rate_check["plan"])
+
+    if rate_check["limit"] == -1:
+        remaining_text = "♾️ Sınırsız"
+    else:
+        remaining_text = f"{rate_check['remaining']}/{rate_check['limit']}"
+
+    text = f"""📊 *Kullanım Durumun*
+
+📋 Plan: *{plan_name}*
+💬 Bugün kalan mesaj: *{remaining_text}*
+📸 Bugün gönderilen fotoğraf: {usage.get('photo_count', 0)}
+🔍 Bugün web arama: {usage.get('web_search_count', 0)}
+
+_Limitler gece 00:00'da sıfırlanır._
+"""
+
+    if rate_check["plan"] == "free":
+        text += "\n💡 *Premium'a geç:* /premium"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/premium - Plan bilgilerini göster"""
+    user_id = update.effective_user.id
+    db = get_db()
+
+    user = db.get_user(user_id)
+    current_plan = user.get("plan", "free") if user else "free"
+
+    text = """💎 *Akıllı Asistan Planları*
+
+🆓 *Ücretsiz*
+• Günde 20 mesaj
+• Temel sohbet
+
+⭐ *Premium - 49₺/ay*
+• Sınırsız mesaj
+• Fotoğraf analizi
+• Hafıza sistemi
+• Not tutma
+• Konum hizmetleri
+
+🚀 *Pro - 99₺/ay*
+• Premium özellikleri +
+• Web arama
+• Öncelikli yanıt
+• API erişimi
+
+"""
+
+    if current_plan == "free":
+        text += "_Şu an: Ücretsiz plan_\n\n📩 Yükseltmek için: @admin"
+    elif current_plan == "premium":
+        end_date = user.get("plan_end_date", "")[:10] if user else ""
+        text += f"_Şu an: Premium (Bitiş: {end_date})_"
+    elif current_plan == "pro":
+        end_date = user.get("plan_end_date", "")[:10] if user else ""
+        text += f"_Şu an: Pro (Bitiş: {end_date})_"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
 # === KAMERA KOMUTLARI (Multi-User) ===
 
 async def kamera_ekle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1103,6 +1184,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_input = update.message.text
     chat_id = update.effective_chat.id
+
+    # 🔒 RATE LIMIT KONTROLU (Admin muaf)
+    db = get_db()
+    user_info = update.effective_user
+    db.get_or_create_user(
+        user_id,
+        username=user_info.username,
+        first_name=user_info.first_name,
+        last_name=user_info.last_name
+    )
+
+    # Admin kontrolü - patron rate limite takılmaz
+    if user_id not in ADMIN_IDS:
+        rate_check = db.check_rate_limit(user_id)
+        if not rate_check["allowed"]:
+            # Limit doldu - ödeme butonları göster
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⭐ Premium - 49₺/ay", callback_data="plan_premium")],
+                [InlineKeyboardButton("🚀 Pro - 99₺/ay", callback_data="plan_pro")],
+                [InlineKeyboardButton("📋 Plan Detayları", callback_data="plan_info")]
+            ])
+            await update.message.reply_text(
+                "⚠️ *Günlük 20 mesaj limitin doldu!*\n\n"
+                "Sınırsız mesaj için plan seç:",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            return
+        # Kullanimi kaydet (admin değilse)
+        db.increment_usage(user_id, "message_count")
 
     # 📷 KAMERA WIZARD - Aktifse önce bunu işle
     if user_id in user_kamera_wizard:
@@ -1775,6 +1886,126 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
+    # 💳 PLAN SEÇİMİ callback'leri
+    elif data == "plan_info":
+        # Plan detayları göster
+        text = """💎 *Plan Detayları*
+
+🆓 *Ücretsiz*
+• Günde 20 mesaj
+• Temel sohbet
+
+⭐ *Premium - 49₺/ay*
+• Sınırsız mesaj
+• Fotoğraf analizi
+• Hafıza sistemi
+• Not tutma
+• Konum hizmetleri
+
+🚀 *Pro - 99₺/ay*
+• Premium özellikleri +
+• Web arama
+• Öncelikli yanıt
+"""
+        keyboard = [
+            [InlineKeyboardButton("⭐ Premium - 49₺", callback_data="plan_premium")],
+            [InlineKeyboardButton("🚀 Pro - 99₺", callback_data="plan_pro")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
+    elif data == "plan_premium":
+        # Premium ödeme simülasyonu
+        keyboard = [
+            [InlineKeyboardButton("💳 Ödemeyi Simüle Et (TEST)", callback_data="odeme_simulasyon:premium")],
+            [InlineKeyboardButton("🔙 Geri", callback_data="plan_info")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "⭐ *Premium Plan - 49₺/ay*\n\n"
+            "✅ Sınırsız mesaj\n"
+            "✅ Fotoğraf analizi\n"
+            "✅ Hafıza sistemi\n"
+            "✅ Not tutma\n"
+            "✅ Konum hizmetleri\n\n"
+            "🧪 *TEST MODU* - Gerçek ödeme alınmayacak",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+
+    elif data == "plan_pro":
+        # Pro ödeme simülasyonu
+        keyboard = [
+            [InlineKeyboardButton("💳 Ödemeyi Simüle Et (TEST)", callback_data="odeme_simulasyon:pro")],
+            [InlineKeyboardButton("🔙 Geri", callback_data="plan_info")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "🚀 *Pro Plan - 99₺/ay*\n\n"
+            "✅ Sınırsız mesaj\n"
+            "✅ Fotoğraf analizi\n"
+            "✅ Hafıza sistemi\n"
+            "✅ Not tutma\n"
+            "✅ Konum hizmetleri\n"
+            "✅ Web arama\n"
+            "✅ Öncelikli yanıt\n\n"
+            "🧪 *TEST MODU* - Gerçek ödeme alınmayacak",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("odeme_simulasyon:"):
+        # Ödeme simülasyonu - onay iste
+        plan = data.split(":")[1]
+        plan_adi = "Premium" if plan == "premium" else "Pro"
+        fiyat = 49 if plan == "premium" else 99
+
+        keyboard = [
+            [InlineKeyboardButton(f"✅ Ödemeyi Onayla ({fiyat}₺)", callback_data=f"odeme_onayla:{plan}")],
+            [InlineKeyboardButton("❌ İptal", callback_data="plan_info")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            f"💳 *Ödeme Onayı*\n\n"
+            f"Plan: {plan_adi}\n"
+            f"Tutar: {fiyat}₺\n"
+            f"Süre: 1 ay\n\n"
+            f"🧪 _Bu bir simülasyondur, gerçek ödeme alınmayacak._\n\n"
+            f"Onaylıyor musun?",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("odeme_onayla:"):
+        # Ödeme onaylandı - planı aktive et
+        plan = data.split(":")[1]
+        plan_adi = "Premium" if plan == "premium" else "Pro"
+        fiyat = 49 if plan == "premium" else 99
+
+        db = get_db()
+        plan_type = PlanType.PREMIUM if plan == "premium" else PlanType.PRO
+
+        # Planı yükselt
+        db.upgrade_plan(user_id, plan_type, months=1)
+
+        # Ödeme kaydı (simülasyon)
+        db.record_payment(
+            user_id=user_id,
+            plan=plan_type,
+            amount_tl=fiyat,
+            payment_method="simulasyon",
+            transaction_id=f"SIM-{user_id}-{int(__import__('time').time())}"
+        )
+
+        await query.edit_message_text(
+            f"🎉 *Tebrikler!*\n\n"
+            f"✅ {plan_adi} planın aktif edildi!\n"
+            f"💰 Tutar: {fiyat}₺ _(simülasyon)_\n"
+            f"📅 Süre: 1 ay\n\n"
+            f"Artık sınırsız mesaj atabilirsin! 🚀",
+            parse_mode="Markdown"
+        )
+
 
 # === MAIN ===
 
@@ -1823,6 +2054,8 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("yeni", yeni_command))
     app.add_handler(CommandHandler("konum", konum_command))
+    app.add_handler(CommandHandler("limit", limit_command))
+    app.add_handler(CommandHandler("premium", premium_command))
 
     # Kamera komutları (multi-user)
     app.add_handler(CommandHandler("kamera_ekle", kamera_ekle_command))
