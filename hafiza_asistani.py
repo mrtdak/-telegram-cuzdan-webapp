@@ -92,7 +92,7 @@ class NotManager:
         self.notes.append(yeni_not)
         self._save_notes()
 
-        return f"✅ Not kaydedildi:\n\n#{yeni_not['id']} [{yeni_not['tarih']} {yeni_not['gun']} - {yeni_not['saat']}]\n   {icerik}"
+        return f"✅ Not kaydedildi:\n\n{yeni_not['id']}. [{yeni_not['tarih']} {yeni_not['gun']} - {yeni_not['saat']}]\n   {icerik}"
 
     def notlari_getir(self, arama: str = None):
         """Notları getir - inline butonlu format döndürür"""
@@ -124,8 +124,8 @@ class NotManager:
             if n['id'] == not_id:
                 silinen = self.notes.pop(i)
                 self._save_notes()
-                return f"🗑️ Not #{not_id} silindi: {silinen['icerik'][:30]}..."
-        return f"❌ #{not_id} numaralı not bulunamadı."
+                return f"🗑️ {not_id}. not silindi: {silinen['icerik'][:30]}..."
+        return f"❌ {not_id}. not bulunamadı."
 
     def has_pending(self) -> bool:
         """Bekleyen not var mı?"""
@@ -1804,12 +1804,11 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 🔗 BAĞLAM:
 - Kullanıcının cevabını önceki cevabınla birlikte değerlendir
 
-🔧 KONUM ARAÇLARI:
-Kullanıcı konum paylaşınca yakın yer arayabilirsin (eczane, AVM, benzinlik vs. - 10km yarıçap)
-- Önceki mesajlarda "💊 Yakınındaki..." veya "❌ ... bulunamadı/başarısız" görürsen → BU SENİN ARAÇ SONUCUN
-- "bulunamadı" = 10km içinde o yer türü yok (OpenStreetMap verisinde kayıt yok)
-- "başarısız" = Arama yapılamadı (teknik sorun)
-- Kullanıcı "noldu?" derse açıkla: "10km çevrede bulunamadı, daha uzakta olabilir" veya "arama başarısız oldu"
+🔧 KONUM SİSTEMİ:
+Kullanıcı konum paylaştığında otomatik olarak kategori butonları gösterilir (eczane, benzinlik, ATM vs.)
+- Kullanıcı butona basarak yakın yerleri arar (10km yarıçap)
+- Sen bu sisteme müdahale etmezsin, sistem otomatik çalışır
+- Kullanıcı konum hakkında soru sorarsa bilgilendirici cevap ver
 
 """
 
@@ -2959,7 +2958,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             match = re.match(pattern, user_lower, re.IGNORECASE)
             if match:
                 not_id = int(match.group(1))
-                print(f"🗑️ Not sil tetikleyici algılandı: #{not_id}")
+                print(f"🗑️ Not sil tetikleyici algılandı: {not_id}")
                 return self.not_manager.not_sil(not_id)
 
         return None
@@ -3177,12 +3176,12 @@ Kullanıcı adı: {kullanici_adi}
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(overpass_url, data={"data": query}) as resp:
                     if resp.status != 200:
-                        return f"❌ Yakın {kategori} araması başarısız oldu."
+                        return f"Yakın {kategori} araması başarısız oldu."
                     data = await resp.json()
 
             elements = data.get("elements", [])
             if not elements:
-                return f"📍 {radius//1000}km içinde {kategori} bulunamadı."
+                return f"{radius//1000}km içinde {kategori} bulunamadı."
 
             # Mesafe hesapla ve sırala
             import math
@@ -3200,7 +3199,7 @@ Kullanıcı adı: {kullanici_adi}
                 el_lon = el.get("lon") or el.get("center", {}).get("lon")
                 if el_lat and el_lon:
                     mesafe = haversine(lat, lon, el_lat, el_lon)
-                    ad = el.get("tags", {}).get("name", f"{kategori.title()} #{len(yerler)+1}")
+                    ad = el.get("tags", {}).get("name", f"{kategori.title()} {len(yerler)+1}")
                     yerler.append({
                         "ad": ad,
                         "mesafe": int(mesafe),
@@ -3223,8 +3222,8 @@ Kullanıcı adı: {kullanici_adi}
             }
 
         except Exception as e:
-            print(f"❌ Overpass API hatası: {e}")
-            return f"❌ Yakın {kategori} araması sırasında hata oluştu."
+            print(f"Overpass API hatası: {e}")
+            return f"Yakın {kategori} araması sırasında hata oluştu."
 
     def _check_konum_gonder_istegi(self, user_input: str) -> Optional[Dict]:
         """

@@ -16,8 +16,10 @@ try:
 except ImportError:
     TRANSLATOR_AVAILABLE = False
 
-# Tavily API Key
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "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")
+# Tavily API Key (.env dosyasından)
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+if not TAVILY_API_KEY:
+    print("⚠️ TAVILY_API_KEY bulunamadi! .env dosyasini kontrol edin.")
 
 
 def is_turkish(text: str) -> bool:
@@ -125,12 +127,14 @@ class WebSearch:
     def __init__(self):
         self.api_key = TAVILY_API_KEY
         self.base_url = "https://api.tavily.com"
-        self.timeout = 30
+        self.timeout = 45
+        self.max_retries = 3
 
     def search(self, query: str, max_results: int = 5, search_depth: str = "basic") -> Dict:
         """
         Ana arama fonksiyonu.
         Turkce sorgular otomatik Ingilizce'ye cevrilir.
+        Basarisiz olursa 3 kez tekrar dener.
 
         Args:
             query: Arama sorgusu
@@ -140,60 +144,72 @@ class WebSearch:
         Returns:
             Arama sonuclari
         """
-        try:
-            # Turkce sorguyu Ingilizce'ye cevir ve optimize et
-            original_query = query
-            search_query = translate_to_english(query)
-            search_query = optimize_query(search_query)
+        import time
 
-            if search_query != original_query:
-                print(f"   [Sorgu: '{original_query}' -> '{search_query}']")
+        # Turkce sorguyu Ingilizce'ye cevir ve optimize et
+        original_query = query
+        search_query = translate_to_english(query)
+        search_query = optimize_query(search_query)
 
-            response = requests.post(
-                f"{self.base_url}/search",
-                json={
-                    "api_key": self.api_key,
-                    "query": search_query,
-                    "search_depth": search_depth,
-                    "country": "Turkey",  # Turkce sonuclari one cikar
-                    "include_answer": True,
-                    "include_raw_content": False,
-                    "max_results": max_results,
-                    "auto_parameters": True
-                },
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            data = response.json()
+        if search_query != original_query:
+            print(f"   [Sorgu: '{original_query}' -> '{search_query}']")
 
-            return {
-                "query": query,
-                "answer": fix_encoding(data.get("answer", "")),
-                "results": [
-                    {
-                        "title": fix_encoding(r.get("title", "")),
-                        "url": r.get("url", ""),
-                        "content": fix_encoding(r.get("content", "")),
-                        "score": r.get("score", 0)
-                    }
-                    for r in data.get("results", [])
-                ]
-            }
+        last_error = None
 
-        except requests.exceptions.RequestException as e:
-            # Detayli hata mesaji
-            error_detail = str(e)
-            if hasattr(e, 'response') and e.response is not None:
-                try:
-                    error_detail = f"{e} - {e.response.text}"
-                except:
-                    pass
-            return {
-                "query": query,
-                "answer": "",
-                "results": [],
-                "error": error_detail
-            }
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                if attempt > 1:
+                    print(f"   [Retry {attempt}/{self.max_retries}...]")
+                    time.sleep(2)  # 2 saniye bekle
+
+                response = requests.post(
+                    f"{self.base_url}/search",
+                    json={
+                        "api_key": self.api_key,
+                        "query": search_query,
+                        "search_depth": search_depth,
+                        "country": "Turkey",
+                        "include_answer": True,
+                        "include_raw_content": False,
+                        "max_results": max_results,
+                        "auto_parameters": True
+                    },
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                return {
+                    "query": query,
+                    "answer": fix_encoding(data.get("answer", "")),
+                    "results": [
+                        {
+                            "title": fix_encoding(r.get("title", "")),
+                            "url": r.get("url", ""),
+                            "content": fix_encoding(r.get("content", "")),
+                            "score": r.get("score", 0)
+                        }
+                        for r in data.get("results", [])
+                    ]
+                }
+
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                error_detail = str(e)
+                if hasattr(e, 'response') and e.response is not None:
+                    try:
+                        error_detail = f"{e} - {e.response.text}"
+                    except:
+                        pass
+                print(f"   [Deneme {attempt} basarisiz: {error_detail[:100]}]")
+
+        # Tum denemeler basarisiz
+        return {
+            "query": query,
+            "answer": "",
+            "results": [],
+            "error": f"3 deneme sonrasi basarisiz: {str(last_error)}"
+        }
 
     def quick_answer(self, query: str) -> str:
         """

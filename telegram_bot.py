@@ -563,10 +563,9 @@ async def kamera_durdur_command(update: Update, context: ContextTypes.DEFAULT_TY
 # === KONUM HANDLER ===
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """📍 Konum mesajı handler - LLM ENTEGRASYONLU"""
+    """📍 Konum mesajı handler - INLINE BUTONLU"""
     try:
         user_id = update.effective_user.id
-        chat_id = update.effective_chat.id
         location = update.message.location
 
         if location is None:
@@ -581,9 +580,6 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_last_location[user_id] = (lat, lon)
         user = get_user_ai(user_id)
 
-        # Düşünüyorum mesajı
-        status = await context.bot.send_message(chat_id, "📍 Konumunu alıyorum...")
-
         # Adres çözümle
         try:
             adres = await adres_cozumle(lat, lon)
@@ -592,49 +588,133 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             adres = f"{lat:.4f}, {lon:.4f}"
 
-        try:
-            # LLM'e gönder
-            asistan = user["hafiza"]
-            ai = user["ai"]
+        # Hafıza asistanına konumu kaydet
+        asistan = user["hafiza"]
+        asistan.set_location(lat, lon, adres)
 
-            # Konum alındı mesajı hazırla
-            result = await asistan.prepare_konum_alindi(lat, lon, adres)
-            messages = result["messages"]
+        # Kısa adres oluştur
+        kisa_adres = asistan.konum_adres if hasattr(asistan, 'konum_adres') and asistan.konum_adres else adres[:50]
 
-            # LLM'den cevap al
-            response = await asyncio.wait_for(
-                ai.generate(messages=messages),
-                timeout=TIMEOUT
-            )
+        # Kategori butonları (2'li sıra)
+        kategoriler = [
+            ("⛽ Benzinlik", "benzinlik"), ("💊 Eczane", "eczane"),
+            ("🍽️ Restoran", "restoran"), ("☕ Kafe", "kafe"),
+            ("🏧 ATM", "atm"), ("🏥 Hastane", "hastane"),
+            ("🕌 Cami", "cami"), ("🛒 Market", "market"),
+            ("🅿️ Otopark", "otopark"), ("🏨 Otel", "otel"),
+            ("🏬 AVM", "avm"), ("🏫 Okul", "okul"),
+        ]
 
-            # Temizle
-            response = temizle_cikti(response)
+        # 2'li sıralar halinde inline keyboard oluştur
+        keyboard = []
+        for i in range(0, len(kategoriler), 2):
+            row = []
+            row.append(InlineKeyboardButton(kategoriler[i][0], callback_data=f"konum_ara:{kategoriler[i][1]}"))
+            if i + 1 < len(kategoriler):
+                row.append(InlineKeyboardButton(kategoriler[i+1][0], callback_data=f"konum_ara:{kategoriler[i+1][1]}"))
+            keyboard.append(row)
 
-            # Kaydet (konum bilgisi olarak)
-            asistan.save(f"[Konum paylaşıldı: {adres}]", response, [])
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Düşünüyorum mesajını sil
-            await status.delete()
-
-            # Cevabı gönder
-            await update.message.reply_text(
-                response,
-                reply_markup=ReplyKeyboardRemove()
-            )
-
-        except asyncio.TimeoutError:
-            await status.delete()
-            await update.message.reply_text(
-                f"📍 Konum alındı: {adres}\n\n"
-                "⏱️ Cevap zaman aşımına uğradı. Ne bilmek istersen sor!",
-                reply_markup=ReplyKeyboardRemove()
-            )
+        # Mesaj gönder
+        await update.message.reply_text(
+            f"📍 {kisa_adres}\n\nNe aramak istiyorsun?",
+            reply_markup=reply_markup
+        )
 
     except Exception as e:
         print(f"❌ Konum hatası: {e}")
         import traceback
         traceback.print_exc()
         await update.message.reply_text("❌ Konum işlenirken hata oluştu.")
+
+
+# === FOTOĞRAF HANDLER ===
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """📷 Fotoğraf analiz handler - OpenRouter Vision"""
+    try:
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        # Kullanıcıyı al/oluştur
+        user = get_user_ai(user_id)
+
+        # Düşünüyorum mesajı
+        status = await context.bot.send_message(chat_id, "🔍 Fotoğrafı inceliyorum...")
+
+        # En yüksek çözünürlüklü fotoğrafı al
+        photo = update.message.photo[-1]
+        file = await context.bot.get_file(photo.file_id)
+
+        # Fotoğrafı indir
+        import io
+        import base64
+        photo_bytes = await file.download_as_bytearray()
+        img_base64 = base64.b64encode(photo_bytes).decode('utf-8')
+
+        # Caption varsa kullan, yoksa varsayılan prompt
+        caption = update.message.caption or ""
+        if caption:
+            prompt_text = f"Kullanıcı bu fotoğrafı gönderdi ve şunu sordu: {caption}\n\nFotoğrafı analiz et ve Türkçe cevap ver."
+        else:
+            prompt_text = "Bu fotoğrafı analiz et. Ne görüyorsun? Türkçe ve kısa açıkla."
+
+        # OpenRouter vision API çağrısı
+        OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/personal-ai",
+            "X-Title": "PersonalAI"
+        }
+
+        payload = {
+            "model": "google/gemma-3-27b-it",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
+                    ]
+                }
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.7
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    response = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                else:
+                    error_text = await resp.text()
+                    print(f"❌ Vision API hatası: {resp.status} - {error_text[:200]}")
+                    response = "Fotoğrafı analiz edemedim, tekrar dener misin?"
+
+        # Düşünüyorum mesajını sil
+        await status.delete()
+
+        # Cevabı gönder
+        await update.message.reply_text(response)
+
+        # Hafızaya kaydet
+        asistan = user["hafiza"]
+        asistan.save(f"[Fotoğraf gönderildi: {caption or 'captionsız'}]", response, [])
+
+    except Exception as e:
+        print(f"❌ Fotoğraf hatası: {e}")
+        import traceback
+        traceback.print_exc()
+        await update.message.reply_text("Fotoğrafı işlerken bir sorun oluştu.")
 
 
 # === MESAJ HANDLER ===
@@ -825,11 +905,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for n in notlar:
                     gun = n.get('gun', '')
                     gun_str = f" {gun}" if gun else ""
-                    mesaj += f"#{n['id']} [{n['tarih']}{gun_str} - {n['saat']}]\n"
+                    mesaj += f"{n['id']}. [{n['tarih']}{gun_str} - {n['saat']}]\n"
                     mesaj += f"   {n['icerik']}\n\n"
                     # Silme butonu
                     buttons.append([InlineKeyboardButton(
-                        f"🗑️ #{n['id']} sil",
+                        f"🗑️ {n['id']}. sil",
                         callback_data=f"not_sil:{n['id']}"
                     )])
 
@@ -915,10 +995,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Dict döndüyse inline butonlarla göster
             if isinstance(result, dict) and result.get("type") == "yakin_yerler_listesi":
-                emoji = result["emoji"]
                 yerler = result["yerler"]
 
-                mesaj = f"{emoji} Yakınındaki {kategori}ler:\n\n"
+                mesaj = f"Yakınındaki {kategori}ler:\n\n"
                 buttons = []
                 for i, yer in enumerate(yerler, 1):
                     mesaj += f"{i}. {yer['ad']} ({yer['mesafe']}m)\n"
@@ -927,14 +1006,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         callback_data=f"konum_gonder:{i-1}"
                     )])
 
+                # Geri butonu ekle
+                buttons.append([InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")])
+
                 reply_markup = InlineKeyboardMarkup(buttons)
                 await query.edit_message_text(mesaj, reply_markup=reply_markup)
             else:
-                # String döndüyse (hata mesajı vs.)
-                await query.edit_message_text(result if result else f"❌ {kategori} bulunamadı.")
+                # String döndüyse (hata mesajı vs.) - geri butonuyla göster
+                geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
+                await query.edit_message_text(result if result else f"{kategori} bulunamadı.", reply_markup=geri_btn)
         except Exception as e:
-            print(f"❌ Callback hata: {e}")
-            await query.edit_message_text(f"❌ {kategori} araması başarısız.")
+            print(f"Callback hata: {e}")
+            await query.edit_message_text(f"{kategori} araması başarısız.", reply_markup=geri_btn)
 
     # Konum gönderme callback'i: konum_gonder:index
     elif data.startswith("konum_gonder:"):
@@ -969,10 +1052,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             longitude=yer["lon"]
         )
 
-        # Bilgi mesajı
+        # Bilgi mesajı + geri butonu
+        geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"📍 {yer['ad']}\n📏 {yer['mesafe']}m uzaklıkta"
+            text=f"📍 {yer['ad']}\n📏 {yer['mesafe']}m uzaklıkta",
+            reply_markup=geri_btn
         )
 
     # 📝 NOT SİL callback'i: not_sil:id
@@ -992,6 +1077,48 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Mesajı güncelle
         await query.edit_message_text(result)
+
+    # 📍 KONUM MENU callback'i: kategorilere geri dön
+    elif data == "konum_menu":
+        # Kullanıcıyı kontrol et
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce /start komutunu kullan.")
+            return
+
+        user = user_instances[user_id]
+        asistan = user["hafiza"]
+
+        # Konum kontrolü
+        if not asistan.user_location:
+            await query.edit_message_text("Konum bulunamadı. Tekrar konum paylaş.")
+            return
+
+        # Kısa adres
+        kisa_adres = asistan.konum_adres if hasattr(asistan, 'konum_adres') and asistan.konum_adres else "Konumun"
+
+        # Kategori butonları (2'li sıra)
+        kategoriler = [
+            ("⛽ Benzinlik", "benzinlik"), ("💊 Eczane", "eczane"),
+            ("🍽️ Restoran", "restoran"), ("☕ Kafe", "kafe"),
+            ("🏧 ATM", "atm"), ("🏥 Hastane", "hastane"),
+            ("🕌 Cami", "cami"), ("🛒 Market", "market"),
+            ("🅿️ Otopark", "otopark"), ("🏨 Otel", "otel"),
+            ("🏬 AVM", "avm"), ("🏫 Okul", "okul"),
+        ]
+
+        keyboard = []
+        for i in range(0, len(kategoriler), 2):
+            row = []
+            row.append(InlineKeyboardButton(kategoriler[i][0], callback_data=f"konum_ara:{kategoriler[i][1]}"))
+            if i + 1 < len(kategoriler):
+                row.append(InlineKeyboardButton(kategoriler[i+1][0], callback_data=f"konum_ara:{kategoriler[i+1][1]}"))
+            keyboard.append(row)
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            f"📍 {kisa_adres}\n\nNe aramak istiyorsun?",
+            reply_markup=reply_markup
+        )
 
 
 # === MAIN ===
@@ -1059,6 +1186,9 @@ def main():
 
     # 📍 Konum
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
+
+    # 📷 Fotoğraf
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     # 📍 Callback (inline butonlar)
     app.add_handler(CallbackQueryHandler(handle_callback))
