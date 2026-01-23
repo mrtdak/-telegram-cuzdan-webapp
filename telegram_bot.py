@@ -427,10 +427,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     get_user_ai(user_id)
 
-    # Eski klavyeyi kaldır (temiz başlangıç)
+    # Kalıcı klavye butonları
+    keyboard = ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("📍 Konum Paylaş", request_location=True)],
+            [KeyboardButton("🔄 Sohbeti Temizle")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
     await update.message.reply_text(
         "🤖 Merhaba! Sana nasıl yardımcı olabilirim?",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=keyboard
     )
 
 
@@ -1099,7 +1108,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # 🗑️ SOHBETİ SIFIRLA butonu
-    if user_input == "🗑️ Sohbeti Temizle":
+    if user_input in ["🗑️ Sohbeti Temizle", "🔄 Sohbeti Temizle"]:
         user = get_user_ai(user_id)
         user["hafiza"].clear()
         await update.message.reply_text("✅ Sohbet temizlendi!")
@@ -1847,12 +1856,12 @@ def main():
         try:
             # Menüyü ayarla
             komutlar = [
-                BotCommand("yeni", "Sohbeti temizle"),
-                BotCommand("konum", "Konum paylas"),
-                BotCommand("kamera_ekle", "Yeni kamera ekle"),
-                BotCommand("kameralarim", "Kameralarim"),
-                BotCommand("kamera", "Kamera baslat"),
-                BotCommand("kamerakapat", "Kamerayi durdur")
+                BotCommand("yeni", "🔄 Yeni sohbet"),
+                BotCommand("konum", "📍 Konum paylaş"),
+                BotCommand("kamera_ekle", "📹 Kamera ekle"),
+                BotCommand("kameralarim", "🎥 Kameralarım"),
+                BotCommand("kamera", "▶️ İzlemeyi başlat"),
+                BotCommand("kamerakapat", "⏹️ İzlemeyi durdur")
             ]
             await application.bot.set_my_commands(komutlar)
             print("[OK] Telegram menusu ayarlandi!")
