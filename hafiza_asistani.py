@@ -1804,12 +1804,6 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 🔗 BAĞLAM:
 - Kullanıcının cevabını önceki cevabınla birlikte değerlendir
 
-🔧 KONUM SİSTEMİ:
-Kullanıcı konum paylaştığında otomatik olarak kategori butonları gösterilir (eczane, benzinlik, ATM vs.)
-- Kullanıcı butona basarak yakın yerleri arar (10km yarıçap)
-- Sen bu sisteme müdahale etmezsin, sistem otomatik çalışır
-- Kullanıcı konum hakkında soru sorarsa bilgilendirici cevap ver
-
 """
 
     # Geriye uyumluluk için (eski kod hala role parametresi kullanıyorsa)
@@ -2625,17 +2619,15 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             if profile_context:
                 user_info = f"\n[👤 Kullanıcının bilgisi]:\n{profile_context}\n"
 
-        # 📍 Konum bilgisini ekle
+        # 📍 Konum bilgisini ekle (sadece konum varsa talimatlar eklenir)
         if self.user_location and self.konum_adres:
-            user_info += f"""📍 KONUM BİLGİSİ (SİSTEM TARAFINDAN ÇÖZÜMLENDI - KESİN BİLGİ):
-- Konum: {self.konum_adres}
-
-⚠️ ÖNEMLİ TALİMATLAR:
-- Ciddi ve direkt bilgi ver
-- Bu adres GPS'ten otomatik çözümlendi, %100 doğru
-- Bu konumu sen biliyorsun, kendi bilgin gibi kesin ve emin sun
-- "{self.konum_adres}'dasın." yaz, sonra kısaca ne istediğini sor
-- Onay sorma, tereddüt gösterme
+            user_info += f"""
+🔧 KONUM SİSTEMİ:
+📍 Kullanıcının konumu: {self.konum_adres}
+- Kullanıcı konum paylaştığında otomatik olarak kategori butonları gösterilir (eczane, benzinlik, ATM vs.)
+- Kullanıcı butona basarak yakın yerleri arar (10km yarıçap)
+- Sen bu sisteme müdahale etmezsin, sistem otomatik çalışır
+- Kullanıcı konum hakkında soru sorarsa bilgilendirici cevap ver
 """
 
         # Hesaplama değişkenlerini ekle
@@ -3003,21 +2995,19 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
         if hasattr(self, 'profile_manager'):
             kullanici_adi = self.profile_manager.get_name() or ""
 
-        # Sistem prompt'u - Ana SYSTEM_PROMPT + konum bilgisi
+        # Sistem prompt'u - Ana SYSTEM_PROMPT + konum sistemi talimatları
         system_content = f"""{self.SYSTEM_PROMPT}
 Kullanıcı adı: {kullanici_adi}
-📍 KONUM BİLGİSİ (SİSTEM TARAFINDAN ÇÖZÜMLENDI - KESİN BİLGİ):
-- Konum: {self.konum_adres}
 
-⚠️ ÖNEMLİ TALİMATLAR:
-- Ciddi ve direkt bilgi ver
-- Bu adres GPS'ten otomatik çözümlendi, %100 doğru
-- Bu konumu sen biliyorsun, kendi bilgin gibi kesin ve emin sun
-- "{self.konum_adres}'dasın." yaz, sonra kısaca ne istediğini sor
-- Onay sorma, tereddüt gösterme
+🔧 KONUM SİSTEMİ:
+📍 Kullanıcının konumu: {self.konum_adres}
+- Kullanıcı konum paylaştığında otomatik olarak kategori butonları gösterilir (eczane, benzinlik, ATM vs.)
+- Kullanıcı butona basarak yakın yerleri arar (10km yarıçap)
+- Sen bu sisteme müdahale etmezsin, sistem otomatik çalışır
+- Kullanıcı konum hakkında soru sorarsa bilgilendirici cevap ver
 """
 
-        user_content = f"[Kullanıcı GPS konumunu paylaştı → Sistem çözümledi: {self.konum_adres}]"
+        user_content = f"[Kullanıcı konumunu paylaştı: {self.konum_adres}]"
 
         messages = [
             {"role": "system", "content": system_content},

@@ -8,6 +8,10 @@ import requests
 from typing import List, Dict, Optional
 import os
 import re
+from dotenv import load_dotenv
+
+# .env dosyasını yükle
+load_dotenv()
 
 # Ceviri icin
 try:
@@ -18,8 +22,6 @@ except ImportError:
 
 # Tavily API Key (.env dosyasından)
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-if not TAVILY_API_KEY:
-    print("⚠️ TAVILY_API_KEY bulunamadi! .env dosyasini kontrol edin.")
 
 
 def is_turkish(text: str) -> bool:
