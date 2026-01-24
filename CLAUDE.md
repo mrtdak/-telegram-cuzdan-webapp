@@ -167,3 +167,33 @@ GPS-based location services integrated with Telegram location sharing.
 - `/yazar` - Creative writing mode (QuantumTree)
 - `/komedi` - Comedy writing mode
 - `/firlama` - Toggle energetic mode
+- `/kamera` - Kamera izlemeyi başlat (sadece admin)
+- `/kamerakapat` - Kamera izlemeyi durdur (sadece admin)
+
+## Ev Güvenlik Kamera Sistemi
+
+**DVR Bilgileri:**
+- **Model:** Dahua DH-XVR1A04
+- **IP:** 192.168.1.4
+- **Port:** 554 (RTSP)
+- **Kullanıcı:** admin
+
+**RTSP URL Formatı:**
+```
+rtsp://admin:SIFRE@192.168.1.4:554/cam/realmonitor?channel=1&subtype=0  # Cam1
+rtsp://admin:SIFRE@192.168.1.4:554/cam/realmonitor?channel=2&subtype=0  # Cam2
+rtsp://admin:SIFRE@192.168.1.4:554/cam/realmonitor?channel=3&subtype=0  # Cam3
+```
+
+**Kamera Dosyaları:**
+- `kamera_telegram.py` - YOLO + LLM + Telegram entegrasyonu
+- `guvenlik_kamera.py` - Ev/Kuyumcu modları (hareket algılama + AI analiz)
+- `kamera_roi.json` - ROI koordinatları (cam1, cam2, cam3 bahçe/giriş alanları)
+- `kamera_bildirim.json` - Son bildirim durumu
+- `kamera_startup_durum.json` - Kamera başlangıç durumu
+
+**Akış:**
+1. YOLO ile insan tespiti
+2. LLM (Gemini) ile doğrulama
+3. ROI kontrolü (sadece belirlenen alanda)
+4. Telegram bildirimi + fotoğraf

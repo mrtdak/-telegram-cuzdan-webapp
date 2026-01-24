@@ -11,6 +11,7 @@ import aiohttp
 from dotenv import load_dotenv
 from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from telegram.request import HTTPXRequest
 from typing import Dict, Tuple, Optional
 
 from hafiza_asistani import HafizaAsistani
@@ -28,6 +29,7 @@ ADMIN_IDS = [6505503887]
 # Konum arama kategorileri (inline butonlar için)
 KONUM_KATEGORILERI = [
     ("⛽ Benzinlik", "benzinlik"), ("💊 Eczane", "eczane"),
+    ("🌙 Nöbetçi Eczane", "nobetci_eczane"),
     ("🍽️ Restoran", "restoran"), ("☕ Kafe", "kafe"),
     ("🏧 ATM", "atm"), ("🏥 Hastane", "hastane"),
     ("🕌 Cami", "cami"), ("🛒 Market", "market"),
@@ -572,6 +574,10 @@ async def kamera_ekle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         "Adım 1/6: Kamera adı gir",
         reply_markup=ForceReply(input_field_placeholder="Örn: Bahçe Kamerası")
     )
+    await update.message.reply_text(
+        "↩️",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]])
+    )
 
 
 async def kameralarim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -808,12 +814,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_bytes = await file.download_as_bytearray()
         img_base64 = base64.b64encode(photo_bytes).decode('utf-8')
 
-        # Caption varsa kullan, yoksa varsayılan prompt
+        # Caption varsa kullan, yoksa sohbet tarzı
         caption = update.message.caption or ""
         if caption:
-            prompt_text = f"Kullanıcı bu fotoğrafı gönderdi ve şunu sordu: {caption}\n\nFotoğrafı analiz et ve Türkçe cevap ver."
+            prompt_text = f"Arkadaşın sana bu fotoğrafı attı ve şunu yazdı: '{caption}'. Samimi ve kısa cevap ver, Türkçe konuş."
         else:
-            prompt_text = "Bu fotoğrafı analiz et. Ne görüyorsun? Türkçe ve kısa açıkla."
+            prompt_text = "Arkadaşın sana bu fotoğrafı attı. Analiz yapma, sadece arkadaşça kısa bir yorum yap. Türkçe, 1-2 cümle."
 
         # OpenRouter vision API çağrısı
         OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -861,9 +867,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Cevabı gönder
         await update.message.reply_text(response)
 
-        # Hafızaya kaydet
+        # Hafızaya kaydet (fotoğraf içeriğiyle birlikte)
         asistan = user["hafiza"]
-        asistan.save(f"[Fotoğraf gönderildi: {caption or 'captionsız'}]", response, [])
+        if caption:
+            foto_kayit = f"[Fotoğraf gönderildi, caption: '{caption}'. Fotoğrafta: {response[:150]}]"
+        else:
+            foto_kayit = f"[Fotoğraf gönderildi. Fotoğrafta: {response[:150]}]"
+        asistan.save(foto_kayit, response, [])
 
     except Exception as e:
         print(f"[HATA] Fotograf hatasi: {e}")
@@ -888,6 +898,9 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
     adim = wizard["adim"]
     data = wizard["data"]
 
+    # İptal butonu
+    iptal_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]])
+
     # Adım: Kamera adı
     if adim == "ad":
         if len(user_input) < 2:
@@ -895,6 +908,7 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
                 "Kamera adı en az 2 karakter olmalı.",
                 reply_markup=ForceReply(input_field_placeholder="Örn: Bahçe Kamerası")
             )
+            await update.message.reply_text("↩️", reply_markup=iptal_btn)
             return
 
         data["ad"] = user_input
@@ -904,6 +918,7 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
             "Adım 2/6: DVR/Kamera IP adresi",
             reply_markup=ForceReply(input_field_placeholder="Örn: 192.168.1.4")
         )
+        await update.message.reply_text("↩️", reply_markup=iptal_btn)
 
     # Adım: IP adresi
     elif adim == "ip":
@@ -915,6 +930,7 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
                 "Geçersiz IP adresi formatı.",
                 reply_markup=ForceReply(input_field_placeholder="Örn: 192.168.1.4")
             )
+            await update.message.reply_text("↩️", reply_markup=iptal_btn)
             return
 
         data["ip"] = user_input
@@ -943,6 +959,7 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
                 "Geçersiz port. 1-65535 arası olmalı.",
                 reply_markup=ForceReply(input_field_placeholder="Port numarası girin")
             )
+            await update.message.reply_text("↩️", reply_markup=iptal_btn)
             return
 
         data["port"] = port
@@ -952,6 +969,7 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
             "Adım 4/6: Kullanıcı adı",
             reply_markup=ForceReply(input_field_placeholder="Örn: admin")
         )
+        await update.message.reply_text("↩️", reply_markup=iptal_btn)
 
     # Adım: Kullanıcı adı
     elif adim == "kullanici":
@@ -960,6 +978,7 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
                 "Kullanıcı adı boş olamaz.",
                 reply_markup=ForceReply(input_field_placeholder="Kullanıcı adı girin")
             )
+            await update.message.reply_text("↩️", reply_markup=iptal_btn)
             return
 
         data["kullanici"] = user_input
@@ -970,6 +989,7 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
             "(mesajın güvenlik için silinecek)",
             reply_markup=ForceReply(input_field_placeholder="Şifre girin")
         )
+        await update.message.reply_text("↩️", reply_markup=iptal_btn)
 
     # Adım: Şifre
     elif adim == "sifre":
@@ -984,6 +1004,11 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
                 chat_id=update.effective_chat.id,
                 text="Şifre boş olamaz.",
                 reply_markup=ForceReply(input_field_placeholder="Şifre girin")
+            )
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="↩️",
+                reply_markup=iptal_btn
             )
             return
 
@@ -1288,7 +1313,29 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Arama yap
         try:
-            result = await asistan._get_yakin_yerler(lat, lon, kategori)
+            # Nöbetçi eczane için il/ilçe seçeneği göster
+            if kategori == "nobetci_eczane":
+                # İl/ilçe bilgisini al
+                if asistan.konum_adres:
+                    parcalar = [p.strip() for p in asistan.konum_adres.split(",")]
+                    if len(parcalar) >= 2:
+                        il = parcalar[-1]
+                        ilce = parcalar[-2]
+                        buttons = [
+                            [InlineKeyboardButton(f"🏘️ {ilce} (ilçe)", callback_data=f"nobetci_ara:ilce:{ilce}:{il}")],
+                            [InlineKeyboardButton(f"🏙️ {il} (tüm il)", callback_data=f"nobetci_ara:il:{il}")],
+                            [InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]
+                        ]
+                        reply_markup = InlineKeyboardMarkup(buttons)
+                        await query.edit_message_text(
+                            f"🌙 Nöbetçi Eczane\n\nNerede arayalım?",
+                            reply_markup=reply_markup
+                        )
+                        return
+                # Adres yoksa direkt il için ara
+                result = await asistan._get_nobetci_eczane(lat, lon)
+            else:
+                result = await asistan._get_yakin_yerler(lat, lon, kategori)
 
             # Dict döndüyse inline butonlarla göster
             if isinstance(result, dict) and result.get("type") == "yakin_yerler_listesi":
@@ -1297,9 +1344,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 mesaj = f"Yakınındaki {kategori}ler:\n\n"
                 buttons = []
                 for i, yer in enumerate(yerler, 1):
-                    mesaj += f"{i}. {yer['ad']} ({yer['mesafe']}m)\n"
+                    # 99999m = koordinat yok
+                    has_konum = yer['mesafe'] < 99999
+                    mesafe_str = f"{yer['mesafe']}m" if has_konum else "📍yok"
+
+                    # Mesajda adres/tel varsa göster
+                    mesaj += f"{i}. {yer['ad']} ({mesafe_str})"
+                    if not has_konum and yer.get('adres'):
+                        mesaj += f"\n   📫 {yer['adres'][:40]}"
+                    if not has_konum and yer.get('telefon'):
+                        mesaj += f"\n   📞 {yer['telefon']}"
+                    mesaj += "\n"
+
+                    # Buton metni
+                    btn_text = f"{i}. {yer['ad'][:20]}{'...' if len(yer['ad']) > 20 else ''}"
+                    if has_konum:
+                        btn_text += f" ({mesafe_str})"
+                    else:
+                        btn_text += " 📍yok"
+
                     buttons.append([InlineKeyboardButton(
-                        f"{i}. {yer['ad'][:25]}{'...' if len(yer['ad']) > 25 else ''} ({yer['mesafe']}m)",
+                        btn_text,
                         callback_data=f"konum_gonder:{i-1}"
                     )])
 
@@ -1316,6 +1381,61 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"Callback hata: {e}")
             geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
             await query.edit_message_text(f"{kategori} araması başarısız.", reply_markup=geri_btn)
+
+    # Nöbetçi eczane il/ilçe seçimi: nobetci_ara:tip:ilce:il veya nobetci_ara:il:il
+    elif data.startswith("nobetci_ara:"):
+        parts = data.split(":")
+        tip = parts[1]  # "ilce" veya "il"
+
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        user = user_instances[user_id]
+        asistan = user["hafiza"]
+
+        if not asistan.user_location:
+            await query.edit_message_text("❌ Önce konum paylaş.")
+            return
+
+        lat, lon = asistan.user_location
+
+        try:
+            if tip == "ilce":
+                ilce = parts[2]
+                il = parts[3]
+                result = await asistan._get_nobetci_eczane(lat, lon, ilce=ilce, il=il)
+            else:  # tip == "il"
+                il = parts[2]
+                result = await asistan._get_nobetci_eczane(lat, lon, il=il)
+
+            # Sonuçları göster
+            if isinstance(result, dict) and result.get("type") == "yakin_yerler_listesi":
+                yerler = result["yerler"]
+                kategori = "nöbetçi eczane"
+
+                mesaj = f"🌙 Nöbetçi Eczaneler:\n\n"
+                buttons = []
+                for i, yer in enumerate(yerler, 1):
+                    has_konum = yer['mesafe'] < 99999
+                    mesafe_str = f"{yer['mesafe']}m" if has_konum else "📍yok"
+                    mesaj += f"{i}. {yer['ad']} ({mesafe_str})\n"
+
+                    btn_text = f"{i}. {yer['ad'][:20]}{'...' if len(yer['ad']) > 20 else ''}"
+                    if has_konum:
+                        btn_text += f" ({mesafe_str})"
+                    buttons.append([InlineKeyboardButton(btn_text, callback_data=f"konum_gonder:{i-1}")])
+
+                buttons.append([InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")])
+                reply_markup = InlineKeyboardMarkup(buttons)
+                await query.edit_message_text(mesaj, reply_markup=reply_markup)
+            else:
+                geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
+                await query.edit_message_text(result if result else "Nöbetçi eczane bulunamadı.", reply_markup=geri_btn)
+        except Exception as e:
+            print(f"Nöbetçi eczane hata: {e}")
+            geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
+            await query.edit_message_text(f"Nöbetçi eczane araması başarısız.", reply_markup=geri_btn)
 
     # Konum gönderme callback'i: konum_gonder:index
     elif data.startswith("konum_gonder:"):
@@ -1340,6 +1460,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         yer = asistan.son_yakin_yerler[index]
 
+        # Koordinat kontrolü
+        if not yer.get("lat") or not yer.get("lon"):
+            geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
+            # Adres/telefon bilgisi varsa göster
+            mesaj = f"📍 {yer['ad']}\n\n❌ Koordinat bilgisi yok."
+            if yer.get("adres"):
+                mesaj += f"\n📫 Adres: {yer['adres']}"
+            if yer.get("telefon"):
+                mesaj += f"\n📞 Tel: {yer['telefon']}"
+            await query.edit_message_text(mesaj, reply_markup=geri_btn)
+            return
+
         # Mesajı güncelle
         await query.edit_message_text(f"📍 {yer['ad']} konumu gönderiliyor...")
 
@@ -1352,9 +1484,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Bilgi mesajı + geri butonu
         geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
+        info_text = f"📍 {yer['ad']}\n📏 {yer['mesafe']}m uzaklıkta"
+        if yer.get("adres"):
+            info_text += f"\n📫 {yer['adres']}"
+        if yer.get("telefon"):
+            info_text += f"\n📞 {yer['telefon']}"
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"📍 {yer['ad']}\n📏 {yer['mesafe']}m uzaklıkta",
+            text=info_text,
             reply_markup=geri_btn
         )
 
@@ -1393,6 +1530,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Adım 1/6: Kamera adı gir",
             reply_markup=ForceReply(input_field_placeholder="Örn: Bahçe Kamerası")
         )
+        iptal_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]])
+        await query.message.reply_text("↩️", reply_markup=iptal_btn)
 
     # Kamera wizard iptal
     elif data == "kamera_wizard_iptal":
@@ -1409,6 +1548,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         port_val = data.split(":")[1]
         wizard = user_kamera_wizard[user_id]
 
+        iptal_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]])
         if port_val == "custom":
             # Kullanıcıdan custom port iste
             wizard["adim"] = "port"
@@ -1416,6 +1556,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Port numarasını gir:",
                 reply_markup=ForceReply(input_field_placeholder="Örn: 554, 8554")
             )
+            await query.message.reply_text("↩️", reply_markup=iptal_btn)
             await query.answer()
         else:
             # Seçilen portu kaydet
@@ -1429,6 +1570,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Kullanıcı adını gir:",
                 reply_markup=ForceReply(input_field_placeholder="Örn: admin")
             )
+            await query.message.reply_text("↩️", reply_markup=iptal_btn)
 
     # Kamera kanal seçimi
     elif data.startswith("kamera_kanal:"):
@@ -1868,7 +2010,14 @@ def main():
         except Exception as e:
             print(f"[HATA] Menu hatasi: {e}")
 
-    app = Application.builder().token(token).post_init(post_init).build()
+    # HTTPXRequest ile timeout ayarları (default 5sn çok kısa)
+    request = HTTPXRequest(
+        connect_timeout=20.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=10.0
+    )
+    app = Application.builder().token(token).request(request).post_init(post_init).build()
 
     # GLOBAL ERROR HANDLER
     async def error_handler(update, context):

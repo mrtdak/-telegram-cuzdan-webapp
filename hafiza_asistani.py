@@ -1711,7 +1711,7 @@ JSON:
         return {
             "question_type": "general",
             "needs_faiss": False,
-            "needs_semantic_memory": True,  # Güvenli mod: hafıza aç
+            "needs_semantic_memory": False,  # Fallback: kapalı (retry var, gereksiz)
             "needs_chat_history": True,     # Güvenli mod: history aç
             "tool_name": "yok",
             "tool_param": "",
@@ -1759,7 +1759,6 @@ JSON:
 
     # TEK BİRLEŞİK PROMPT - Full Friend Modu
     SYSTEM_PROMPT = """Sen akıllı, profesyonel, olgun ve sıcakkanlısın. Arkadaşsın.
-İnsanların şakacı yönleri de var - espri veya şaka yapıldığında sen de aynı tonda karşılık ver, ciddi açıklamaya geçme.
 
 - ✅ Her şeyi akıcı paragraflarla yaz. Liste gerekse bile cümle içinde sırala (birincisi şu, ikincisi bu gibi)
 - ⚠️ Hatalı/anlamsız kelime görürsen tahmin etme, "X derken şunu mu demek istedin?" gibi sor
@@ -1894,7 +1893,7 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             elif enerji == "kapanıyor":
                 enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
             else:
-                enerji_talimat = "Samimi sohbet tonu"
+                enerji_talimat = "⚡ CANLI: Samimi ve canlı sohbet tonu"
 
             # Espri modunda özel ton
             if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
@@ -2503,20 +2502,11 @@ Bunların yerine VERİLEN METİNDEKİ DİĞER kavram ve temsilleri kullan veya F
             if profile_context:
                 user_info = f"\n[👤 Kullanıcının bilgisi]:\n{profile_context}\n"
 
-        # 📍 Konum bilgisini ekle (sadece konum varsa talimatlar eklenir)
-        if self.user_location and self.konum_adres:
-            user_info += f"""
-🔧 KONUM SİSTEMİ:
-Kullanıcı Telegram'dan GPS konumunu paylaştı.
-📍 Adres: {self.konum_adres}
-
-Sistem otomatik olarak kategori butonları gösterdi (eczane, benzinlik, ATM vs.)
-Kullanıcı butonlara basarak yakın yer arar - bu süreç otomatik, sen karışma.
-
-Senin görevin:
-- "Neredeyim?" veya konum sorusu gelirse bu adresi kullan
-- Yakın yer sonuçları sana context olarak gelirse doğal şekilde aktar
-"""
+        # 📍 Konum bilgisi - sadece kullanıcı konum hakkında konuşursa dahil et
+        # Konum sistemi ayrı çalışır (butonlar, yakın yer arama vs.), LLM'ye bağımlı değil
+        if self.user_location and self.konum_adres and paket.get('konum_context'):
+            # Sadece konum araması yapıldıysa sonucu dahil et
+            pass  # konum_context aşağıda zaten ekleniyor
 
         # Hesaplama değişkenlerini ekle
         if hasattr(self, 'calculation_context'):
@@ -2565,7 +2555,7 @@ Senin görevin:
             elif enerji == "kapanıyor":
                 enerji_talimat = "🌙 KAPANIŞ: Sohbet bitiyor, kısa ve samimi kapat"
             else:
-                enerji_talimat = "Samimi sohbet tonu"
+                enerji_talimat = "⚡ CANLI: Samimi ve canlı sohbet tonu"
 
             # Espri modunda özel ton
             if hasattr(self, '_son_decision') and self._son_decision.get('is_espri'):
@@ -2913,7 +2903,14 @@ Senin görevin:
         user_lower = user_input.lower().strip()
         lat, lon = self.user_location
 
-        # Konum sinyalleri
+        # "Neredeyim?" sorusu - sadece konum adresini döndür
+        neredeyim_sinyalleri = ["neredeyim", "nerdeyim", "konumum", "adresim", "şu an nerede"]
+        if any(s in user_lower for s in neredeyim_sinyalleri):
+            if self.konum_adres:
+                return f"📍 Kullanıcının konumu: {self.konum_adres}"
+            return None
+
+        # Konum sinyalleri (yakın yer araması için)
         konum_sinyalleri = ["yakın", "yakin", "yakınım", "yakinim", "yakında", "yakinda",
                            "nerede", "neresi", "bul", "ara", "var mı", "varmı"]
         has_konum_signal = any(s in user_lower for s in konum_sinyalleri)
@@ -3072,6 +3069,119 @@ Senin görevin:
         except Exception as e:
             print(f"Overpass API hatası: {e}")
             return f"Yakın {kategori} araması sırasında hata oluştu."
+
+    async def _get_nobetci_eczane(self, lat: float, lon: float, il: str = None, ilce: str = None) -> Any:
+        """Nöbetçi eczane bilgisi al (CollectAPI)"""
+        import math
+        from urllib.parse import quote
+
+        # İl/ilçe parametresi verilmediyse adres'ten al
+        if not il:
+            if not self.konum_adres:
+                return "❌ Konum adresi bulunamadı. Tekrar konum paylaş."
+            adres_parcalari = [p.strip() for p in self.konum_adres.split(",")]
+            if len(adres_parcalari) >= 2:
+                il = adres_parcalari[-1].strip()
+                ilce = adres_parcalari[-2].strip()
+            else:
+                return "❌ İl/ilçe bilgisi alınamadı."
+
+        print(f"🏥 Nöbetçi eczane aranıyor: İl={il}, İlçe={ilce if ilce else 'TÜM İL'}")
+
+        # CollectAPI için API key
+        api_key = os.environ.get("COLLECTAPI_KEY", "")
+        if not api_key:
+            return "❌ Nöbetçi eczane API anahtarı ayarlanmamış.\n\nCOLLECTAPI_KEY environment variable ekle."
+
+        # URL encode (Türkçe karakterler için)
+        if ilce:
+            url = f"https://api.collectapi.com/health/dutyPharmacy?il={quote(il)}&ilce={quote(ilce)}"
+        else:
+            url = f"https://api.collectapi.com/health/dutyPharmacy?il={quote(il)}"
+        headers = {
+            "authorization": f"apikey {api_key}",
+            "content-type": "application/json"
+        }
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status != 200:
+                        return f"❌ Nöbetçi eczane API hatası: {resp.status}"
+                    data = await resp.json()
+
+            print(f"🏥 API Response: {data}")
+
+            if not data.get("success"):
+                print(f"❌ API başarısız: {data}")
+                return f"❌ {il}/{ilce} için nöbetçi eczane bulunamadı."
+
+            eczaneler = data.get("result", [])
+            print(f"🏥 API'den {len(eczaneler)} eczane geldi")
+            for i, ecz in enumerate(eczaneler[:3]):
+                print(f"   {i+1}. {ecz.get('name')} - loc:{ecz.get('loc')}")
+
+            if not eczaneler:
+                return f"❌ {il}/{ilce} için nöbetçi eczane bulunamadı."
+
+            # Haversine mesafe hesaplama
+            def haversine(lat1, lon1, lat2, lon2):
+                R = 6371000
+                phi1, phi2 = math.radians(lat1), math.radians(lat2)
+                dphi = math.radians(lat2 - lat1)
+                dlambda = math.radians(lon2 - lon1)
+                a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+                return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+            yerler = []
+            for ecz in eczaneler[:10]:  # İlk 10
+                # loc alanı "lat,lng" formatında string olarak geliyor
+                ecz_lat = None
+                ecz_lon = None
+                loc = ecz.get("loc", "")
+                if loc and "," in loc:
+                    try:
+                        parts = loc.split(",")
+                        ecz_lat = float(parts[0].strip())
+                        ecz_lon = float(parts[1].strip())
+                    except:
+                        pass
+
+                if ecz_lat and ecz_lon:
+                    try:
+                        mesafe = haversine(lat, lon, ecz_lat, ecz_lon)
+                    except:
+                        mesafe = 99999
+                else:
+                    mesafe = 99999
+
+                yerler.append({
+                    "ad": f"🌙 {ecz.get('name', 'Eczane')}",
+                    "mesafe": int(mesafe),
+                    "lat": ecz_lat,
+                    "lon": ecz_lon,
+                    "adres": ecz.get("address", ""),
+                    "telefon": ecz.get("phone", "")
+                })
+
+            # Mesafeye göre sırala
+            yerler.sort(key=lambda x: x["mesafe"])
+            yerler = yerler[:5]  # En yakın 5
+
+            # Konum gönderme için kaydet
+            self.son_yakin_yerler = yerler
+
+            return {
+                "type": "yakin_yerler_listesi",
+                "kategori": "nöbetçi eczane",
+                "emoji": "🌙",
+                "yerler": yerler
+            }
+
+        except Exception as e:
+            print(f"Nöbetçi eczane API hatası: {e}")
+            return f"❌ Nöbetçi eczane araması başarısız: {e}"
 
     def _check_konum_gonder_istegi(self, user_input: str) -> Optional[Dict]:
         """
