@@ -1409,14 +1409,7 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         try:
             if tool_name == "zaman_getir":
                 datetime_info = get_current_datetime()
-                result = "[KORUNACAK_FORMAT]\n"
-                result += "🕐 Şu Anki Zaman\n"
-                result += f"{'─' * 32}\n\n"
-                result += f"📅 Tarih:  {datetime_info['tarih']}\n"
-                result += f"📆 Gün:    {datetime_info['gun']}\n"
-                result += f"🕐 Saat:   {datetime_info['saat']}\n"
-                result += "[/KORUNACAK_FORMAT]"
-                return result
+                return f"Saat: {datetime_info['saat']}, {datetime_info['gun']} {datetime_info['tarih']}"
 
             if tool_name == "hesapla":
                 result = calculate_math(tool_param or user_input)
@@ -1755,17 +1748,19 @@ JSON:
         summary_prompt = f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
 Aşağıdaki konuşmayı 1-2 kısa cümleyle özetle.
-Özet, konuşmanın ANA KONUSUNU ve ne yapıldığını içermeli.
+Bu iki kişi arasındaki sohbetin özetidir. "konuşuldu", "sohbet edildi" formatında yaz.
+ASLA "Kullanıcı şunu yaptı" veya "Kullanıcı sordu" YAZMA.
+
 Örnek formatlar:
-- "Python kurulumu hakkında yardım edildi"
-- "Hava durumu sorgulandı, İstanbul için bilgi verildi"
-- "Namaz vakitleri soruldu ve cevaplandı"
-- "Yapay zeka hakkında sohbet edildi"
+- "Python kurulumu hakkında konuşuldu"
+- "Hava durumu soruldu, İstanbul için bilgi alındı"
+- "Hazine Adası kitabı ve karakterleri üzerine sohbet edildi"
+- "Yapay zeka hakkında konuşuldu"
 
 KONUŞMA:
 {conversation_text}
 
-ÖZET (1-2 cümle, Türkçe):<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+ÖZET (1-2 cümle, Türkçe, "konuşuldu/sohbet edildi" formatında):<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
 
@@ -2492,10 +2487,10 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
         if konum_context:
             context_parts.append(f"[📍 KONUM ARAMA SONUCU]:\n{konum_context}\n(Bu sonucu doğal şekilde kullanıcıya aktar)")
 
-        # Bağlam bilgisi
+        # Bağlam bilgisi (etiket olmadan direkt ekle)
         context_info = ""
         if context_parts:
-            context_info = f"\n\n📚 BAĞLAM:\n{chr(10).join(context_parts)}"
+            context_info = f"\n\n{chr(10).join(context_parts)}"
 
         # 🎯 SOHBET ZEKASI TALİMATI (ortak metod kullan)
         sohbet_talimati = self._build_sohbet_talimati(tool_used)
