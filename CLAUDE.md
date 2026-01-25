@@ -174,15 +174,15 @@ GPS-based location services integrated with Telegram location sharing.
 
 **DVR Bilgileri:**
 - **Model:** Dahua DH-XVR1A04
-- **IP:** 192.168.1.4
+- **IP:** 192.168.1.108
 - **Port:** 554 (RTSP)
 - **Kullanıcı:** admin
 
 **RTSP URL Formatı:**
 ```
-rtsp://admin:SIFRE@192.168.1.4:554/cam/realmonitor?channel=1&subtype=0  # Cam1
-rtsp://admin:SIFRE@192.168.1.4:554/cam/realmonitor?channel=2&subtype=0  # Cam2
-rtsp://admin:SIFRE@192.168.1.4:554/cam/realmonitor?channel=3&subtype=0  # Cam3
+rtsp://admin:SIFRE@192.168.1.108:554/cam/realmonitor?channel=1&subtype=0  # Cam1
+rtsp://admin:SIFRE@192.168.1.108:554/cam/realmonitor?channel=2&subtype=0  # Cam2
+rtsp://admin:SIFRE@192.168.1.108:554/cam/realmonitor?channel=3&subtype=0  # Cam3
 ```
 
 **Kamera Dosyaları:**

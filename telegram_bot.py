@@ -29,13 +29,95 @@ ADMIN_IDS = [6505503887]
 # Konum arama kategorileri (inline butonlar için)
 KONUM_KATEGORILERI = [
     ("⛽ Benzinlik", "benzinlik"), ("💊 Eczane", "eczane"),
-    ("🌙 Nöbetçi Eczane", "nobetci_eczane"),
+    ("🌙 Nöbetçi Eczane", "nobetci_eczane"), ("⛽ Yakıt Fiyatları", "yakit_fiyat"),
     ("🍽️ Restoran", "restoran"), ("☕ Kafe", "kafe"),
     ("🏧 ATM", "atm"), ("🏥 Hastane", "hastane"),
     ("🕌 Cami", "cami"), ("🛒 Market", "market"),
     ("🅿️ Otopark", "otopark"), ("🏨 Otel", "otel"),
     ("🏬 AVM", "avm"), ("🏫 Okul", "okul"),
 ]
+
+
+# ============== KAMERA AĞINI TARAMA (MAC/IP) ==============
+
+def mac_bul_ip_ile(ip: str) -> Optional[str]:
+    """IP adresinden MAC adresini bul"""
+    import subprocess
+    try:
+        # Önce ping at (ARP tablosuna eklensin)
+        subprocess.run(['ping', '-n', '1', '-w', '1000', ip],
+                      capture_output=True, timeout=3)
+        # ARP tablosundan MAC'i al
+        result = subprocess.run(['arp', '-a', ip],
+                               capture_output=True, text=True, timeout=5)
+        for line in result.stdout.split('\n'):
+            if ip in line:
+                # MAC adresini bul (xx-xx-xx-xx-xx-xx formatında)
+                parts = line.split()
+                for part in parts:
+                    if len(part) == 17 and part.count('-') == 5:
+                        return part.lower()
+    except:
+        pass
+    return None
+
+def ip_bul_mac_ile(mac: str) -> Optional[str]:
+    """MAC adresinden IP'yi bul (ağı tarar)"""
+    import subprocess
+    mac = mac.lower()
+    try:
+        # ARP tablosunu tara
+        result = subprocess.run(['arp', '-a'],
+                               capture_output=True, text=True, timeout=10)
+        for line in result.stdout.split('\n'):
+            line_lower = line.lower()
+            if mac in line_lower:
+                # IP adresini bul
+                parts = line.split()
+                for part in parts:
+                    if part.count('.') == 3:  # IP formatı
+                        return part
+    except:
+        pass
+    return None
+
+def agdaki_kamerayi_bul(mac: str, eski_ip: str) -> Optional[str]:
+    """Ağda kamerayı bul - önce eski IP'yi dene, sonra MAC ile ara"""
+    import subprocess
+
+    # 1. Önce eski IP'yi dene (hızlı)
+    if eski_ip:
+        try:
+            result = subprocess.run(['ping', '-n', '1', '-w', '1000', eski_ip],
+                                   capture_output=True, timeout=3)
+            if result.returncode == 0:
+                return eski_ip
+        except:
+            pass
+
+    # 2. MAC ile ara
+    yeni_ip = ip_bul_mac_ile(mac)
+    if yeni_ip:
+        return yeni_ip
+
+    # 3. Ağı tara (192.168.1.1-254 ping at)
+    import concurrent.futures
+
+    def ping_ip(ip):
+        try:
+            result = subprocess.run(['ping', '-n', '1', '-w', '500', ip],
+                                   capture_output=True, timeout=2)
+            return result.returncode == 0
+        except:
+            return False
+
+    # Paralel ping
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+        ips = [f"192.168.1.{i}" for i in range(1, 255)]
+        executor.map(ping_ip, ips)
+
+    # Tekrar MAC ile ara
+    return ip_bul_mac_ile(mac)
 
 
 # ============== KAMERA MANAGER (Multi-User) ==============
@@ -72,6 +154,9 @@ class KameraManager:
         mevcut_idler = [k["id"] for k in config["kameralar"]]
         yeni_id = max(mevcut_idler, default=0) + 1
 
+        # MAC adresini bul
+        mac = mac_bul_ip_ile(ip)
+
         yeni_kamera = {
             "id": yeni_id,
             "ad": ad,
@@ -80,6 +165,7 @@ class KameraManager:
             "kullanici": kullanici,
             "sifre": sifre,
             "kanal": kanal,
+            "mac": mac,  # IP değişse bile MAC ile bulunabilir
             "aktif": False
         }
 
@@ -91,6 +177,28 @@ class KameraManager:
 
         self.kaydet(config)
         return yeni_id
+
+    def ip_guncelle(self, kamera_id: int, yeni_ip: str) -> bool:
+        """Kamera IP'sini güncelle"""
+        config = self.yukle()
+        for k in config["kameralar"]:
+            if k["id"] == kamera_id:
+                k["ip"] = yeni_ip
+                self.kaydet(config)
+                return True
+        return False
+
+    def ip_otomatik_bul(self, kamera_id: int) -> Optional[str]:
+        """MAC adresi ile yeni IP'yi bul ve güncelle"""
+        kamera = self.kamera_getir(kamera_id)
+        if not kamera or not kamera.get("mac"):
+            return None
+
+        yeni_ip = agdaki_kamerayi_bul(kamera["mac"], kamera["ip"])
+        if yeni_ip and yeni_ip != kamera["ip"]:
+            self.ip_guncelle(kamera_id, yeni_ip)
+            return yeni_ip
+        return kamera["ip"] if yeni_ip else None
 
     def kamera_sil(self, kamera_id: int) -> bool:
         """Kamerayı sil"""
@@ -169,14 +277,16 @@ user_kamera_wizard: Dict[int, Dict] = {}
 #   }
 # }
 
-# Kullanıcı bazlı kamera thread yönetimi
-user_kamera_threads: Dict[int, Dict] = {}
+# Kullanıcı bazlı kamera thread yönetimi (çoklu kamera desteği)
+user_kamera_threads: Dict[int, Dict[int, Dict]] = {}
 # {
 #   user_id: {
-#     "thread": Thread,
-#     "aktif": True/False,
-#     "kamera_id": 1,
-#     "stop_flag": True/False
+#     kamera_id: {
+#       "thread": Thread,
+#       "aktif": True/False,
+#       "stop_flag": True/False
+#     },
+#     kamera_id_2: { ... }
 #   }
 # }
 
@@ -192,6 +302,9 @@ def kamera_izleme_baslat(user_id: int, chat_id: int, kamera_kaynak: str, kamera_
     import time
     from datetime import datetime
     from ultralytics import YOLO
+
+    # RTSP TCP transport kullan (UDP yerine)
+    os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
 
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -246,13 +359,13 @@ SADECE: "EVET: [açıklama]" veya "HAYIR" yaz."""
         except:
             pass
 
-    # Kamera aç
-    cap = cv2.VideoCapture(kamera_kaynak)
+    # Kamera aç (TCP transport ile)
+    cap = cv2.VideoCapture(kamera_kaynak, cv2.CAP_FFMPEG)
     if not cap.isOpened():
         print(f"[HATA] Kamera acilamadi: {kamera_kaynak}")
         # Thread durumunu güncelle
-        if user_id in user_kamera_threads:
-            user_kamera_threads[user_id]["aktif"] = False
+        if user_id in user_kamera_threads and kamera_id in user_kamera_threads[user_id]:
+            user_kamera_threads[user_id][kamera_id]["aktif"] = False
         return
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -262,14 +375,16 @@ SADECE: "EVET: [açıklama]" veya "HAYIR" yaz."""
     son_bildirim = 0
 
     # Thread'in aktif olduğunu işaretle
-    if user_id in user_kamera_threads:
-        user_kamera_threads[user_id]["aktif"] = True
+    if user_id in user_kamera_threads and kamera_id in user_kamera_threads[user_id]:
+        user_kamera_threads[user_id][kamera_id]["aktif"] = True
 
     while True:
         # Durdurma kontrolü
         if user_id not in user_kamera_threads:
             break
-        if user_kamera_threads[user_id].get("stop_flag", False):
+        if kamera_id not in user_kamera_threads[user_id]:
+            break
+        if user_kamera_threads[user_id][kamera_id].get("stop_flag", False):
             break
 
         ret, frame = cap.read()
@@ -284,7 +399,7 @@ SADECE: "EVET: [açıklama]" veya "HAYIR" yaz."""
             if simdi - son_bildirim >= BILDIRIM_BEKLEME:
                 son_bildirim = simdi
                 tarih = datetime.now().strftime("%Y%m%d_%H%M%S")
-                foto_path = f"{KAYIT_KLASORU}/tespit_{tarih}.jpg"
+                foto_path = f"{KAYIT_KLASORU}/tespit_{kamera_ad}_{tarih}.jpg"
                 cv2.imwrite(foto_path, frame_isaretli)
 
                 llm_cevap = llm_dogrula(foto_path)
@@ -303,19 +418,22 @@ SADECE: "EVET: [açıklama]" veya "HAYIR" yaz."""
     cap.release()
 
     # Kamera durumunu güncelle
-    if user_id in user_kamera_threads:
-        user_kamera_threads[user_id]["aktif"] = False
+    if user_id in user_kamera_threads and kamera_id in user_kamera_threads[user_id]:
+        user_kamera_threads[user_id][kamera_id]["aktif"] = False
         kamera_manager = KameraManager(user_id)
         kamera_manager.kamera_durumu_guncelle(kamera_id, False)
 
     print(f"📹 Kamera izleme durduruldu - User: {user_id}, Kamera: {kamera_ad}")
 
 
-def kamera_test_baglanti(rtsp_url: str) -> Tuple[bool, str]:
-    """RTSP bağlantısını test et"""
+def kamera_test_baglanti(rtsp_url: str, kaydet_path: str = None) -> Tuple[bool, str, str]:
+    """RTSP bağlantısını test et ve fotoğraf çek"""
     try:
         import cv2
-        cap = cv2.VideoCapture(rtsp_url)
+        import os
+        # RTSP TCP transport kullan (UDP yerine)
+        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
+        cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         # Timeout için 5 saniye
@@ -324,13 +442,18 @@ def kamera_test_baglanti(rtsp_url: str) -> Tuple[bool, str]:
         while time.time() - start < 5:
             ret, frame = cap.read()
             if ret and frame is not None:
+                foto_path = None
+                # Fotoğraf kaydet
+                if kaydet_path:
+                    cv2.imwrite(kaydet_path, frame)
+                    foto_path = kaydet_path
                 cap.release()
-                return True, "✅ Bağlantı başarılı!"
+                return True, "✅ Bağlantı başarılı!", foto_path
 
         cap.release()
-        return False, "❌ Kamera yanıt vermedi."
+        return False, "❌ Kamera yanıt vermedi.", None
     except Exception as e:
-        return False, f"❌ Bağlantı hatası: {str(e)[:50]}"
+        return False, f"❌ Bağlantı hatası: {str(e)[:50]}", None
 
 
 def temizle_cikti(text: str) -> str:
@@ -597,30 +720,45 @@ async def kameralarim_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    # Aktif kamera kontrolü
-    aktif_kamera_id = None
-    if user_id in user_kamera_threads and user_kamera_threads[user_id].get("aktif"):
-        aktif_kamera_id = user_kamera_threads[user_id].get("kamera_id")
+    # Aktif kameraları bul (çoklu kamera desteği)
+    aktif_kamera_idleri = set()
+    if user_id in user_kamera_threads:
+        for kid, kdata in user_kamera_threads[user_id].items():
+            if kdata.get("aktif"):
+                aktif_kamera_idleri.add(kid)
 
-    mesaj = f"📷 Kameralarım ({len(kameralar)} adet)\n\n"
+    aktif_sayisi = len(aktif_kamera_idleri)
+    mesaj = f"📷 Kameralarım ({len(kameralar)} adet)"
+    if aktif_sayisi > 0:
+        mesaj += f" - 🟢 {aktif_sayisi} aktif"
+    mesaj += "\n\n"
 
     keyboard = []
     for k in kameralar:
-        durum = "🟢 AKTİF" if k["id"] == aktif_kamera_id else "⚫"
+        kamera_aktif = k["id"] in aktif_kamera_idleri
+        durum = "🟢 AKTİF" if kamera_aktif else "⚫"
         mesaj += f"{k['id']}. {k['ad']} - {k['ip']}:{k['kanal']} {durum}\n"
 
-        if k["id"] == aktif_kamera_id:
+        if kamera_aktif:
             # Aktif kamera için durdur butonu
             keyboard.append([InlineKeyboardButton(
                 f"⏹️ {k['ad']} Durdur",
                 callback_data=f"kamera_durdur:{k['id']}"
             )])
         else:
-            # İnaktif kamera için başlat ve sil butonları
+            # İnaktif kamera için başlat, test ve sil butonları
             keyboard.append([
                 InlineKeyboardButton(f"▶️ Başlat", callback_data=f"kamera_baslat:{k['id']}"),
+                InlineKeyboardButton(f"🔍 Test", callback_data=f"kamera_test:{k['id']}"),
                 InlineKeyboardButton(f"🗑️ Sil", callback_data=f"kamera_sil:{k['id']}")
             ])
+
+    # Tümünü Başlat / Tümünü Durdur butonları
+    if len(kameralar) > 1:
+        if aktif_sayisi < len(kameralar):
+            keyboard.append([InlineKeyboardButton("▶️ Tümünü Başlat", callback_data="kamera_tumunu_baslat")])
+        if aktif_sayisi > 0:
+            keyboard.append([InlineKeyboardButton("⏹️ Tümünü Durdur", callback_data="kamera_tumunu_durdur")])
 
     # Yeni kamera ekle butonu
     keyboard.append([InlineKeyboardButton("➕ Yeni Kamera Ekle", callback_data="kamera_ekle_wizard")])
@@ -1334,6 +1472,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         return
                 # Adres yoksa direkt il için ara
                 result = await asistan._get_nobetci_eczane(lat, lon)
+
+            # Yakıt fiyatları için özel işlem
+            elif kategori == "yakit_fiyat":
+                if asistan.konum_adres:
+                    parcalar = [p.strip() for p in asistan.konum_adres.split(",")]
+                    if len(parcalar) >= 1:
+                        il = parcalar[-1]
+                        result = await asistan._get_yakit_fiyatlari(il)
+
+                        if isinstance(result, str):
+                            # Hata mesajı
+                            geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
+                            await query.edit_message_text(result, reply_markup=geri_btn)
+                        else:
+                            # Başarılı sonuç
+                            geri_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kategoriler", callback_data="konum_menu")]])
+                            await query.edit_message_text(result, reply_markup=geri_btn, parse_mode="Markdown")
+                        return
+                result = "❌ Konum bilgisi bulunamadı."
             else:
                 result = await asistan._get_yakin_yerler(lat, lon, kategori)
 
@@ -1625,26 +1782,37 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not kameralar:
             keyboard = [[InlineKeyboardButton("➕ Kamera Ekle", callback_data="kamera_ekle_wizard")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(
-                "📷 Henüz kamera eklememişsin.\n\n"
-                "Kamera eklemek için butona tıkla.",
-                reply_markup=reply_markup
-            )
+            mesaj_text = "📷 Henüz kamera eklememişsin.\n\nKamera eklemek için butona tıkla."
+
+            if query.message.photo:
+                await query.message.delete()
+                await context.bot.send_message(chat_id=query.message.chat_id, text=mesaj_text, reply_markup=reply_markup)
+            else:
+                await query.edit_message_text(mesaj_text, reply_markup=reply_markup)
             return
 
         # Aktif kamera kontrolü
         aktif_kamera_id = None
-        if user_id in user_kamera_threads and user_kamera_threads[user_id].get("aktif"):
-            aktif_kamera_id = user_kamera_threads[user_id].get("kamera_id")
+        # Aktif kameraları bul (çoklu kamera desteği)
+        aktif_kamera_idleri = set()
+        if user_id in user_kamera_threads:
+            for kid, kdata in user_kamera_threads[user_id].items():
+                if kdata.get("aktif"):
+                    aktif_kamera_idleri.add(kid)
 
-        mesaj = f"📷 Kameralarım ({len(kameralar)} adet)\n\n"
+        aktif_sayisi = len(aktif_kamera_idleri)
+        mesaj = f"📷 Kameralarım ({len(kameralar)} adet)"
+        if aktif_sayisi > 0:
+            mesaj += f" - 🟢 {aktif_sayisi} aktif"
+        mesaj += "\n\n"
 
         keyboard = []
         for k in kameralar:
-            durum = "🟢 AKTİF" if k["id"] == aktif_kamera_id else "⚫"
+            kamera_aktif = k["id"] in aktif_kamera_idleri
+            durum = "🟢 AKTİF" if kamera_aktif else "⚫"
             mesaj += f"{k['id']}. {k['ad']} - {k['ip']}:{k['kanal']} {durum}\n"
 
-            if k["id"] == aktif_kamera_id:
+            if kamera_aktif:
                 keyboard.append([InlineKeyboardButton(
                     f"⏹️ {k['ad']} Durdur",
                     callback_data=f"kamera_durdur:{k['id']}"
@@ -1652,13 +1820,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 keyboard.append([
                     InlineKeyboardButton(f"▶️ Başlat", callback_data=f"kamera_baslat:{k['id']}"),
+                    InlineKeyboardButton(f"🔍 Test", callback_data=f"kamera_test:{k['id']}"),
                     InlineKeyboardButton(f"🗑️ Sil", callback_data=f"kamera_sil:{k['id']}")
                 ])
+
+        # Tümünü Başlat / Tümünü Durdur butonları
+        if len(kameralar) > 1:
+            if aktif_sayisi < len(kameralar):
+                keyboard.append([InlineKeyboardButton("▶️ Tümünü Başlat", callback_data="kamera_tumunu_baslat")])
+            if aktif_sayisi > 0:
+                keyboard.append([InlineKeyboardButton("⏹️ Tümünü Durdur", callback_data="kamera_tumunu_durdur")])
 
         keyboard.append([InlineKeyboardButton("➕ Yeni Kamera Ekle", callback_data="kamera_ekle_wizard")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(mesaj, reply_markup=reply_markup)
+
+        # Fotoğraflı mesajdan geliyorsa sil ve yeni mesaj gönder
+        if query.message.photo:
+            await query.message.delete()
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=mesaj,
+                reply_markup=reply_markup
+            )
+        else:
+            await query.edit_message_text(mesaj, reply_markup=reply_markup)
 
     # Kamera başlat
     elif data.startswith("kamera_baslat:"):
@@ -1670,24 +1856,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("⚠️ Kamera bulunamadı.", show_alert=True)
             return
 
-        # Zaten aktif mi?
-        if user_id in user_kamera_threads and user_kamera_threads[user_id].get("aktif"):
-            aktif_id = user_kamera_threads[user_id].get("kamera_id")
-            if aktif_id == kamera_id:
-                await query.answer("⚠️ Bu kamera zaten aktif!", show_alert=True)
-                return
-            else:
-                await query.answer("⚠️ Başka kamera aktif. Önce durdur.", show_alert=True)
-                return
+        # Kullanıcı dict'i yoksa oluştur
+        if user_id not in user_kamera_threads:
+            user_kamera_threads[user_id] = {}
+
+        # Bu kamera zaten aktif mi?
+        if kamera_id in user_kamera_threads[user_id] and user_kamera_threads[user_id][kamera_id].get("aktif"):
+            await query.answer("⚠️ Bu kamera zaten aktif!", show_alert=True)
+            return
 
         # RTSP URL
         rtsp_url = kamera_manager.rtsp_url_olustur(kamera_id)
 
         # Thread başlat
-        user_kamera_threads[user_id] = {
+        user_kamera_threads[user_id][kamera_id] = {
             "thread": None,
             "aktif": False,
-            "kamera_id": kamera_id,
             "stop_flag": False
         }
 
@@ -1696,7 +1880,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             args=(user_id, chat_id, rtsp_url, kamera_id, kamera["ad"]),
             daemon=True
         )
-        user_kamera_threads[user_id]["thread"] = thread
+        user_kamera_threads[user_id][kamera_id]["thread"] = thread
         thread.start()
 
         # Durumu güncelle
@@ -1704,8 +1888,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.answer(f"▶️ {kamera['ad']} başlatılıyor...")
 
+        # Aktif kamera sayısı
+        aktif_sayisi = sum(1 for k, v in user_kamera_threads[user_id].items() if v.get("aktif"))
+
         # Mesajı güncelle
-        keyboard = [[InlineKeyboardButton(f"⏹️ Durdur", callback_data=f"kamera_durdur:{kamera_id}")]]
+        keyboard = [
+            [InlineKeyboardButton(f"⏹️ {kamera['ad']} Durdur", callback_data=f"kamera_durdur:{kamera_id}")],
+            [InlineKeyboardButton("📋 Kameralarım", callback_data="kameralarim")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await query.edit_message_text(
@@ -1719,12 +1909,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("kamera_durdur:"):
         kamera_id = int(data.split(":")[1])
 
-        if user_id not in user_kamera_threads:
-            await query.answer("⚠️ Aktif kamera yok.", show_alert=True)
+        if user_id not in user_kamera_threads or kamera_id not in user_kamera_threads[user_id]:
+            await query.answer("⚠️ Bu kamera aktif değil.", show_alert=True)
             return
 
         # Durdur
-        user_kamera_threads[user_id]["stop_flag"] = True
+        user_kamera_threads[user_id][kamera_id]["stop_flag"] = True
 
         kamera_manager = KameraManager(user_id)
         kamera = kamera_manager.kamera_getir(kamera_id)
@@ -1741,6 +1931,86 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
+    # Tümünü Başlat
+    elif data == "kamera_tumunu_baslat":
+        kamera_manager = KameraManager(user_id)
+        kameralar = kamera_manager.kamera_listele()
+
+        if not kameralar:
+            await query.answer("⚠️ Kamera bulunamadı.", show_alert=True)
+            return
+
+        # Kullanıcı dict'i yoksa oluştur
+        if user_id not in user_kamera_threads:
+            user_kamera_threads[user_id] = {}
+
+        baslatilanlar = []
+        for kamera in kameralar:
+            kamera_id = kamera["id"]
+
+            # Zaten aktif mi?
+            if kamera_id in user_kamera_threads[user_id] and user_kamera_threads[user_id][kamera_id].get("aktif"):
+                continue
+
+            rtsp_url = kamera_manager.rtsp_url_olustur(kamera_id)
+
+            # Thread başlat
+            user_kamera_threads[user_id][kamera_id] = {
+                "thread": None,
+                "aktif": False,
+                "stop_flag": False
+            }
+
+            thread = threading.Thread(
+                target=kamera_izleme_baslat,
+                args=(user_id, chat_id, rtsp_url, kamera_id, kamera["ad"]),
+                daemon=True
+            )
+            user_kamera_threads[user_id][kamera_id]["thread"] = thread
+            thread.start()
+
+            kamera_manager.kamera_durumu_guncelle(kamera_id, True)
+            baslatilanlar.append(kamera["ad"])
+
+        await query.answer(f"▶️ {len(baslatilanlar)} kamera başlatılıyor...")
+
+        keyboard = [[InlineKeyboardButton("📋 Kameralarım", callback_data="kameralarim")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            f"📹 Tüm kameralar başlatıldı!\n\n" +
+            "\n".join([f"✅ {ad}" for ad in baslatilanlar]) +
+            "\n\nHareket algılandığında bildirim alacaksın.",
+            reply_markup=reply_markup
+        )
+
+    # Tümünü Durdur
+    elif data == "kamera_tumunu_durdur":
+        if user_id not in user_kamera_threads:
+            await query.answer("⚠️ Aktif kamera yok.", show_alert=True)
+            return
+
+        durdurulanlar = []
+        kamera_manager = KameraManager(user_id)
+
+        for kamera_id, kdata in user_kamera_threads[user_id].items():
+            if kdata.get("aktif"):
+                kdata["stop_flag"] = True
+                kamera = kamera_manager.kamera_getir(kamera_id)
+                if kamera:
+                    durdurulanlar.append(kamera["ad"])
+
+        await query.answer(f"⏹️ {len(durdurulanlar)} kamera durduruluyor...")
+
+        keyboard = [[InlineKeyboardButton("📋 Kameralarım", callback_data="kameralarim")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            f"⏹️ Tüm kameralar durduruldu.\n\n" +
+            "\n".join([f"⏹️ {ad}" for ad in durdurulanlar]),
+            reply_markup=reply_markup
+        )
+
     # Kamera sil
     elif data.startswith("kamera_sil:"):
         kamera_id = int(data.split(":")[1])
@@ -1752,8 +2022,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Aktif mi kontrol et
-        if user_id in user_kamera_threads and user_kamera_threads[user_id].get("aktif"):
-            if user_kamera_threads[user_id].get("kamera_id") == kamera_id:
+        if user_id in user_kamera_threads and kamera_id in user_kamera_threads[user_id]:
+            if user_kamera_threads[user_id][kamera_id].get("aktif"):
                 await query.answer("⚠️ Aktif kamera silinemez. Önce durdur.", show_alert=True)
                 return
 
@@ -1809,8 +2079,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # RTSP URL
         rtsp_url = kamera_manager.rtsp_url_olustur(kamera_id)
 
+        # Test fotoğrafı için path
+        test_foto_path = f"user_data/user_{user_id}/kamera_test_{kamera_id}.jpg"
+        os.makedirs(f"user_data/user_{user_id}", exist_ok=True)
+
         # Test et
-        basarili, mesaj = kamera_test_baglanti(rtsp_url)
+        basarili, mesaj, foto_path = kamera_test_baglanti(rtsp_url, test_foto_path)
+
+        # Başarısız olursa IP değişmiş olabilir - MAC ile ara
+        ip_degisti = False
+        if not basarili and kamera.get("mac"):
+            await query.edit_message_text(
+                f"🔗 {kamera['ad']} bağlantı başarısız.\n\n🔍 IP değişmiş olabilir, ağda aranıyor..."
+            )
+            yeni_ip = kamera_manager.ip_otomatik_bul(kamera_id)
+            if yeni_ip and yeni_ip != kamera["ip"]:
+                ip_degisti = True
+                # Yeni IP ile tekrar dene
+                rtsp_url = kamera_manager.rtsp_url_olustur(kamera_id)
+                basarili, mesaj, foto_path = kamera_test_baglanti(rtsp_url, test_foto_path)
+                if basarili:
+                    mesaj = f"✅ Bağlantı başarılı!\n\n📍 IP güncellendi: {kamera['ip']} → {yeni_ip}"
 
         # Sonuç butonları
         if basarili:
@@ -1823,10 +2112,24 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await query.edit_message_text(
-            f"🔗 {kamera['ad']} Bağlantı Testi\n\n{mesaj}",
-            reply_markup=reply_markup
-        )
+        # Fotoğraf varsa gönder
+        if basarili and foto_path and os.path.exists(foto_path):
+            with open(foto_path, 'rb') as foto:
+                await context.bot.send_photo(
+                    chat_id=query.message.chat_id,
+                    photo=foto,
+                    caption=f"📸 {kamera['ad']} - Test Görüntüsü\n\n{mesaj}",
+                    reply_markup=reply_markup
+                )
+            # Eski mesajı sil
+            await query.delete_message()
+            # Test fotoğrafını sil
+            os.remove(foto_path)
+        else:
+            await query.edit_message_text(
+                f"🔗 {kamera['ad']} Bağlantı Testi\n\n{mesaj}",
+                reply_markup=reply_markup
+            )
 
     # 📍 KONUM MENU callback'i: kategorilere geri dön
     elif data == "konum_menu":
@@ -2000,10 +2303,7 @@ def main():
             komutlar = [
                 BotCommand("yeni", "🔄 Yeni sohbet"),
                 BotCommand("konum", "📍 Konum paylaş"),
-                BotCommand("kamera_ekle", "📹 Kamera ekle"),
-                BotCommand("kameralarim", "🎥 Kameralarım"),
-                BotCommand("kamera", "▶️ İzlemeyi başlat"),
-                BotCommand("kamerakapat", "⏹️ İzlemeyi durdur")
+                BotCommand("kameralarim", "📷 Kamera yönetimi")
             ]
             await application.bot.set_my_commands(komutlar)
             print("[OK] Telegram menusu ayarlandi!")
