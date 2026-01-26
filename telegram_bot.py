@@ -1298,11 +1298,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 📝 NOT KAYDETME - Kullanıcı not içeriği yazdıysa
+    # 📝 NOT KAYDETME - Kullanıcı not içeriği yazdıysa (reply ile)
     if context.user_data.get("not_bekliyor"):
         context.user_data["not_bekliyor"] = False
-        # "not al: içerik" formatına çevir ve normal akışa gönder
-        user_input = f"not al: {user_input}"
+        # Sadece reply ile cevap verdiyse not olarak kaydet
+        # X'e basıp iptal ettiyse reply_to_message olmaz, normal mesaj olarak işle
+        if update.message.reply_to_message:
+            user_input = f"not al: {user_input}"
 
     # Kullanıcının AI'larını al
     user = get_user_ai(user_id)
