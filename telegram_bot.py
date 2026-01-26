@@ -565,7 +565,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Kalıcı klavye butonları
     keyboard = ReplyKeyboardMarkup(
         [
-            [KeyboardButton("📍 Konum Paylaş", request_location=True)],
+            [KeyboardButton("📍 Konum Paylaş", request_location=True), KeyboardButton("📝 Not Al")],
             [KeyboardButton("🔄 Sohbeti Temizle")]
         ],
         resize_keyboard=True,
@@ -1270,6 +1270,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user["hafiza"].clear()
         await update.message.reply_text("✅ Sohbet temizlendi!")
         return
+
+    # 📝 NOT AL butonu
+    if user_input == "📝 Not Al":
+        context.user_data["not_bekliyor"] = True
+        await update.message.reply_text(
+            "📝 *Not içeriğini yaz:*\n\n_Örnek: yarın toplantı var_",
+            parse_mode="Markdown",
+            reply_markup=ForceReply(selective=True)
+        )
+        return
+
+    # 📝 NOT KAYDETME - Kullanıcı not içeriği yazdıysa
+    if context.user_data.get("not_bekliyor"):
+        context.user_data["not_bekliyor"] = False
+        # "not al: içerik" formatına çevir ve normal akışa gönder
+        user_input = f"not al: {user_input}"
 
     # Kullanıcının AI'larını al
     user = get_user_ai(user_id)
