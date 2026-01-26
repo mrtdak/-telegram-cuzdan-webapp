@@ -11,6 +11,23 @@ import torch
 import aiohttp
 from zoneinfo import ZoneInfo
 
+# Admin bildirimi için
+ADMIN_IDS = [6505503887]
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+async def notify_admin(message: str):
+    """Admin'e Telegram bildirimi gönder"""
+    if not TELEGRAM_TOKEN:
+        print(f"[ADMIN BILDIRIM] {message}")
+        return
+    try:
+        async with aiohttp.ClientSession() as session:
+            for admin_id in ADMIN_IDS:
+                url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+                await session.post(url, json={"chat_id": admin_id, "text": message})
+    except:
+        pass
+
 # HafizaAsistani artık telegram_bot.py'de yönetiliyor
 
 
@@ -187,6 +204,14 @@ class LocalLLM:
                     if resp.status == 200:
                         result = await resp.json()
                         return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                    elif resp.status == 401:
+                        print(f"   ⚠️ Together.ai API key geçersiz!")
+                        await notify_admin("⚠️ ACIL: Together.ai API key geçersiz veya süresi dolmuş!")
+                        return "Sistemde geçici bir sorun var. Kısa süre içinde düzelecektir. 🙏"
+                    elif resp.status == 402:
+                        print(f"   ⚠️ Together.ai kredisi bitti!")
+                        await notify_admin("⚠️ ACIL: Together.ai API kredisi bitti! Hemen yükle!")
+                        return "Sistemde geçici bir sorun var. Kısa süre içinde düzelecektir. 🙏"
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ Together.ai hatası: {resp.status} - {error_text[:200]}")
@@ -223,6 +248,14 @@ class LocalLLM:
                     if resp.status == 200:
                         result = await resp.json()
                         return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                    elif resp.status == 401:
+                        print(f"   ⚠️ Together.ai API key geçersiz!")
+                        await notify_admin("⚠️ ACIL: Together.ai API key geçersiz veya süresi dolmuş!")
+                        return "Sistemde geçici bir sorun var. Kısa süre içinde düzelecektir. 🙏"
+                    elif resp.status == 402:
+                        print(f"   ⚠️ Together.ai kredisi bitti!")
+                        await notify_admin("⚠️ ACIL: Together.ai API kredisi bitti! Hemen yükle!")
+                        return "Sistemde geçici bir sorun var. Kısa süre içinde düzelecektir. 🙏"
                     else:
                         error_text = await resp.text()
                         print(f"⚠️ Together.ai hatası: {resp.status} - {error_text[:200]}")
@@ -264,8 +297,15 @@ class LocalLLM:
                         if resp.status == 200:
                             result = await resp.json()
                             return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                        elif resp.status == 401:
+                            print(f"   ⚠️ OpenRouter API key geçersiz!")
+                            await notify_admin("⚠️ ACIL: OpenRouter API key geçersiz veya süresi dolmuş!")
+                            return "Sistemde geçici bir sorun var. Kısa süre içinde düzelecektir. 🙏"
+                        elif resp.status == 402:
+                            print(f"   ⚠️ OpenRouter kredisi bitti!")
+                            await notify_admin("⚠️ ACIL: OpenRouter API kredisi bitti! Hemen yükle!")
+                            return "Sistemde geçici bir sorun var. Kısa süre içinde düzelecektir. 🙏"
                         elif resp.status == 429:
-                            # Rate limit - bekle ve tekrar dene
                             if attempt < max_retries - 1:
                                 delay = retry_delays[attempt]
                                 print(f"   ⏳ API yoğun, {delay}s bekleyip tekrar deneniyor... ({attempt+1}/{max_retries})")
@@ -322,8 +362,15 @@ class LocalLLM:
                         if resp.status == 200:
                             result = await resp.json()
                             return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                        elif resp.status == 401:
+                            print(f"   ⚠️ OpenRouter API key geçersiz!")
+                            await notify_admin("⚠️ ACIL: OpenRouter API key geçersiz veya süresi dolmuş!")
+                            return "Sistemde geçici bir sorun var. Kısa süre içinde düzelecektir. 🙏"
+                        elif resp.status == 402:
+                            print(f"   ⚠️ OpenRouter kredisi bitti!")
+                            await notify_admin("⚠️ ACIL: OpenRouter API kredisi bitti! Hemen yükle!")
+                            return "Sistemde geçici bir sorun var. Kısa süre içinde düzelecektir. 🙏"
                         elif resp.status == 429:
-                            # Rate limit - bekle ve tekrar dene
                             if attempt < max_retries - 1:
                                 delay = retry_delays[attempt]
                                 print(f"   ⏳ API yoğun, {delay}s bekleyip tekrar deneniyor... ({attempt+1}/{max_retries})")
