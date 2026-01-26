@@ -20,6 +20,7 @@ import re
 import threading
 import json
 from db_manager import get_db, PlanType
+import dahua_p2p
 
 load_dotenv()
 
@@ -233,12 +234,35 @@ class KameraManager:
                 return k
         return None
 
+    def is_p2p(self, kamera_id: int) -> bool:
+        """Kamera P2P mi kontrol et"""
+        kamera = self.kamera_getir(kamera_id)
+        if not kamera:
+            return False
+        return str(kamera.get('ip', '')).startswith('p2p:')
+
+    def get_p2p_serial(self, kamera_id: int) -> Optional[str]:
+        """P2P seri numarasını al"""
+        kamera = self.kamera_getir(kamera_id)
+        if not kamera or not str(kamera.get('ip', '')).startswith('p2p:'):
+            return None
+        return kamera['ip'].replace('p2p:', '')
+
     def rtsp_url_olustur(self, kamera_id: int) -> Optional[str]:
-        """RTSP URL oluştur (Dahua formatı)"""
+        """RTSP URL oluştur (Dahua formatı veya P2P için localhost)"""
         kamera = self.kamera_getir(kamera_id)
         if not kamera:
             return None
 
+        # P2P kamera ise localhost üzerinden bağlan
+        if self.is_p2p(kamera_id):
+            return (
+                f"rtsp://{kamera['kullanici']}:{kamera['sifre']}@"
+                f"127.0.0.1/cam/realmonitor"
+                f"?channel={kamera['kanal']}&subtype=0"
+            )
+
+        # Normal IP kamera
         # rtsp://kullanici:sifre@ip:port/cam/realmonitor?channel=kanal&subtype=0
         return (
             f"rtsp://{kamera['kullanici']}:{kamera['sifre']}@"
@@ -251,6 +275,11 @@ class KameraManager:
         kamera = self.kamera_getir(kamera_id)
         if not kamera:
             return None
+
+        # P2P kamera
+        if self.is_p2p(kamera_id):
+            serial = self.get_p2p_serial(kamera_id)
+            return f"P2P: {serial} (Kanal {kamera['kanal']})"
 
         return (
             f"rtsp://{kamera['kullanici']}:***@"
@@ -718,20 +747,27 @@ async def kamera_ekle_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     user_id = update.effective_user.id
 
-    # Wizard başlat
+    # Wizard başlat - ilk adım bağlantı türü seçimi
     user_kamera_wizard[user_id] = {
-        "adim": "ad",
+        "adim": "tur",
         "data": {}
     }
 
+    keyboard = [
+        [InlineKeyboardButton("🌐 P2P (Önerilen)", callback_data="kamera_tur:p2p")],
+        [InlineKeyboardButton("🔗 Dış IP", callback_data="kamera_tur:ip")],
+        [InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]
+    ]
+
     await update.message.reply_text(
-        "Yeni Kamera Ekleme\n\n"
-        "Adım 1/6: Kamera adı gir",
-        reply_markup=ForceReply(input_field_placeholder="Örn: Bahçe Kamerası")
-    )
-    await update.message.reply_text(
-        "↩️",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]])
+        "📷 *Yeni Kamera Ekleme*\n\n"
+        "*Bağlantı türü seç:*\n\n"
+        "🌐 *P2P* - Port forwarding gerektirmez!\n"
+        "   DVR seri numarasıyla bağlan\n\n"
+        "🔗 *Dış IP* - Router ayarı gerekir\n"
+        "   Port forwarding + dış IP lazım",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -1082,11 +1118,43 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         data["ad"] = user_input
-        wizard["adim"] = "ip"
+
+        # P2P veya IP akışına göre devam et
+        if data.get("tur") == "p2p":
+            wizard["adim"] = "seri"
+            await update.message.reply_text(
+                f"✅ Kamera adı: {user_input}\n\n"
+                "Adım 2/4: DVR Seri Numarası\n\n"
+                "💡 Seri numarası DVR'ın arkasında veya\n"
+                "DMSS uygulamasında Cihaz Bilgileri'nde yazar.",
+                reply_markup=ForceReply(input_field_placeholder="Örn: 4K0A1B2C3D4E5F6G")
+            )
+            await update.message.reply_text("↩️", reply_markup=iptal_btn)
+        else:
+            wizard["adim"] = "ip"
+            await update.message.reply_text(
+                f"✅ Kamera adı: {user_input}\n\n"
+                "Adım 2/6: Dış IP adresi veya DDNS",
+                reply_markup=ForceReply(input_field_placeholder="Örn: 85.102.45.67")
+            )
+            await update.message.reply_text("↩️", reply_markup=iptal_btn)
+
+    # Adım: Seri numarası (P2P için)
+    elif adim == "seri":
+        if len(user_input) < 8:
+            await update.message.reply_text(
+                "Seri numarası en az 8 karakter olmalı.",
+                reply_markup=ForceReply(input_field_placeholder="Örn: 4K0A1B2C3D4E5F6G")
+            )
+            await update.message.reply_text("↩️", reply_markup=iptal_btn)
+            return
+
+        data["seri"] = user_input.upper()
+        wizard["adim"] = "kullanici"
         await update.message.reply_text(
-            f"Kamera adı: {user_input}\n\n"
-            "Adım 2/6: DVR/Kamera IP adresi",
-            reply_markup=ForceReply(input_field_placeholder="Örn: 192.168.1.4")
+            f"✅ Seri: {user_input.upper()}\n\n"
+            "Adım 3/4: Kullanıcı adı",
+            reply_markup=ForceReply(input_field_placeholder="Örn: admin")
         )
         await update.message.reply_text("↩️", reply_markup=iptal_btn)
 
@@ -1097,8 +1165,31 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
         ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
         if not re.match(ip_pattern, user_input):
             await update.message.reply_text(
-                "Geçersiz IP adresi formatı.",
-                reply_markup=ForceReply(input_field_placeholder="Örn: 192.168.1.4")
+                "Geçersiz IP adresi formatı.\n\n"
+                "💡 Dış IP veya DDNS adresi girin.",
+                reply_markup=ForceReply(input_field_placeholder="Örn: 85.102.45.67")
+            )
+            await update.message.reply_text("↩️", reply_markup=iptal_btn)
+            return
+
+        # Yerel IP kontrolü - sadece dış IP kabul et
+        if (user_input.startswith("192.168.") or
+            user_input.startswith("10.") or
+            user_input.startswith("172.16.") or user_input.startswith("172.17.") or
+            user_input.startswith("172.18.") or user_input.startswith("172.19.") or
+            user_input.startswith("172.20.") or user_input.startswith("172.21.") or
+            user_input.startswith("172.22.") or user_input.startswith("172.23.") or
+            user_input.startswith("172.24.") or user_input.startswith("172.25.") or
+            user_input.startswith("172.26.") or user_input.startswith("172.27.") or
+            user_input.startswith("172.28.") or user_input.startswith("172.29.") or
+            user_input.startswith("172.30.") or user_input.startswith("172.31.")):
+            await update.message.reply_text(
+                "⚠️ Yerel IP adresi kabul edilmiyor!\n\n"
+                "Kameranıza dışarıdan erişim için:\n"
+                "1. Router'dan port forwarding yapın\n"
+                "2. Dış IP veya DDNS adresinizi girin\n\n"
+                "💡 Dış IP öğrenmek için: whatismyip.com",
+                reply_markup=ForceReply(input_field_placeholder="Örn: 85.102.45.67")
             )
             await update.message.reply_text("↩️", reply_markup=iptal_btn)
             return
@@ -1153,9 +1244,16 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
 
         data["kullanici"] = user_input
         wizard["adim"] = "sifre"
+
+        # P2P veya IP akışına göre mesaj
+        if data.get("tur") == "p2p":
+            adim_text = "Adım 4/4: Şifre gir"
+        else:
+            adim_text = "Adım 5/6: Şifre gir"
+
         await update.message.reply_text(
-            f"Kullanıcı: {user_input}\n\n"
-            "Adım 5/6: Şifre gir\n"
+            f"✅ Kullanıcı: {user_input}\n\n"
+            f"{adim_text}\n"
             "(mesajın güvenlik için silinecek)",
             reply_markup=ForceReply(input_field_placeholder="Şifre girin")
         )
@@ -1183,6 +1281,39 @@ async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         data["sifre"] = user_input
+
+        # P2P için kanal seçimi yok, varsayılan 1
+        if data.get("tur") == "p2p":
+            # P2P kamerayı kaydet
+            kamera_manager = KameraManager(user_id)
+            yeni_id = kamera_manager.kamera_ekle(
+                ad=data["ad"],
+                ip=f"p2p:{data['seri']}",  # P2P seri numarasını ip alanında sakla
+                port=0,  # P2P için port kullanılmıyor
+                kullanici=data["kullanici"],
+                sifre=data["sifre"],
+                kanal=1  # Varsayılan kanal
+            )
+
+            del user_kamera_wizard[user_id]
+
+            keyboard = [
+                [InlineKeyboardButton("🔍 Bağlantıyı Test Et", callback_data=f"kamera_test:{yeni_id}")],
+                [InlineKeyboardButton("📋 Kameralarım", callback_data="kameralarim")]
+            ]
+
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"✅ *Kamera eklendi!*\n\n"
+                f"📷 *{data['ad']}*\n"
+                f"🌐 P2P: {data['seri']}\n"
+                f"👤 Kullanıcı: {data['kullanici']}\n\n"
+                "Bağlantıyı test etmek ister misin?",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return
+
         wizard["adim"] = "kanal"
         # Kanal seçimi için butonlar (4x4 grid)
         keyboard = [
@@ -1704,19 +1835,57 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Kamera ekle wizard başlat
     elif data == "kamera_ekle_wizard":
         user_kamera_wizard[user_id] = {
-            "adim": "ad",
+            "adim": "tur",
             "data": {}
         }
 
-        # Önce mevcut mesajı güncelle
-        await query.edit_message_text("Yeni Kamera Ekleme Başlatıldı")
+        keyboard = [
+            [InlineKeyboardButton("🌐 P2P (Önerilen)", callback_data="kamera_tur:p2p")],
+            [InlineKeyboardButton("🔗 Dış IP", callback_data="kamera_tur:ip")],
+            [InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]
+        ]
 
-        # Sonra ForceReply ile input iste
+        await query.edit_message_text(
+            "📷 *Yeni Kamera Ekleme*\n\n"
+            "*Bağlantı türü seç:*\n\n"
+            "🌐 *P2P* - Port forwarding gerektirmez!\n"
+            "   DVR seri numarasıyla bağlan\n\n"
+            "🔗 *Dış IP* - Router ayarı gerekir\n"
+            "   Port forwarding + dış IP lazım",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    # Kamera bağlantı türü seçimi
+    elif data.startswith("kamera_tur:"):
+        if user_id not in user_kamera_wizard:
+            await query.answer("Oturum sonlandı, tekrar başlat.")
+            return
+
+        tur = data.split(":")[1]
+        wizard = user_kamera_wizard[user_id]
+        wizard["data"]["tur"] = tur
+        wizard["adim"] = "ad"
+
+        iptal_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]])
+
+        if tur == "p2p":
+            await query.edit_message_text(
+                "🌐 *P2P Bağlantı*\n\n"
+                "Adım 1/4: Kamera adı gir",
+                parse_mode="Markdown"
+            )
+        else:
+            await query.edit_message_text(
+                "🔗 *Dış IP Bağlantı*\n\n"
+                "Adım 1/6: Kamera adı gir",
+                parse_mode="Markdown"
+            )
+
         await query.message.reply_text(
-            "Adım 1/6: Kamera adı gir",
+            "Kamera adını gir:",
             reply_markup=ForceReply(input_field_placeholder="Örn: Bahçe Kamerası")
         )
-        iptal_btn = InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal", callback_data="kamera_wizard_iptal")]])
         await query.message.reply_text("↩️", reply_markup=iptal_btn)
 
     # Kamera wizard iptal
@@ -1894,6 +2063,29 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("⚠️ Bu kamera zaten aktif!", show_alert=True)
             return
 
+        # P2P kamera ise önce tünel başlat
+        if kamera_manager.is_p2p(kamera_id):
+            serial = kamera_manager.get_p2p_serial(kamera_id)
+            await query.answer(f"🌐 P2P bağlantısı kuruluyor...")
+
+            # P2P tüneli başlat
+            p2p_ok = dahua_p2p.start_p2p_tunnel(
+                serial,
+                kamera['kullanici'],
+                kamera['sifre']
+            )
+
+            if not p2p_ok:
+                await query.edit_message_text(
+                    f"❌ P2P bağlantısı kurulamadı!\n\n"
+                    f"Seri numarası: {serial}\n\n"
+                    "Kontrol edin:\n"
+                    "• DVR'da P2P aktif mi?\n"
+                    "• Seri numarası doğru mu?\n"
+                    "• DVR internete bağlı mı?"
+                )
+                return
+
         # RTSP URL
         rtsp_url = kamera_manager.rtsp_url_olustur(kamera_id)
 
@@ -1901,7 +2093,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_kamera_threads[user_id][kamera_id] = {
             "thread": None,
             "aktif": False,
-            "stop_flag": False
+            "stop_flag": False,
+            "p2p_serial": kamera_manager.get_p2p_serial(kamera_id) if kamera_manager.is_p2p(kamera_id) else None
         }
 
         thread = threading.Thread(
@@ -1927,12 +2120,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await query.edit_message_text(
-            f"📹 {kamera['ad']} başlatıldı!\n\n"
-            f"🔗 {kamera['ip']}:{kamera['port']} (Kanal {kamera['kanal']})\n\n"
-            "Hareket algılandığında bildirim alacaksın.",
-            reply_markup=reply_markup
-        )
+        # P2P veya IP için farklı mesaj
+        if kamera_manager.is_p2p(kamera_id):
+            baglanti_bilgisi = f"🌐 P2P: {kamera_manager.get_p2p_serial(kamera_id)}"
+        else:
+            baglanti_bilgisi = f"🔗 {kamera['ip']}:{kamera['port']} (Kanal {kamera['kanal']})"
+
+        # Fotoğraflı mesajlarda caption, text'li mesajlarda text düzenle
+        try:
+            await query.edit_message_text(
+                f"📹 {kamera['ad']} başlatıldı!\n\n"
+                f"{baglanti_bilgisi}\n\n"
+                "Hareket algılandığında bildirim alacaksın.",
+                reply_markup=reply_markup
+            )
+        except Exception:
+            # Fotoğraflı mesaj ise caption düzenle
+            await query.edit_message_caption(
+                caption=f"📹 {kamera['ad']} başlatıldı!\n\n"
+                f"{baglanti_bilgisi}\n\n"
+                "Hareket algılandığında bildirim alacaksın.",
+                reply_markup=reply_markup
+            )
 
     # Kamera durdur
     elif data.startswith("kamera_durdur:"):
@@ -1944,6 +2153,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Durdur
         user_kamera_threads[user_id][kamera_id]["stop_flag"] = True
+
+        # P2P tünelini de kapat
+        p2p_serial = user_kamera_threads[user_id][kamera_id].get("p2p_serial")
+        if p2p_serial:
+            dahua_p2p.stop_p2p_tunnel(p2p_serial)
 
         kamera_manager = KameraManager(user_id)
         kamera = kamera_manager.kamera_getir(kamera_id)
