@@ -9,8 +9,8 @@ import os
 import asyncio
 import aiohttp
 from dotenv import load_dotenv
-from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply, LabeledPrice
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, PreCheckoutQueryHandler
 from telegram.request import HTTPXRequest
 from typing import Dict, Tuple, Optional
 
@@ -550,7 +550,17 @@ def get_user_ai(user_id: int) -> Dict:
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/start - Herkese açık"""
     user_id = update.effective_user.id
+    user_name = update.effective_user.first_name or "Dostum"
     get_user_ai(user_id)
+
+    # Veritabanına kullanıcıyı kaydet
+    db = get_db()
+    db.get_or_create_user(
+        user_id,
+        username=update.effective_user.username,
+        first_name=update.effective_user.first_name,
+        last_name=update.effective_user.last_name
+    )
 
     # Kalıcı klavye butonları
     keyboard = ReplyKeyboardMarkup(
@@ -562,10 +572,25 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         one_time_keyboard=False
     )
 
-    await update.message.reply_text(
-        "🤖 Merhaba! Sana nasıl yardımcı olabilirim?",
-        reply_markup=keyboard
-    )
+    welcome_text = f"""Merhaba {user_name}! 👋
+
+*Özellikler:*
+🤖 *Akıllı Sohbet* - Sorularına cevap, günlük sohbet
+📝 *Not Sistemi* - "not al: ..." diyerek notlarını kaydet
+📍 *Konum Hizmetleri* - Yakındaki eczane, benzinlik, ATM, market bul
+📷 *Güvenlik Kamerası* - Kapı/bahçe insan tespiti, fotoğraflı bildirim
+
+*Günlük Limitler (Beta):*
+💬 30 mesaj | 📍 10 konum | 📷 1 kamera, 5 bildirim
+
+_Limitler gece 00:00'da sıfırlanır._
+
+💝 Proje beta aşamasında, destek için: /bagis
+
+Nasıl yardımcı olabilirim?
+"""
+
+    await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 
 async def yeni_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -604,78 +629,68 @@ async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/limit - Kullanım limitini göster"""
     user_id = update.effective_user.id
-    db = get_db()
 
+    # Admin sınırsız
+    if user_id in ADMIN_IDS:
+        await update.message.reply_text(
+            "👑 *ADMIN* - Tüm limitler sınırsız!",
+            parse_mode="Markdown"
+        )
+        return
+
+    db = get_db()
     rate_check = db.check_rate_limit(user_id)
+    camera_check = db.check_camera_limit(user_id)
+    location_check = db.check_location_limit(user_id)
     usage = db.get_daily_usage(user_id)
 
-    plan_names = {
-        "free": "Ücretsiz",
-        "premium": "Premium",
-        "pro": "Pro"
-    }
-    plan_name = plan_names.get(rate_check["plan"], rate_check["plan"])
+    text = f"""📊 *Günlük Kullanım Durumun*
 
-    if rate_check["limit"] == -1:
-        remaining_text = "♾️ Sınırsız"
-    else:
-        remaining_text = f"{rate_check['remaining']}/{rate_check['limit']}"
+💬 Mesaj: *{rate_check['remaining']}/{rate_check['limit']}*
+📷 Kamera bildirimi: *{camera_check['remaining']}/{camera_check['limit']}*
+📍 Konum sorgusu: *{location_check['remaining']}/{location_check['limit']}*
 
-    text = f"""📊 *Kullanım Durumun*
-
-📋 Plan: *{plan_name}*
-💬 Bugün kalan mesaj: *{remaining_text}*
-📸 Bugün gönderilen fotoğraf: {usage.get('photo_count', 0)}
-🔍 Bugün web arama: {usage.get('web_search_count', 0)}
+📸 Gönderilen fotoğraf: {usage.get('photo_count', 0)}
+🔍 Web arama: {usage.get('web_search_count', 0)}
 
 _Limitler gece 00:00'da sıfırlanır._
+
+💝 Projeyi desteklemek için: /bagis
 """
 
-    if rate_check["plan"] == "free":
-        text += "\n💡 *Premium'a geç:* /premium"
-
     await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def bagis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/bagis - Bağış bilgilerini göster"""
+    text = """💝 *Projeyi Destekle*
+
+Bu bot beta aşamasında ve kısıtlı donanımda çalışıyor.
+Beğendiysen ve gelişmeye devam etmesini istiyorsan destek olabilirsin.
+
+📊 *Günlük Limitler (Ücretsiz):*
+• 30 mesaj
+• 5 kamera bildirimi
+• 10 konum sorgusu
+
+_Tüm özellikler açık, sadece günlük limit var._
+
+⭐ *Telegram Stars ile Bağış:*
+Aşağıdaki butona tıklayarak istediğin kadar Star gönderebilirsin.
+"""
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⭐ 10 Stars", callback_data="bagis_10")],
+        [InlineKeyboardButton("⭐ 25 Stars", callback_data="bagis_25")],
+        [InlineKeyboardButton("⭐ 50 Stars", callback_data="bagis_50")],
+    ])
+
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
 async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/premium - Plan bilgilerini göster"""
-    user_id = update.effective_user.id
-    db = get_db()
-
-    user = db.get_user(user_id)
-    current_plan = user.get("plan", "free") if user else "free"
-
-    text = """💎 *Akıllı Asistan Planları*
-
-🆓 *Ücretsiz*
-• Günde 20 mesaj
-• Temel sohbet
-
-⭐ *Premium - 49₺/ay*
-• Sınırsız mesaj
-• Fotoğraf analizi
-• Hafıza sistemi
-• Not tutma
-• Konum hizmetleri
-
-🚀 *Pro - 99₺/ay*
-• Premium özellikleri +
-• Web arama
-• Öncelikli yanıt
-• API erişimi
-
-"""
-
-    if current_plan == "free":
-        text += "_Şu an: Ücretsiz plan_\n\n📩 Yükseltmek için: @admin"
-    elif current_plan == "premium":
-        end_date = user.get("plan_end_date", "")[:10] if user else ""
-        text += f"_Şu an: Premium (Bitiş: {end_date})_"
-    elif current_plan == "pro":
-        end_date = user.get("plan_end_date", "")[:10] if user else ""
-        text += f"_Şu an: Pro (Bitiş: {end_date})_"
-
-    await update.message.reply_text(text, parse_mode="Markdown")
+    """/premium - Bağış sayfasına yönlendir (eski komut uyumluluğu)"""
+    await bagis_command(update, context)
 
 
 # === KAMERA KOMUTLARI (Multi-User) ===
@@ -1221,23 +1236,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_name=user_info.last_name
     )
 
-    # 🔒 RATE LIMIT - Şimdilik kapalı (aktif etmek için yorumu kaldır)
-    # if user_id not in ADMIN_IDS:
-    #     rate_check = db.check_rate_limit(user_id)
-    #     if not rate_check["allowed"]:
-    #         keyboard = InlineKeyboardMarkup([
-    #             [InlineKeyboardButton("⭐ Premium - 49₺/ay", callback_data="plan_premium")],
-    #             [InlineKeyboardButton("🚀 Pro - 99₺/ay", callback_data="plan_pro")],
-    #             [InlineKeyboardButton("📋 Plan Detayları", callback_data="plan_info")]
-    #         ])
-    #         await update.message.reply_text(
-    #             "⚠️ *Günlük 20 mesaj limitin doldu!*\n\n"
-    #             "Sınırsız mesaj için plan seç:",
-    #             reply_markup=keyboard,
-    #             parse_mode="Markdown"
-    #         )
-    #         return
-    #     db.increment_usage(user_id, "message_count")
+    # 🔒 RATE LIMIT - Beta: Günlük 30 mesaj limiti
+    if user_id not in ADMIN_IDS:
+        rate_check = db.check_rate_limit(user_id)
+        if not rate_check["allowed"]:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💝 Bağış Yap", callback_data="bagis_menu")],
+                [InlineKeyboardButton("📊 Limitlerimi Gör", callback_data="limit_info")]
+            ])
+            await update.message.reply_text(
+                f"📊 *Bugünlük {rate_check['limit']} mesaj hakkın doldu!*\n\n"
+                "Yarın sıfırlanır, görüşürüz!\n\n"
+                "💝 Bu bot beta aşamasında ve kısıtlı donanımda çalışıyor.\n"
+                "Beğendiysen projeyi destekleyebilirsin.",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            return
+        db.increment_usage(user_id, "message_count")
 
     # 📷 KAMERA WIZARD - Aktifse önce bunu işle
     if user_id in user_kamera_wizard:
@@ -2141,125 +2157,143 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
-    # 💳 PLAN SEÇİMİ callback'leri
-    elif data == "plan_info":
-        # Plan detayları göster
-        text = """💎 *Plan Detayları*
+    # 💝 BAĞIŞ callback'leri
+    elif data == "bagis_menu":
+        text = """💝 *Projeyi Destekle*
 
-🆓 *Ücretsiz*
-• Günde 20 mesaj
-• Temel sohbet
+Bu bot beta aşamasında ve kısıtlı donanımda çalışıyor.
+Beğendiysen ve devam etmesini istiyorsan, sunucu altyapısı için bağış yapabilirsin.
 
-⭐ *Premium - 49₺/ay*
-• Sınırsız mesaj
-• Fotoğraf analizi
-• Hafıza sistemi
-• Not tutma
-• Konum hizmetleri
-
-🚀 *Pro - 99₺/ay*
-• Premium özellikleri +
-• Web arama
-• Öncelikli yanıt
+⭐ Telegram Stars ile bağış yapabilirsin.
 """
         keyboard = [
-            [InlineKeyboardButton("⭐ Premium - 49₺", callback_data="plan_premium")],
-            [InlineKeyboardButton("🚀 Pro - 99₺", callback_data="plan_pro")]
+            [InlineKeyboardButton("⭐ 10 Stars", callback_data="bagis_10")],
+            [InlineKeyboardButton("⭐ 25 Stars", callback_data="bagis_25")],
+            [InlineKeyboardButton("⭐ 50 Stars", callback_data="bagis_50")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
-    elif data == "plan_premium":
-        # Premium ödeme simülasyonu
-        keyboard = [
-            [InlineKeyboardButton("💳 Ödemeyi Simüle Et (TEST)", callback_data="odeme_simulasyon:premium")],
-            [InlineKeyboardButton("🔙 Geri", callback_data="plan_info")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            "⭐ *Premium Plan - 49₺/ay*\n\n"
-            "✅ Sınırsız mesaj\n"
-            "✅ Fotoğraf analizi\n"
-            "✅ Hafıza sistemi\n"
-            "✅ Not tutma\n"
-            "✅ Konum hizmetleri\n\n"
-            "🧪 *TEST MODU* - Gerçek ödeme alınmayacak",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
+    elif data.startswith("bagis_"):
+        # Telegram Stars ile bağış gönder
+        star_miktari = data.split("_")[1]
+        if star_miktari == "custom":
+            await query.edit_message_text(
+                "⭐ Özel miktar için /bagis komutunu kullan.",
+                parse_mode="Markdown"
+            )
+            return
 
-    elif data == "plan_pro":
-        # Pro ödeme simülasyonu
-        keyboard = [
-            [InlineKeyboardButton("💳 Ödemeyi Simüle Et (TEST)", callback_data="odeme_simulasyon:pro")],
-            [InlineKeyboardButton("🔙 Geri", callback_data="plan_info")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            "🚀 *Pro Plan - 99₺/ay*\n\n"
-            "✅ Sınırsız mesaj\n"
-            "✅ Fotoğraf analizi\n"
-            "✅ Hafıza sistemi\n"
-            "✅ Not tutma\n"
-            "✅ Konum hizmetleri\n"
-            "✅ Web arama\n"
-            "✅ Öncelikli yanıt\n\n"
-            "🧪 *TEST MODU* - Gerçek ödeme alınmayacak",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
+        miktar = int(star_miktari)
 
-    elif data.startswith("odeme_simulasyon:"):
-        # Ödeme simülasyonu - onay iste
-        plan = data.split(":")[1]
-        plan_adi = "Premium" if plan == "premium" else "Pro"
-        fiyat = 49 if plan == "premium" else 99
+        # Telegram Stars invoice gönder
+        try:
+            await context.bot.send_invoice(
+                chat_id=chat_id,
+                title="Proje Desteği",
+                description=f"Bot geliştirme ve sunucu altyapısı için {miktar} Stars bağış",
+                payload=f"bagis_{user_id}_{miktar}",
+                provider_token="",  # Telegram Stars için boş
+                currency="XTR",     # Telegram Stars para birimi
+                prices=[{"label": "Bağış", "amount": miktar}],
+            )
+            await query.edit_message_text(
+                f"⭐ *{miktar} Stars bağış faturası gönderildi!*\n\n"
+                "Ödeme butonuna tıklayarak bağışını tamamlayabilirsin.\n\n"
+                "💝 Desteğin için şimdiden teşekkürler!",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            print(f"[HATA] Bağış invoice hatası: {e}")
+            await query.edit_message_text(
+                "❌ Bağış sistemi şu anda kullanılamıyor.\n"
+                "Lütfen daha sonra tekrar dene.",
+                parse_mode="Markdown"
+            )
 
-        keyboard = [
-            [InlineKeyboardButton(f"✅ Ödemeyi Onayla ({fiyat}₺)", callback_data=f"odeme_onayla:{plan}")],
-            [InlineKeyboardButton("❌ İptal", callback_data="plan_info")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            f"💳 *Ödeme Onayı*\n\n"
-            f"Plan: {plan_adi}\n"
-            f"Tutar: {fiyat}₺\n"
-            f"Süre: 1 ay\n\n"
-            f"🧪 _Bu bir simülasyondur, gerçek ödeme alınmayacak._\n\n"
-            f"Onaylıyor musun?",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
+    elif data == "limit_info":
+        # Admin sınırsız
+        if user_id in ADMIN_IDS:
+            await query.edit_message_text("👑 *ADMIN* - Tüm limitler sınırsız!", parse_mode="Markdown")
+            return
 
-    elif data.startswith("odeme_onayla:"):
-        # Ödeme onaylandı - planı aktive et
-        plan = data.split(":")[1]
-        plan_adi = "Premium" if plan == "premium" else "Pro"
-        fiyat = 49 if plan == "premium" else 99
-
+        # Limit bilgilerini göster
         db = get_db()
-        plan_type = PlanType.PREMIUM if plan == "premium" else PlanType.PRO
+        rate_check = db.check_rate_limit(user_id)
+        camera_check = db.check_camera_limit(user_id)
+        location_check = db.check_location_limit(user_id)
 
-        # Planı yükselt
-        db.upgrade_plan(user_id, plan_type, months=1)
+        text = f"""📊 *Günlük Limitler*
 
-        # Ödeme kaydı (simülasyon)
+💬 Mesaj: *{rate_check['remaining']}/{rate_check['limit']}*
+📷 Kamera bildirimi: *{camera_check['remaining']}/{camera_check['limit']}*
+📍 Konum sorgusu: *{location_check['remaining']}/{location_check['limit']}*
+
+_Limitler gece 00:00'da sıfırlanır._
+"""
+        keyboard = [[InlineKeyboardButton("💝 Bağış Yap", callback_data="bagis_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
+
+# === TELEGRAM STARS ÖDEME HANDLERLARİ ===
+
+async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ödeme öncesi doğrulama - Telegram Stars için"""
+    query = update.pre_checkout_query
+
+    # Bağış payload'ını kontrol et
+    if query.invoice_payload.startswith("bagis_"):
+        # Bağışı kabul et
+        await query.answer(ok=True)
+    else:
+        # Bilinmeyen payload
+        await query.answer(ok=False, error_message="Geçersiz ödeme.")
+
+
+async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Başarılı ödeme sonrası işlem"""
+    payment = update.message.successful_payment
+    user_id = update.effective_user.id
+
+    # Payload'dan bilgileri al
+    payload = payment.invoice_payload  # bagis_userid_miktar
+    parts = payload.split("_")
+
+    if len(parts) >= 3 and parts[0] == "bagis":
+        miktar = parts[2]
+
+        # Ödemeyi kaydet
+        db = get_db()
         db.record_payment(
             user_id=user_id,
-            plan=plan_type,
-            amount_tl=fiyat,
-            payment_method="simulasyon",
-            transaction_id=f"SIM-{user_id}-{int(__import__('time').time())}"
+            plan=PlanType.FREE,  # Bağış, plan değil
+            amount_tl=float(miktar),  # Stars miktarı
+            payment_method="telegram_stars",
+            transaction_id=payment.telegram_payment_charge_id
         )
 
-        await query.edit_message_text(
-            f"🎉 *Tebrikler!*\n\n"
-            f"✅ {plan_adi} planın aktif edildi!\n"
-            f"💰 Tutar: {fiyat}₺ _(simülasyon)_\n"
-            f"📅 Süre: 1 ay\n\n"
-            f"Artık sınırsız mesaj atabilirsin! 🚀",
+        await update.message.reply_text(
+            f"💝 *Teşekkürler!*\n\n"
+            f"⭐ {miktar} Stars bağışın başarıyla alındı!\n\n"
+            f"Desteğin sayesinde bu proje gelişmeye devam edecek. 🙏\n\n"
+            f"_İşlem ID: {payment.telegram_payment_charge_id[:20]}..._",
             parse_mode="Markdown"
         )
+
+        # Admin'e bildir
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    admin_id,
+                    f"💝 *Yeni Bağış!*\n\n"
+                    f"👤 Kullanıcı: {user_id}\n"
+                    f"⭐ Miktar: {miktar} Stars\n"
+                    f"🆔 İşlem: {payment.telegram_payment_charge_id}",
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
 
 
 # === MAIN ===
@@ -2281,6 +2315,8 @@ def main():
             komutlar = [
                 BotCommand("yeni", "🔄 Yeni sohbet"),
                 BotCommand("konum", "📍 Konum paylaş"),
+                BotCommand("limit", "📊 Günlük limitler"),
+                BotCommand("bagis", "💝 Projeyi destekle"),
                 BotCommand("kameralarim", "📷 Kamera yönetimi")
             ]
             await application.bot.set_my_commands(komutlar)
@@ -2314,7 +2350,8 @@ def main():
     app.add_handler(CommandHandler("yeni", yeni_command))
     app.add_handler(CommandHandler("konum", konum_command))
     app.add_handler(CommandHandler("limit", limit_command))
-    app.add_handler(CommandHandler("premium", premium_command))
+    app.add_handler(CommandHandler("bagis", bagis_command))
+    app.add_handler(CommandHandler("premium", premium_command))  # Eski uyumluluk
 
     # Kamera komutları (multi-user)
     app.add_handler(CommandHandler("kamera_ekle", kamera_ekle_command))
@@ -2333,6 +2370,10 @@ def main():
 
     # Callback (inline butonlar)
     app.add_handler(CallbackQueryHandler(handle_callback))
+
+    # Telegram Stars ödeme handler'ları
+    app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
     print("[OK] Bot hazir!")
     print("=" * 50)

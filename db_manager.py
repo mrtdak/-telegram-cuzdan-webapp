@@ -14,40 +14,22 @@ from enum import Enum
 
 
 class PlanType(Enum):
-    """Kullanici plan turleri"""
+    """Kullanici plan turleri - Beta: Sadece FREE"""
     FREE = "free"
-    PREMIUM = "premium"
-    PRO = "pro"
 
 
-# Plan limitleri
+# Plan limitleri - Beta donemi (tum ozellikler acik, gunluk limitli)
 PLAN_LIMITS = {
     PlanType.FREE: {
-        "daily_messages": 20,
-        "web_search": False,
-        "photo_analysis": False,
-        "memory": False,
-        "notes": False,
-        "location": False,
-        "price_tl": 0
-    },
-    PlanType.PREMIUM: {
-        "daily_messages": -1,  # Sinirsiz
-        "web_search": False,
-        "photo_analysis": True,
-        "memory": True,
-        "notes": True,
-        "location": True,
-        "price_tl": 49
-    },
-    PlanType.PRO: {
-        "daily_messages": -1,  # Sinirsiz
+        "daily_messages": 30,              # Gunluk mesaj limiti
+        "daily_camera_notifications": 5,   # Gunluk kamera bildirimi limiti
+        "daily_location_queries": 10,      # Gunluk konum sorgusu limiti
+        "max_cameras": 1,                  # Maksimum kamera sayisi
         "web_search": True,
         "photo_analysis": True,
         "memory": True,
         "notes": True,
-        "location": True,
-        "price_tl": 99
+        "location": True
     }
 }
 
@@ -133,10 +115,22 @@ class DatabaseManager:
                     message_count INTEGER DEFAULT 0,
                     web_search_count INTEGER DEFAULT 0,
                     photo_count INTEGER DEFAULT 0,
+                    camera_notification_count INTEGER DEFAULT 0,
+                    location_query_count INTEGER DEFAULT 0,
                     UNIQUE(user_id, date),
                     FOREIGN KEY (user_id) REFERENCES users(user_id)
                 )
             """)
+
+            # Yeni sutunlari ekle (eski veritabanlari icin)
+            try:
+                cursor.execute("ALTER TABLE daily_usage ADD COLUMN camera_notification_count INTEGER DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE daily_usage ADD COLUMN location_query_count INTEGER DEFAULT 0")
+            except:
+                pass
 
             # Odeme gecmisi
             cursor.execute("""
@@ -312,7 +306,9 @@ class DatabaseManager:
                     "date": date,
                     "message_count": 0,
                     "web_search_count": 0,
-                    "photo_count": 0
+                    "photo_count": 0,
+                    "camera_notification_count": 0,
+                    "location_query_count": 0
                 }
 
     def increment_usage(self, user_id: int, field: str = "message_count") -> int:
@@ -405,9 +401,9 @@ class DatabaseManager:
                 "remaining": 0,
                 "limit": daily_limit,
                 "plan": plan.value,
-                "message": f"Gunluk {daily_limit} mesaj limitiniz doldu.\n\n"
-                          f"Premium'a gecin: Sinirsiz mesaj + daha fazlasi!\n"
-                          f"/premium komutuyla detaylara bakin."
+                "message": f"Bugunluk {daily_limit} mesaj hakkin doldu.\n"
+                          f"Yarin sifirlanir, gorusuruz!\n\n"
+                          f"Projeyi desteklemek istersen: /bagis"
             }
 
         return {
@@ -428,6 +424,68 @@ class DatabaseManager:
         plan = self.get_user_plan(user_id)
         limits = PLAN_LIMITS[plan]
         return limits.get(feature, False)
+
+    def check_camera_limit(self, user_id: int) -> Dict:
+        """Kamera bildirimi limitini kontrol et"""
+        self.get_or_create_user(user_id)
+
+        plan = self.get_user_plan(user_id)
+        limits = PLAN_LIMITS[plan]
+        daily_limit = limits["daily_camera_notifications"]
+
+        usage = self.get_daily_usage(user_id)
+        current_count = usage.get("camera_notification_count", 0)
+
+        if current_count >= daily_limit:
+            return {
+                "allowed": False,
+                "remaining": 0,
+                "limit": daily_limit,
+                "message": f"Bugunluk {daily_limit} kamera bildirimi limitin doldu.\n"
+                          f"Yarin sifirlanir!\n\n"
+                          f"Projeyi desteklemek istersen: /bagis"
+            }
+
+        return {
+            "allowed": True,
+            "remaining": daily_limit - current_count,
+            "limit": daily_limit,
+            "message": None
+        }
+
+    def check_location_limit(self, user_id: int) -> Dict:
+        """Konum sorgusu limitini kontrol et"""
+        self.get_or_create_user(user_id)
+
+        plan = self.get_user_plan(user_id)
+        limits = PLAN_LIMITS[plan]
+        daily_limit = limits["daily_location_queries"]
+
+        usage = self.get_daily_usage(user_id)
+        current_count = usage.get("location_query_count", 0)
+
+        if current_count >= daily_limit:
+            return {
+                "allowed": False,
+                "remaining": 0,
+                "limit": daily_limit,
+                "message": f"Bugunluk {daily_limit} konum sorgusu limitin doldu.\n"
+                          f"Yarin sifirlanir!\n\n"
+                          f"Projeyi desteklemek istersen: /bagis"
+            }
+
+        return {
+            "allowed": True,
+            "remaining": daily_limit - current_count,
+            "limit": daily_limit,
+            "message": None
+        }
+
+    def get_max_cameras(self, user_id: int) -> int:
+        """Kullanicinin ekleyebilecegi maksimum kamera sayisi"""
+        plan = self.get_user_plan(user_id)
+        limits = PLAN_LIMITS[plan]
+        return limits.get("max_cameras", 1)
 
     # ==================== ODEME ISLEMLERI ====================
 
@@ -560,8 +618,8 @@ if __name__ == "__main__":
     plan = db.get_user_plan(test_user_id)
     print(f"Plan: {plan.value}")
 
-    # Rate limit kontrol
-    for i in range(25):
+    # Rate limit kontrol (30 mesaj limiti)
+    for i in range(35):
         result = db.check_rate_limit(test_user_id)
         if result["allowed"]:
             db.increment_usage(test_user_id)
@@ -570,13 +628,16 @@ if __name__ == "__main__":
             print(f"Mesaj {i+1}: ENGELLENDI - {result['message']}")
             break
 
-    # Premium'a yukselt
-    print("\n--- Premium'a yukseltiliyor ---")
-    db.upgrade_plan(test_user_id, PlanType.PREMIUM, months=1)
-
-    # Tekrar kontrol
-    result = db.check_rate_limit(test_user_id)
-    print(f"Yeni plan: {result['plan']}, Kalan: {result['remaining']}")
+    # Kamera limiti test
+    print("\n--- Kamera Limiti Test ---")
+    for i in range(7):
+        result = db.check_camera_limit(test_user_id)
+        if result["allowed"]:
+            db.increment_usage(test_user_id, "camera_notification_count")
+            print(f"Kamera {i+1}: OK (Kalan: {result['remaining']})")
+        else:
+            print(f"Kamera {i+1}: ENGELLENDI")
+            break
 
     # Istatistikler
     print("\n--- Istatistikler ---")
