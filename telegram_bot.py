@@ -626,6 +626,23 @@ async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def not_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/not - Not al"""
+    chat_id = update.effective_chat.id
+    # Komut mesajını sil
+    try:
+        await update.message.delete()
+    except:
+        pass
+    context.user_data["not_bekliyor"] = True
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="📝 *Not içeriğini yaz:*\n\n_Örnek: yarın toplantı var_",
+        parse_mode="Markdown",
+        reply_markup=ForceReply(selective=True)
+    )
+
+
 async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/limit - Kullanım limitini göster"""
     user_id = update.effective_user.id
@@ -2329,11 +2346,12 @@ def main():
         try:
             # Menüyü ayarla
             komutlar = [
+                BotCommand("bagis", "💝 Projeyi destekle"),
                 BotCommand("yeni", "🔄 Yeni sohbet"),
                 BotCommand("konum", "📍 Konum paylaş"),
-                BotCommand("limit", "📊 Günlük limitler"),
-                BotCommand("bagis", "💝 Projeyi destekle"),
-                BotCommand("kameralarim", "📷 Kamera yönetimi")
+                BotCommand("not", "📝 Not al"),
+                BotCommand("kameralarim", "📷 Kamera yönetimi"),
+                BotCommand("limit", "📊 Günlük limitler")
             ]
             await application.bot.set_my_commands(komutlar)
             print("[OK] Telegram menusu ayarlandi!")
@@ -2365,6 +2383,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("yeni", yeni_command))
     app.add_handler(CommandHandler("konum", konum_command))
+    app.add_handler(CommandHandler("not", not_command))
     app.add_handler(CommandHandler("limit", limit_command))
     app.add_handler(CommandHandler("bagis", bagis_command))
     app.add_handler(CommandHandler("premium", premium_command))  # Eski uyumluluk
