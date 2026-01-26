@@ -1244,31 +1244,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_kamera_wizard(update, context)
         return
 
-    # 📍 KONUM İSTE - "konum gönder" pattern'i algıla (yazım hatası toleranslı)
+    # 📍 KONUM SİSTEMİ - Artık sadece /konum komutu ve butonlarla çalışıyor
+    # Mesaj içeriğinden otomatik tetikleme kaldırıldı
     user_lower = user_input.lower().strip()
-
-    # Yazım hatası toleranslı konum kontrolü
-    def konum_istegi_mi(text):
-        words = text.split()
-        if len(words) < 2:
-            return False
-        konum_var = any(w.startswith('konum') for w in words)
-        aksiyon_patterns = ['gön', 'gon', 'payla', 'iste', ' at', ' ver']
-        aksiyon_var = any(p in text for p in aksiyon_patterns)
-        return konum_var and aksiyon_var
-
-    if konum_istegi_mi(user_lower):
-        print(f"[KONUM] Buton gonderiliyor: '{user_input}'")
-        keyboard = ReplyKeyboardMarkup(
-            [[KeyboardButton("📍 Konumumu Paylaş", request_location=True)]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-        await update.message.reply_text(
-            "📍 Konum paylaşmak için aşağıdaki butona bas:",
-            reply_markup=keyboard
-        )
-        return
 
     # 🗑️ SOHBETİ SIFIRLA butonu
     if user_input in ["🗑️ Sohbeti Temizle", "🔄 Sohbeti Temizle"]:

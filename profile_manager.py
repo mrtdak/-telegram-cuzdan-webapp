@@ -144,41 +144,10 @@ class ProfileManager:
         if name:
             parts.append(f"  Kullanıcının adı: {name}")
 
-        # Son konuşma özeti ve tarihi
-        last_summary = self.get_last_session_summary()
-        last_date_str = self.profile.get("last_session_date", "")
-
-        if last_summary and last_date_str:
-            # Kaç gün önce konuşulduğunu hesapla
-            try:
-                from datetime import datetime
-                last_date = datetime.fromisoformat(last_date_str)
-                days_ago = (datetime.now() - last_date).days
-
-                if days_ago == 0:
-                    zaman_bilgisi = "bugün"
-                elif days_ago == 1:
-                    zaman_bilgisi = "dün"
-                else:
-                    zaman_bilgisi = f"{days_ago} gün önce"
-
-                parts.append(f"  Son konuşma ({zaman_bilgisi}): {last_summary}")
-            except:
-                parts.append(f"  Son konuşma özeti: {last_summary}")
-
         if not parts:
             return ""
 
-        # Kullanım talimatı
-        instruction = """
-  [📋 Bu bilgileri nasıl kullan]:
-  - Bunlar senin kullanıcı hakkındaki hatıraların, dosyadan okuduğun bilgiler değil
-  - Bir arkadaşın gibi davran: her şeyi her an söylemezsin
-  - Yakın zamanda konuştuysan (bugün/dün): Kullanıcı referans vermeden açma
-  - Aradan günler geçtiyse: "Nasılsın, en son şundan bahsetmiştik" gibi doğal açabilirsin
-  - Asla "profiline baktım" veya "kayıtlarda görüyorum" gibi şeyler söyleme"""
-
-        return "\n".join(parts) + instruction
+        return "\n".join(parts)
 
     def has_profile(self) -> bool:
         """Profil dolu mu kontrol et"""

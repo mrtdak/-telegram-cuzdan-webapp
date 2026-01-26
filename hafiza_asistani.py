@@ -941,6 +941,7 @@ class HafizaAsistani:
         self.user_location: Optional[Tuple[float, float]] = None  # (lat, lon)
         self.konum_adres: Optional[str] = None  # Konum adresi (mahalle, ilçe, il)
         self.son_yakin_yerler: List[Dict] = []  # Son yakın yer arama sonuçları
+        self.son_arama_kategorisi: Optional[str] = None  # Son aranan kategori (eczane, market vs.)
         print("✅ Konum Hizmetleri aktif")
 
         print("\n⚙️ Sekreter Ayarları:")
@@ -1748,19 +1749,19 @@ JSON:
         summary_prompt = f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
 Aşağıdaki konuşmayı 1-2 kısa cümleyle özetle.
-Bu iki kişi arasındaki sohbetin özetidir. "konuşuldu", "sohbet edildi" formatında yaz.
+Bu iki kişi arasındaki sohbetin özetidir. "konuşuldu" formatında yaz.
 ASLA "Kullanıcı şunu yaptı" veya "Kullanıcı sordu" YAZMA.
 
 Örnek formatlar:
 - "Python kurulumu hakkında konuşuldu"
 - "Hava durumu soruldu, İstanbul için bilgi alındı"
-- "Hazine Adası kitabı ve karakterleri üzerine sohbet edildi"
+- "Hazine Adası kitabı ve karakterleri üzerine konuşuldu"
 - "Yapay zeka hakkında konuşuldu"
 
 KONUŞMA:
 {conversation_text}
 
-ÖZET (1-2 cümle, Türkçe, "konuşuldu/sohbet edildi" formatında):<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+ÖZET (1-2 cümle, Türkçe, "konuşuldu" formatında):<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
 
@@ -1829,6 +1830,7 @@ KONUŞMA:
 
     # TEK BİRLEŞİK PROMPT - Full Friend Modu
     SYSTEM_PROMPT = """Sen akıllı, profesyonel, olgun ve sıcakkanlısın. Arkadaşsın.
+İnsanların şakacı yönleri de var - espri veya şaka yapıldığında sen de aynı tonda karşılık ver, ciddi açıklamaya geçme.
 
 - ✅ Her şeyi akıcı paragraflarla yaz. Liste gerekse bile cümle içinde sırala (birincisi şu, ikincisi bu gibi)
 - ⚠️ Hatalı/anlamsız kelime görürsen tahmin etme, "X derken şunu mu demek istedin?" gibi sor
@@ -2480,12 +2482,13 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
         if hasattr(self, 'profile_manager'):
             profile_context = self.profile_manager.get_prompt_context()
             if profile_context:
-                user_info = f"\n[👤 Kullanıcının bilgisi]:\n{profile_context}\n"
+                user_info = f"\n[👤 Kullanıcının arka plan bilgisi]:\n{profile_context}\n"
 
-        # 📍 Konum arama sonucu varsa context'e ekle
-        konum_context = paket.get('konum_context')
-        if konum_context:
-            context_parts.append(f"[📍 KONUM ARAMA SONUCU]:\n{konum_context}\n(Bu sonucu doğal şekilde kullanıcıya aktar)")
+        # 📍 Son yapılan konum araması varsa context'e ekle (sohbet bağlamı için)
+        if hasattr(self, 'son_yakin_yerler') and self.son_yakin_yerler:
+            kategori = getattr(self, 'son_arama_kategorisi', None) or "yer"
+            yerler_ozet = ", ".join([f"{y['ad']} ({y['mesafe']}m)" for y in self.son_yakin_yerler[:3]])
+            context_parts.append(f"[📍 Az önce yakın {kategori} araması yapıldı]: {yerler_ozet}")
 
         # Bağlam bilgisi (etiket olmadan direkt ekle)
         context_info = ""
@@ -2581,35 +2584,11 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
                 "paket": {"tool_used": "not_sistemi", "direct_response": not_result}
             }
 
-        # 📍 KONUM SİSTEMİ - Konum sorgusu kontrolü
-        # Konum sonuçları LLM'e context olarak gider, LLM doğal cevap verir
-        konum_context = None
-        if self.user_location:
-            konum_result = await self._check_konum_sorgusu(user_input)
-            if konum_result:
-                # Yakın yerler listesi - inline butonlarla gösterilecek
-                if isinstance(konum_result, dict) and konum_result.get("type") == "yakin_yerler_listesi":
-                    return {
-                        "messages": [],
-                        "paket": {"yakin_yerler": konum_result}
-                    }
-                # Normal sonuç (string) - LLM'e context olarak gönder
-                konum_context = konum_result
-
-            # 📍 KONUM GÖNDERME - Numara ile yer seçimi
-            konum_gonder = self._check_konum_gonder_istegi(user_input)
-            if konum_gonder:
-                return {
-                    "messages": [],
-                    "paket": {"send_location": konum_gonder}
-                }
+        # 📍 KONUM SİSTEMİ - Artık tamamen butonlarla çalışıyor
+        # Mesaj içeriğinden otomatik tetikleme kaldırıldı
 
         # 1. Paket hazırla (karar, tool, bağlam)
         paket = await self.hazirla_ve_prompt_olustur(user_input, chat_history)
-
-        # 📍 Konum context varsa paket'e ekle (LLM görsün)
-        if konum_context:
-            paket["konum_context"] = konum_context
 
         # 2. Messages formatı oluştur
         messages = self._build_messages(user_input, paket, chat_history)
@@ -2786,16 +2765,8 @@ Senin görevin:
                 return f"📍 Kullanıcının konumu: {self.konum_adres}"
             return None
 
-        # Konum sinyalleri (yakın yer araması için)
-        konum_sinyalleri = ["yakın", "yakin", "yakınım", "yakinim", "yakında", "yakinda",
-                           "nerede", "neresi", "bul", "ara", "var mı", "varmı"]
-        has_konum_signal = any(s in user_lower for s in konum_sinyalleri)
-
-        # Kategori kontrolü (class sabitinden)
-        for keyword in self.KATEGORI_MAP.keys():
-            if keyword in user_lower:
-                print(f"📍 Yakın yer sorgusu: {keyword}")
-                return await self._get_yakin_yerler(lat, lon, keyword)
+        # Konum bazlı otomatik arama KALDIRILDI
+        # Artık sadece butonlar ile çalışıyor
 
         return None
 
@@ -2859,8 +2830,9 @@ Senin görevin:
             yerler.sort(key=lambda x: x["mesafe"])
             yerler = yerler[:5]  # İlk 5
 
-            # Sonuçları kaydet (konum gönderme için)
+            # Sonuçları kaydet (sohbet bağlamı için)
             self.son_yakin_yerler = yerler
+            self.son_arama_kategorisi = kategori
 
             # Inline butonlu format döndür
             return {
@@ -2964,8 +2936,9 @@ Senin görevin:
             yerler.sort(key=lambda x: x["mesafe"])
             yerler = yerler[:5]  # En yakın 5
 
-            # Konum gönderme için kaydet
+            # Sohbet bağlamı için kaydet
             self.son_yakin_yerler = yerler
+            self.son_arama_kategorisi = "nöbetçi eczane"
 
             return {
                 "type": "yakin_yerler_listesi",
