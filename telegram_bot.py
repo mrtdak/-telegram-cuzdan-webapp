@@ -17,6 +17,7 @@ from typing import Dict, Tuple, Optional
 
 from hafiza_asistani import HafizaAsistani
 from personal_ai import PersonalAI
+from belge_asistani import BelgeAsistani
 import re
 import threading
 import json
@@ -643,7 +644,7 @@ TIMEOUT = 120
 
 
 def get_user_ai(user_id: int) -> Dict:
-    """Kullanıcı için HafizaAsistani + PersonalAI al (izole)"""
+    """Kullanıcı için HafizaAsistani + PersonalAI + BelgeAsistani al (izole)"""
     if user_id not in user_instances:
         user_str = f"user_{user_id}"
 
@@ -653,13 +654,30 @@ def get_user_ai(user_id: int) -> Dict:
         # PersonalAI - cevap üretir
         ai = PersonalAI(user_id=user_str)
 
+        # BelgeAsistani - belge yükleme ve arama (lazy init)
+        belge = None  # İlk belge yüklemesinde oluşturulacak
+
         user_instances[user_id] = {
             "hafiza": hafiza,
-            "ai": ai
+            "ai": ai,
+            "belge": belge,
+            "belge_arama_modu": False,  # Doküman içi arama modu
+            "aktif_belge_id": None      # Arama yapılan belge ID
         }
         print(f"🆕 Yeni kullanıcı: {user_id}")
 
     return user_instances[user_id]
+
+
+def get_belge_asistani(user_id: int) -> BelgeAsistani:
+    """Kullanıcı için BelgeAsistani al (lazy init)"""
+    user = get_user_ai(user_id)
+    if user["belge"] is None:
+        user_str = f"user_{user_id}"
+        belge_dir = os.path.join("user_data", user_str, "belgeler")
+        user["belge"] = BelgeAsistani(data_dir=belge_dir)
+        print(f"📄 Belge asistanı oluşturuldu: {user_id}")
+    return user["belge"]
 
 
 # === KOMUTLAR ===
@@ -679,40 +697,33 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_name=update.effective_user.last_name
     )
 
-    # Kalıcı klavye butonları
-    keyboard = ReplyKeyboardMarkup(
-        [
-            [KeyboardButton("📍 Konum Paylaş", request_location=True), KeyboardButton("📝 Not Defteri")],
-            [KeyboardButton("🔄 Sohbeti Temizle")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=False
-    )
-
     welcome_text = f"""Merhaba {user_name}! 👋
 
 *Özellikler:*
 🤖 *Akıllı Sohbet* - Sorularına cevap, günlük sohbet
 📝 *Not Defteri* - Not al + hatırlatma zamanlayıcısı
+📄 *Çalışma Alanım* - PDF/DOCX/TXT yükle, soru sor
 📍 *Konum Hizmetleri* - Yakındaki eczane, benzinlik, ATM, market
 📷 *Güvenlik Kamerası* - İnsan tespiti, fotoğraflı bildirim
 
-*Menü Butonları:*
-📍 Konum Paylaş → Yakın yer ara
-📝 Not Defteri → Yeni not / Notlarım
-🔄 Sohbeti Temizle → Hafızayı sıfırla
+*Menü (/ butonu):*
+/yeni - Yeni sohbet başlat
+/konum - Konum paylaş
+/notdefteri - Not Defteri
+/belgelerim - Çalışma Alanım
+/kameralarim - Kamera yönetimi
+/limit - Günlük limitler
+/bagis - Projeyi destekle
 
 *Günlük Limitler (Beta):*
 💬 30 mesaj | 📍 10 konum | 📷 1 kamera
 
 _Limitler gece 00:00'da sıfırlanır._
 
-💝 Destek için: /bagis
-
 Nasıl yardımcı olabilirim?
 """
 
-    await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
+    await update.message.reply_text(welcome_text, reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown")
 
 
 async def yeni_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -736,15 +747,10 @@ async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.delete()
     except:
         pass
-    keyboard = ReplyKeyboardMarkup(
-        [[KeyboardButton("📍 Konumumu Paylaş", request_location=True)]],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
+    # Ana menüyü koru, sadece bilgi mesajı gönder
     await context.bot.send_message(
         chat_id=chat_id,
-        text="📍 Konum paylaşmak için butona bas:",
-        reply_markup=keyboard
+        text="📍 Konum paylaşmak için menüdeki '📍 Konum Paylaş' butonunu kullan."
     )
 
 
@@ -758,6 +764,40 @@ async def notdefteri_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ]
     await update.message.reply_text(
         "📝 *Not Defteri*\n\nNe yapmak istersin?",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+async def belgelerim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/belgelerim - Çalışma Alanım - Doküman seç ve üzerine konuş"""
+    user_id = update.effective_user.id
+
+    # Belge asistanını al (lazy init - mevcut belgeleri yükler)
+    belge_asistani = get_belge_asistani(user_id)
+    belgeler = belge_asistani.listele()
+
+    if not belgeler:
+        await update.message.reply_text(
+            "📄 *Çalışma Alanım*\n\n"
+            "Henüz doküman yok.\n\n"
+            "PDF, DOCX veya TXT dosyası gönder → otomatik yüklenir.",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Doküman listesi - her biri tıklanabilir
+    buttons = []
+    for b in belgeler:
+        buttons.append([InlineKeyboardButton(
+            f"📄 {b['dosya_adi']}",
+            callback_data=f"belge_gor:{b['belge_id']}"
+        )])
+    buttons.append([InlineKeyboardButton("🗑️ Doküman Sil", callback_data="belge_sil_menu")])
+
+    await update.message.reply_text(
+        f"📄 *Çalışma Alanım*\n\n"
+        f"Bir doküman seç, içeriğini gör ve üzerine konuş:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
@@ -1172,6 +1212,104 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Fotoğrafı işlerken bir sorun oluştu.")
 
 
+# === BELGE/DOSYA HANDLER ===
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """📄 Belge yükleme handler - PDF, DOCX, TXT"""
+    try:
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        # Kullanıcıyı al/oluştur
+        get_user_ai(user_id)
+
+        document = update.message.document
+        file_name = document.file_name.lower()
+
+        # Desteklenen formatlar
+        supported_ext = ['.pdf', '.docx', '.txt']
+        ext = None
+        for e in supported_ext:
+            if file_name.endswith(e):
+                ext = e
+                break
+
+        if not ext:
+            await update.message.reply_text(
+                "Bu dosya türünü desteklemiyorum.\n\n"
+                "Desteklenen formatlar:\n"
+                "• PDF (.pdf)\n"
+                "• Word (.docx)\n"
+                "• Metin (.txt)"
+            )
+            return
+
+        # Dosya boyutu kontrolü (1 MB limit - laptop dostu)
+        if document.file_size > 1 * 1024 * 1024:
+            await update.message.reply_text(
+                "📄 Dosya çok büyük!\n\n"
+                "Maksimum 1 MB yükleyebilirsin.\n"
+                "Daha küçük bir dosya dene."
+            )
+            return
+
+        # Belge sayısı kontrolü (max 2 belge)
+        belge_asistani = get_belge_asistani(user_id)
+        mevcut_belgeler = belge_asistani.listele()
+        if len(mevcut_belgeler) >= 2:
+            await update.message.reply_text(
+                "📄 Belge limitine ulaştın!\n\n"
+                "Maksimum 2 belge yükleyebilirsin.\n"
+                "/belgelerim yazıp eski belgeleri silebilirsin."
+            )
+            return
+
+        # Düşünüyorum mesajı
+        status = await context.bot.send_message(chat_id, "📄 Belgeyi işliyorum...")
+
+        # Dosyayı indir
+        file = await context.bot.get_file(document.file_id)
+        temp_dir = os.path.join("temp_uploads", f"user_{user_id}")
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_path = os.path.join(temp_dir, document.file_name)
+
+        await file.download_to_drive(temp_path)
+
+        result = belge_asistani.belge_yukle(temp_path)
+
+        # Temp dosyayı sil
+        try:
+            os.remove(temp_path)
+        except:
+            pass
+
+        # Düşünüyorum mesajını sil
+        await status.delete()
+
+        if result['success']:
+            # Yükleme sonrası butonlarla yönlendir
+            buttons = [
+                [InlineKeyboardButton("🔍 Belgede Ara", callback_data=f"belge_ara:{result['belge_id']}")],
+                [InlineKeyboardButton("📄 Tüm Belgelerim", callback_data="belge_liste_geri")]
+            ]
+            await update.message.reply_text(
+                f"✅ Belge yüklendi!\n\n"
+                f"📄 {result['dosya_adi']}\n"
+                f"📊 {result['chunk_sayisi']} parça\n"
+                f"📝 {result['karakter_sayisi']:,} karakter\n\n"
+                f"Belgede arama yaparak ilgili kısımları bulabilirsin.",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        else:
+            await update.message.reply_text(f"❌ Hata: {result['error']}")
+
+    except Exception as e:
+        print(f"[HATA] Belge hatasi: {e}")
+        import traceback
+        traceback.print_exc()
+        await update.message.reply_text("Belgeyi işlerken bir sorun oluştu.")
+
+
 # === KAMERA WIZARD HANDLER ===
 
 async def handle_kamera_wizard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1401,28 +1539,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Mesaj içeriğinden otomatik tetikleme kaldırıldı
     user_lower = user_input.lower().strip()
 
-    # 🗑️ SOHBETİ SIFIRLA butonu
-    if user_input in ["🗑️ Sohbeti Temizle", "🔄 Sohbeti Temizle"]:
-        user = get_user_ai(user_id)
-        user["hafiza"].clear()
-        await update.message.reply_text("✅ Sohbet temizlendi!")
-        return
-
-    # 📝 NOT DEFTERİ butonu - Menü göster
-    if user_input == "📝 Not Defteri":
-        buttons = [
-            [
-                InlineKeyboardButton("📝 Yeni Not", callback_data="not_yeni"),
-                InlineKeyboardButton("📋 Notlarım", callback_data="not_listele")
-            ]
-        ]
-        await update.message.reply_text(
-            "📝 *Not Defteri*\n\nNe yapmak istersin?",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-        return
-
     # 📝 NOT KAYDETME - Kullanıcı not içeriği yazdıysa (reply ile)
     if context.user_data.get("not_bekliyor"):
         context.user_data["not_bekliyor"] = False
@@ -1489,6 +1605,59 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Kullanıcının AI'larını al
     user = get_user_ai(user_id)
+
+    # 📄 DOKÜMAN İÇİ ARAMA MODU
+    if user.get("belge_arama_modu") and user.get("aktif_belge_id"):
+        belge_id = user["aktif_belge_id"]
+        belge_asistani = get_belge_asistani(user_id)
+
+        # Arama yap
+        try:
+            sonuclar = belge_asistani.ara(user_input, k=3)
+            # Sadece bu belgeye ait sonuçları filtrele
+            belge_sonuclar = [s for s in sonuclar if s["belge_id"] == belge_id]
+
+            if belge_sonuclar and belge_sonuclar[0]['skor'] > 0.25:
+                # Sonuçları göster
+                cevap = f"🔍 *Arama Sonuçları:*\n\n"
+                bulunan_icerik = ""
+                for i, sonuc in enumerate(belge_sonuclar[:3], 1):
+                    if sonuc['skor'] > 0.25:
+                        # Markdown özel karakterlerini temizle
+                        text_safe = sonuc['text'][:300].replace('*', '').replace('_', '').replace('`', '').replace('[', '').replace(']', '')
+                        cevap += f"*{i}.* (%{int(sonuc['skor']*100)})\n"
+                        cevap += f"{text_safe}...\n\n"
+                        bulunan_icerik += f"{sonuc['text']}\n\n"
+
+                # Sonucu sakla
+                user["son_arama_sonucu"] = bulunan_icerik.strip()
+
+                buttons = [
+                    [InlineKeyboardButton("✅ Bunu Seç ve Konuş", callback_data=f"belge_arama_sec:{belge_id}")],
+                    [InlineKeyboardButton("🔍 Tekrar Ara", callback_data=f"belge_ara:{belge_id}")],
+                    [InlineKeyboardButton("🔙 Belgeye Dön", callback_data=f"belge_gor:{belge_id}")]
+                ]
+
+                await update.message.reply_text(
+                    cevap,
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            else:
+                # Bulunamadı
+                buttons = [
+                    [InlineKeyboardButton("🔍 Tekrar Ara", callback_data=f"belge_ara:{belge_id}")],
+                    [InlineKeyboardButton("🔙 Belgeye Dön", callback_data=f"belge_gor:{belge_id}")]
+                ]
+                await update.message.reply_text(
+                    "❌ Bu kelimelerle bir şey bulamadım.\n\nFarklı kelimelerle tekrar dene.",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+        except Exception as e:
+            print(f"[BELGE ARAMA] Hata: {e}")
+            await update.message.reply_text("❌ Arama hatası oluştu.")
+
+        return
 
     # Düşünüyorum mesajı
     status = await context.bot.send_message(chat_id, "💭 Düşünüyorum...")
@@ -1958,6 +2127,263 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 📝 NOTLAR LİSTESİNİ KAPAT
     elif data == "notlar_kapat":
         await query.edit_message_text("📝 Notlar kapatıldı.")
+
+    # 📄 DOKÜMAN GÖR - İçeriği göster
+    elif data.startswith("belge_gor:"):
+        belge_id = data.split(":")[1]
+
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        # Arama modunu kapat (geri dönülünce)
+        user = user_instances[user_id]
+        user["belge_arama_modu"] = False
+        user["aktif_belge_id"] = None
+
+        belge_asistani = get_belge_asistani(user_id)
+        result = belge_asistani.get_icerik(belge_id)
+
+        if not result["success"]:
+            await query.edit_message_text(f"❌ {result['error']}")
+            return
+
+        # İçeriği göster (max 800 karakter)
+        icerik = result["icerik"][:800]
+        if len(result["icerik"]) > 800:
+            icerik += "..."
+
+        # Markdown özel karakterlerini escape et
+        icerik_safe = icerik.replace('*', '').replace('_', '').replace('`', '').replace('[', '').replace(']', '')
+
+        buttons = [
+            [InlineKeyboardButton("🔍 İçinde Ara", callback_data=f"belge_ara:{belge_id}")],
+            [InlineKeyboardButton("🔙 Geri", callback_data="belge_liste_geri")]
+        ]
+
+        await query.edit_message_text(
+            f"📄 *{result['dosya_adi']}*\n\n"
+            f"{icerik_safe}\n\n"
+            f"🔍 *İçinde Ara* butonuyla belgede arama yap.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # 📄 DOKÜMAN İÇİNDE ARA - Arama moduna geç
+    elif data.startswith("belge_ara:"):
+        belge_id = data.split(":")[1]
+
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        user = user_instances[user_id]
+        belge_asistani = get_belge_asistani(user_id)
+
+        # Belge bilgisini al
+        if belge_id not in belge_asistani.belgeler:
+            await query.edit_message_text("❌ Belge bulunamadı.")
+            return
+
+        dosya_adi = belge_asistani.belgeler[belge_id]["dosya_adi"]
+
+        # Arama modunu aktifleştir
+        user["belge_arama_modu"] = True
+        user["aktif_belge_id"] = belge_id
+
+        buttons = [
+            [InlineKeyboardButton("❌ Aramadan Çık", callback_data=f"belge_gor:{belge_id}")]
+        ]
+
+        await query.edit_message_text(
+            f"🔍 *{dosya_adi}* içinde arama\n\n"
+            f"Ne aramak istiyorsun? Yaz ve gönder:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # 📄 ARAMA SONUCUNU SEÇ - Context'e ekle ve çık
+    elif data.startswith("belge_arama_sec:"):
+        belge_id = data.split(":")[1]
+
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        user = user_instances[user_id]
+        belge_asistani = get_belge_asistani(user_id)
+
+        # Belge bilgisi
+        if belge_id not in belge_asistani.belgeler:
+            await query.edit_message_text("❌ Belge bulunamadı.")
+            return
+
+        dosya_adi = belge_asistani.belgeler[belge_id]["dosya_adi"]
+
+        # Arama sonucunu al
+        son_sonuc = user.get("son_arama_sonucu", "")
+        if not son_sonuc:
+            await query.edit_message_text("❌ Arama sonucu bulunamadı. Tekrar ara.")
+            return
+
+        # Context'e ekle
+        asistan = user["hafiza"]
+        asistan.belge_context = f"[📄 {dosya_adi} - ARAMA SONUCU]:\n{son_sonuc[:2000]}"
+
+        # Arama modunu kapat
+        user["belge_arama_modu"] = False
+        user["aktif_belge_id"] = None
+        user["son_arama_sonucu"] = None
+
+        await query.edit_message_text(
+            f"✅ *{dosya_adi}* arama sonucu seçildi!\n\n"
+            f"Şimdi bu konu hakkında soru sorabilirsin.",
+            parse_mode="Markdown"
+        )
+
+    # 📄 DOKÜMAN SEÇ - Context'e ekle ve çık
+    elif data.startswith("belge_sec:"):
+        belge_id = data.split(":")[1]
+
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        user = user_instances[user_id]
+        belge_asistani = get_belge_asistani(user_id)
+        result = belge_asistani.get_icerik(belge_id)
+
+        if not result["success"]:
+            await query.edit_message_text(f"❌ {result['error']}")
+            return
+
+        # Context'e ekle
+        asistan = user["hafiza"]
+        asistan.belge_context = f"[📄 SEÇİLEN DOKÜMAN: {result['dosya_adi']}]\n{result['icerik'][:2000]}"
+
+        await query.edit_message_text(
+            f"✅ *{result['dosya_adi']}* seçildi!\n\n"
+            f"Şimdi bu doküman hakkında soru sorabilirsin.",
+            parse_mode="Markdown"
+        )
+
+    # 📄 LİSTEYE GERİ DÖN
+    elif data == "belge_liste_geri":
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        # Arama modunu kapat
+        user = user_instances[user_id]
+        user["belge_arama_modu"] = False
+        user["aktif_belge_id"] = None
+
+        belge_asistani = get_belge_asistani(user_id)
+        belgeler = belge_asistani.listele()
+
+        if not belgeler:
+            await query.edit_message_text("📄 Henüz doküman yok.")
+            return
+
+        buttons = []
+        for b in belgeler:
+            buttons.append([InlineKeyboardButton(
+                f"📄 {b['dosya_adi']}",
+                callback_data=f"belge_gor:{b['belge_id']}"
+            )])
+        buttons.append([InlineKeyboardButton("🗑️ Doküman Sil", callback_data="belge_sil_menu")])
+
+        await query.edit_message_text(
+            f"📄 *Çalışma Alanım*\n\n"
+            f"Bir doküman seç, içeriğini gör ve üzerine konuş:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # 📄 DOKÜMAN SİL MENÜ
+    elif data == "belge_sil_menu":
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        # Belge asistanını al (lazy init)
+        belge_asistani = get_belge_asistani(user_id)
+        belgeler = belge_asistani.listele()
+        if not belgeler:
+            await query.edit_message_text("📄 Silinecek doküman yok.")
+            return
+
+        buttons = []
+        for b in belgeler:
+            buttons.append([InlineKeyboardButton(
+                f"🗑️ {b['dosya_adi'][:30]}",
+                callback_data=f"belge_sil:{b['belge_id']}"
+            )])
+        buttons.append([InlineKeyboardButton("❌ İptal", callback_data="belge_sil_iptal")])
+
+        await query.edit_message_text(
+            "🗑️ *Hangi dokümanı silmek istiyorsun?*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # 📄 BELGE SİL
+    elif data.startswith("belge_sil:"):
+        belge_id = data.split(":")[1]
+
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        # Belge asistanını al (lazy init)
+        belge_asistani = get_belge_asistani(user_id)
+        result = belge_asistani.sil(belge_id)
+        if result["success"]:
+            # Kalan belgeleri göster
+            belgeler = belge_asistani.listele()
+            if not belgeler:
+                await query.edit_message_text(f"✅ {result['dosya_adi']} silindi.\n\nTüm dokümanlar silindi.")
+            else:
+                buttons = []
+                for b in belgeler:
+                    buttons.append([InlineKeyboardButton(
+                        f"📄 {b['dosya_adi']}",
+                        callback_data=f"belge_gor:{b['belge_id']}"
+                    )])
+                buttons.append([InlineKeyboardButton("🗑️ Doküman Sil", callback_data="belge_sil_menu")])
+
+                await query.edit_message_text(
+                    f"✅ {result['dosya_adi']} silindi.\n\n"
+                    f"📄 *Kalan Dokümanlar:*",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+        else:
+            await query.edit_message_text(f"❌ {result['error']}")
+
+    # 📄 BELGE SİL İPTAL - Listeye geri dön
+    elif data == "belge_sil_iptal":
+        belge_asistani = get_belge_asistani(user_id)
+        belgeler = belge_asistani.listele()
+
+        if not belgeler:
+            await query.edit_message_text("📄 Henüz doküman yok.")
+            return
+
+        buttons = []
+        for b in belgeler:
+            buttons.append([InlineKeyboardButton(
+                f"📄 {b['dosya_adi']}",
+                callback_data=f"belge_gor:{b['belge_id']}"
+            )])
+        buttons.append([InlineKeyboardButton("🗑️ Doküman Sil", callback_data="belge_sil_menu")])
+
+        await query.edit_message_text(
+            f"📄 *Çalışma Alanım*\n\n"
+            f"Bir doküman seç, içeriğini gör ve üzerine konuş:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
 
     # 📝 YENİ NOT - Not ekleme moduna geç
     elif data == "not_yeni":
@@ -2740,12 +3166,13 @@ def main():
         try:
             # Menüyü ayarla
             komutlar = [
-                BotCommand("bagis", "💝 Projeyi destekle"),
                 BotCommand("yeni", "🔄 Yeni sohbet"),
                 BotCommand("konum", "📍 Konum paylaş"),
                 BotCommand("notdefteri", "📝 Not Defteri"),
+                BotCommand("belgelerim", "📄 Çalışma Alanım"),
                 BotCommand("kameralarim", "📷 Kamera yönetimi"),
-                BotCommand("limit", "📊 Günlük limitler")
+                BotCommand("limit", "📊 Günlük limitler"),
+                BotCommand("bagis", "💝 Projeyi destekle")
             ]
             await application.bot.set_my_commands(komutlar)
             print("[OK] Telegram menusu ayarlandi!")
@@ -2781,6 +3208,7 @@ def main():
     app.add_handler(CommandHandler("yeni", yeni_command))
     app.add_handler(CommandHandler("konum", konum_command))
     app.add_handler(CommandHandler("notdefteri", notdefteri_command))
+    app.add_handler(CommandHandler("belgelerim", belgelerim_command))
     app.add_handler(CommandHandler("limit", limit_command))
     app.add_handler(CommandHandler("bagis", bagis_command))
     app.add_handler(CommandHandler("premium", premium_command))  # Eski uyumluluk
@@ -2799,6 +3227,9 @@ def main():
 
     # Fotograf
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    # Belge/Dosya (PDF, DOCX, TXT)
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     # Callback (inline butonlar)
     app.add_handler(CallbackQueryHandler(handle_callback))
