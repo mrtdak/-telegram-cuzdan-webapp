@@ -961,6 +961,9 @@ class HafizaAsistani:
         self.son_arama_kategorisi: Optional[str] = None  # Son aranan kategori (eczane, market vs.)
         print("✅ Konum Hizmetleri aktif")
 
+        # 📄 Belge Context (dışarıdan set edilir)
+        self.belge_context: Optional[str] = None
+
         print("\n⚙️ Sekreter Ayarları:")
         print(f"   • Zaman limiti: {saat_limiti} saat")
         print(f"   • Benzerlik eşiği: {esik}")
@@ -1889,12 +1892,19 @@ Bu araçları sen kullanamazsın, kullanıcı kendisi kullanır. Kullanıcı bun
 - /kameralarim → Kamera yönetimi (ekleme, başlatma, durdurma, silme)
 - Sen kamera kontrol edemezsin.
 
+📄 ÇALIŞMA ALANIM (DOKÜMAN SİSTEMİ):
+- /belgelerim → Yüklü dokümanları listeler
+- PDF, DOCX, TXT dosyası gönder → Otomatik yüklenir ve işlenir
+- Doküman seç → İçeriği gör → "İçinde Ara" ile spesifik bilgi bul
+- Arama sonucunu seç → Context'e eklenir, sohbette kullanılır
+- Sen doküman yükleyemez, silemez, arama yapamazsın. Kullanıcıya komutu söyle.
+
 🔄 DİĞER KOMUTLAR:
 - /yeni veya "🔄 Sohbeti Temizle" → Hafızayı sıfırlar
 - /bagis → Bağış menüsü
 - /limit → Günlük mesaj limiti
 
-⚠️ Kullanıcı bu araçlarla ilgili bir şey isterse (örn: "notlarımı sil", "yakında eczane var mı", "kamerayı aç"):
+⚠️ Kullanıcı bu araçlarla ilgili bir şey isterse (örn: "notlarımı sil", "yakında eczane var mı", "kamerayı aç", "belgelerimde ara"):
 → "Ben bunu yapamam ama sen şöyle yapabilirsin: ..." diye komutu/butonu söyle.
 
 - ⚡ [🎯 SOHBET ZEKASI TALİMATI] varsa → MUTLAKA uygula
@@ -2520,6 +2530,11 @@ Bu araçları sen kullanamazsın, kullanıcı kendisi kullanır. Kullanıcı bun
                     end = prompt.find('━━━', start + 1)
                 if start != -1 and end != -1:
                     context_parts.append(prompt[start:end].strip())
+
+        # 📄 Belge context varsa ekle (dışarıdan set edilmiş)
+        if self.belge_context:
+            context_parts.append(self.belge_context)
+            self.belge_context = None  # Bir kere kullanıldıktan sonra temizle
 
         # Kullanıcı profili BAĞLAMA EKLENMİYOR - zaten system message'da var
 
