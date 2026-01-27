@@ -12,7 +12,7 @@ import aiohttp
 import hashlib
 import logging
 from typing import List, Optional, Dict, Any, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict
 from web_search import WebSearch
@@ -129,6 +129,23 @@ class NotManager:
     def has_pending(self) -> bool:
         """Bekleyen not var mı?"""
         return self.pending_note is not None
+
+
+    def bekleyen_hatirlatmalar(self) -> List[Dict]:
+        """Henüz gönderilmemiş hatırlatmaları getir"""
+        bekleyenler = []
+        for n in self.notes:
+            if n.get('hatirlatma') and not n.get('hatirlatma_gonderildi', False):
+                bekleyenler.append(n)
+        return bekleyenler
+
+    def hatirlatma_gonderildi_isaretle(self, not_id: int):
+        """Hatırlatma gönderildi olarak işaretle"""
+        for n in self.notes:
+            if n['id'] == not_id:
+                n['hatirlatma_gonderildi'] = True
+                self._save_notes()
+                break
 
 
 # ============================================================
@@ -1854,6 +1871,32 @@ Gerçek sohbet karşılıklı ilgiden doğar, zorlamayla değil. Kullanıcının
 Sohbeti uzatmak için yapay sorular sorma. Bu samimiyet değil, zorlamadır. Her boşluğu doldurmaya çalışma.
 Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 
+🛠️ SİSTEM ARAÇLARI (ÖNEMLİ!):
+Bu araçları sen kullanamazsın, kullanıcı kendisi kullanır. Kullanıcı bunlarla ilgili bir şey isterse nasıl kullanacağını anlat:
+
+📝 NOT SİSTEMİ:
+- "not al: içerik" → Not kaydeder, hatırlatma butonları çıkar
+- "notlarım" → Notları listeler, silme butonları ile
+- Sen not ekleyemez, silemez, göremezsin. Kullanıcıya komutu söyle.
+
+📍 KONUM SİSTEMİ:
+- Menüdeki "📍 Konum Paylaş" butonu ile konum paylaşılır
+- Konum sonrası kategoriler: benzinlik, eczane, nöbetçi eczane, restoran, kafe, ATM, hastane, cami, market
+- Yakıt fiyatları, namaz vakitleri de konum ile çalışır
+- Sen konumu göremez, arama yapamazsın. Kullanıcıya butonu kullanmasını söyle.
+
+📷 KAMERA SİSTEMİ:
+- /kameralarim → Kamera yönetimi (ekleme, başlatma, durdurma, silme)
+- Sen kamera kontrol edemezsin.
+
+🔄 DİĞER KOMUTLAR:
+- /yeni veya "🔄 Sohbeti Temizle" → Hafızayı sıfırlar
+- /bagis → Bağış menüsü
+- /limit → Günlük mesaj limiti
+
+⚠️ Kullanıcı bu araçlarla ilgili bir şey isterse (örn: "notlarımı sil", "yakında eczane var mı", "kamerayı aç"):
+→ "Ben bunu yapamam ama sen şöyle yapabilirsin: ..." diye komutu/butonu söyle.
+
 - ⚡ [🎯 SOHBET ZEKASI TALİMATI] varsa → MUTLAKA uygula
 
 🧠 DÜŞÜNCE SİSTEMİ:
@@ -2580,6 +2623,12 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
                     "messages": [],
                     "paket": {"notlar_listesi": not_result}
                 }
+            # ⏰ Hatırlatma seçimi - butonlarla zaman seçimi
+            if isinstance(not_result, dict) and not_result.get("type") == "hatirlatma_secimi":
+                return {
+                    "messages": [],
+                    "paket": {"hatirlatma_secimi": not_result}
+                }
             # Normal sonuç (string) - direkt cevap dön
             return {
                 "messages": [
@@ -2626,27 +2675,80 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
             # "iptal", "vazgeç" gibi kelimeler hariç her şeyi not al
             iptal_kelimeler = ["iptal", "vazgeç", "vazgec", "boşver", "bosver", "gerek yok", "tamam boşver"]
             if not any(k in user_lower for k in iptal_kelimeler):
-                print(f"📝 Pending not kaydediliyor: '{user_input[:30]}...'")
-                return self.not_manager.not_al(user_input)
+                print(f"📝 Pending not kaydediliyor (butonlu): '{user_input[:30]}...'")
+                # Notu kaydet
+                self.not_manager.not_al(user_input)
+                # Not ID'sini al
+                not_id = None
+                if self.not_manager.notes:
+                    not_id = self.not_manager.notes[-1].get('id')
+                # Butonlu yanıt döndür
+                return {
+                    "type": "hatirlatma_secimi",
+                    "mesaj": f"✅ Not kaydedildi:\n\n📝 {user_input}\n\n⏰ Hatırlatma eklemek ister misin?",
+                    "not_id": not_id,
+                    "icerik": user_input
+                }
             else:
                 return "👍 Tamam, iptal ettim."
 
-        # 📝 NOT AL / TUT / EKLE (içerikli)
-        not_patterns = [
-            (r'^not\s+al[\s:,]+(.+)$', 'not_al'),
-            (r'^not\s+tut[\s:,]+(.+)$', 'not_al'),
-            (r'^not\s+ekle[\s:,]+(.+)$', 'not_al'),
-            (r'^şunu\s+not\s+(?:al|et)[\s:,]*(.+)$', 'not_al'),
-            (r'^bunu\s+not\s+(?:al|et)[\s:,]*(.+)$', 'not_al'),
+        # ⏰ HATIRLATMA İSTEĞİ - "bana hatırlat", "hatırlat bana", "hatırlatır mısın" vb.
+        # Not olarak kaydedilir + zaman seçimi için butonlar gösterilir
+        hatirlatma_patterns = [
+            r'^(?:bana\s+)?hat[ıi]rlat(?:\s+bana)?[\s:,]+(.+)$',
+            r'^hat[ıi]rlat[ıi]r\s+m[ıi]s[ıi]n[\s:,]+(.+)$',
+            r'^(?:bana\s+)?hat[ıi]rlatma[\s:,]+(.+)$',
+            r'^unutmamam\s+(?:için|lazım|gerek)[\s:,]+(.+)$',
         ]
 
-        for pattern, action in not_patterns:
+        for pattern in hatirlatma_patterns:
+            match = re.match(pattern, user_lower, re.IGNORECASE)
+            if match:
+                icerik = match.group(1).strip()
+                if icerik and len(icerik) > 2:
+                    print(f"⏰ Hatırlatma isteği algılandı: '{icerik[:30]}...'")
+                    # Önce normal not olarak kaydet
+                    not_sonuc = self.not_manager.not_al(icerik)
+                    # Not ID'sini çıkar
+                    not_id = None
+                    if self.not_manager.notes:
+                        not_id = self.not_manager.notes[-1].get('id')
+                    # Telegram'a butonlu yanıt döndür
+                    return {
+                        "type": "hatirlatma_secimi",
+                        "mesaj": f"✅ Not kaydedildi:\n\n📝 {icerik}\n\n⏰ Hatırlatma eklemek ister misin?",
+                        "not_id": not_id,
+                        "icerik": icerik
+                    }
+
+        # 📝 NOT AL / TUT / EKLE (içerikli - hatırlatma seçeneği ile)
+        not_patterns = [
+            r'^not\s+al[\s:,]+(.+)$',
+            r'^not\s+tut[\s:,]+(.+)$',
+            r'^not\s+ekle[\s:,]+(.+)$',
+            r'^şunu\s+not\s+(?:al|et)[\s:,]*(.+)$',
+            r'^bunu\s+not\s+(?:al|et)[\s:,]*(.+)$',
+        ]
+
+        for pattern in not_patterns:
             match = re.match(pattern, user_lower, re.IGNORECASE)
             if match:
                 icerik = match.group(1).strip()
                 if icerik:
-                    print(f"📝 Not tetikleyici algılandı: {action} -> '{icerik[:30]}...'")
-                    return self.not_manager.not_al(icerik)
+                    print(f"📝 Not kaydediliyor (butonlu): '{icerik[:30]}...'")
+                    # Notu kaydet
+                    self.not_manager.not_al(icerik)
+                    # Not ID'sini al
+                    not_id = None
+                    if self.not_manager.notes:
+                        not_id = self.not_manager.notes[-1].get('id')
+                    # Butonlu yanıt döndür
+                    return {
+                        "type": "hatirlatma_secimi",
+                        "mesaj": f"✅ Not kaydedildi:\n\n📝 {icerik}\n\n⏰ Hatırlatma eklemek ister misin?",
+                        "not_id": not_id,
+                        "icerik": icerik
+                    }
 
         # 📝 NOT AL TEK BAŞINA - içerik olmadan → pending moda geç
         if re.match(r'^not\s+(al|tut|ekle)\s*[?!.,]*$', user_lower, re.IGNORECASE):

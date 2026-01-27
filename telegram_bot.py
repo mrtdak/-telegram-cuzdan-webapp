@@ -8,6 +8,7 @@ Telegram → HafizaAsistani.prepare() → PersonalAI.generate() → HafizaAsista
 import os
 import asyncio
 import aiohttp
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply, LabeledPrice
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, PreCheckoutQueryHandler
@@ -25,6 +26,122 @@ load_dotenv()
 
 # Admin ID'leri - rate limit yok, tüm özellikler açık
 ADMIN_IDS = [6505503887]
+
+
+def _parse_ozel_sure(metin: str) -> int:
+    """
+    Özel süre metnini dakikaya çevir.
+    Örnekler: "40", "40 dk", "2 saat", "1 saat 30 dk", "90 dakika"
+    Returns: dakika (int) veya None
+    """
+    import re
+    metin = metin.lower().strip()
+
+    toplam_dakika = 0
+
+    # Sadece sayı girilmişse dakika olarak kabul et
+    if re.match(r'^\d+$', metin):
+        return int(metin)
+
+    # Saat pattern: "2 saat", "2 sa", "2s"
+    saat_match = re.search(r'(\d+)\s*(?:saat|sa|s)\b', metin)
+    if saat_match:
+        toplam_dakika += int(saat_match.group(1)) * 60
+
+    # Dakika pattern: "30 dakika", "30 dk", "30d", "30 dak"
+    dakika_match = re.search(r'(\d+)\s*(?:dakika|dak|dk|d)\b', metin)
+    if dakika_match:
+        toplam_dakika += int(dakika_match.group(1))
+
+    # Hiçbiri eşleşmediyse None döndür
+    if toplam_dakika == 0:
+        # Belki sadece "2" gibi bir şey yazmıştır, dakika olarak al
+        sayi_match = re.search(r'(\d+)', metin)
+        if sayi_match:
+            return int(sayi_match.group(1))
+        return None
+
+    return toplam_dakika
+
+
+# ============== HATIRLATMA SİSTEMİ ==============
+
+async def hatirlatma_gonder(context: ContextTypes.DEFAULT_TYPE):
+    """JobQueue tarafından çağrılan hatırlatma gönderme fonksiyonu"""
+    job = context.job
+    user_id = job.data['user_id']
+    not_data = job.data['not']
+
+    mesaj = f"⏰ **HATIRLATMA**\n\n📝 {not_data['icerik']}\n\n_({not_data['tarih']} tarihli not)_"
+
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=mesaj,
+            parse_mode='Markdown'
+        )
+
+        # Hatırlatma gönderildi olarak işaretle
+        user = user_instances.get(user_id)
+        if user:
+            user["hafiza"].not_manager.hatirlatma_gonderildi_isaretle(not_data['id'])
+        print(f"[HATIRLATMA] User {user_id} için not #{not_data['id']} gönderildi")
+    except Exception as e:
+        print(f"[HATA] Hatırlatma gönderilemedi: {e}")
+
+
+def hatirlatma_job_ekle(application, user_id: int, not_data: dict):
+    """Yeni hatırlatma job'ı ekle"""
+    hatirlatma_str = not_data.get('hatirlatma')
+    if not hatirlatma_str:
+        return
+
+    hatirlatma_zamani = datetime.fromisoformat(hatirlatma_str)
+    now = datetime.now()
+
+    if hatirlatma_zamani <= now:
+        print(f"[HATIRLATMA] Geçmiş zaman, atlanıyor: {hatirlatma_str}")
+        return
+
+    gecikme = (hatirlatma_zamani - now).total_seconds()
+
+    application.job_queue.run_once(
+        hatirlatma_gonder,
+        when=gecikme,
+        data={'user_id': user_id, 'not': not_data},
+        name=f"hatirlatma_{user_id}_{not_data['id']}"
+    )
+    print(f"[HATIRLATMA] Job eklendi: User {user_id}, Not #{not_data['id']}, {gecikme:.0f} saniye sonra")
+
+
+async def mevcut_hatirlatmalari_yukle(application):
+    """Bot başladığında mevcut hatırlatmaları JobQueue'ya ekle"""
+    import glob
+    import re
+
+    notes_files = glob.glob("user_data/user_*/notes/notlar.json")
+    toplam = 0
+
+    for notes_file in notes_files:
+        try:
+            # user_id'yi path'ten çıkar (Windows ve Linux uyumlu)
+            match = re.search(r'user_(\d+)', notes_file)
+            if not match:
+                continue
+            user_id = int(match.group(1))
+
+            with open(notes_file, 'r', encoding='utf-8') as f:
+                notes = json.load(f)
+
+            for n in notes:
+                if n.get('hatirlatma') and not n.get('hatirlatma_gonderildi', False):
+                    hatirlatma_job_ekle(application, user_id, n)
+                    toplam += 1
+        except Exception as e:
+            print(f"[HATA] Hatırlatma yüklenemedi ({notes_file}): {e}")
+
+    print(f"[HATIRLATMA] {toplam} mevcut hatırlatma yüklendi")
+
 
 # Konum arama kategorileri (inline butonlar için)
 KONUM_KATEGORILERI = [
@@ -565,7 +682,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Kalıcı klavye butonları
     keyboard = ReplyKeyboardMarkup(
         [
-            [KeyboardButton("📍 Konum Paylaş", request_location=True), KeyboardButton("📝 Not Al")],
+            [KeyboardButton("📍 Konum Paylaş", request_location=True), KeyboardButton("📝 Not Defteri")],
             [KeyboardButton("🔄 Sohbeti Temizle")]
         ],
         resize_keyboard=True,
@@ -576,16 +693,21 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 *Özellikler:*
 🤖 *Akıllı Sohbet* - Sorularına cevap, günlük sohbet
-📝 *Not Sistemi* - "not al: ..." diyerek notlarını kaydet
-📍 *Konum Hizmetleri* - Yakındaki eczane, benzinlik, ATM, market bul
-📷 *Güvenlik Kamerası* - Kapı/bahçe insan tespiti, fotoğraflı bildirim
+📝 *Not Defteri* - Not al + hatırlatma zamanlayıcısı
+📍 *Konum Hizmetleri* - Yakındaki eczane, benzinlik, ATM, market
+📷 *Güvenlik Kamerası* - İnsan tespiti, fotoğraflı bildirim
+
+*Menü Butonları:*
+📍 Konum Paylaş → Yakın yer ara
+📝 Not Defteri → Yeni not / Notlarım
+🔄 Sohbeti Temizle → Hafızayı sıfırla
 
 *Günlük Limitler (Beta):*
-💬 30 mesaj | 📍 10 konum | 📷 1 kamera, 5 bildirim
+💬 30 mesaj | 📍 10 konum | 📷 1 kamera
 
 _Limitler gece 00:00'da sıfırlanır._
 
-💝 Proje beta aşamasında, destek için: /bagis
+💝 Destek için: /bagis
 
 Nasıl yardımcı olabilirim?
 """
@@ -626,20 +748,18 @@ async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def not_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/not - Not al"""
-    chat_id = update.effective_chat.id
-    # Komut mesajını sil
-    try:
-        await update.message.delete()
-    except:
-        pass
-    context.user_data["not_bekliyor"] = True
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text="📝 *Not içeriğini yaz:*\n\n_Örnek: yarın toplantı var_",
+async def notdefteri_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/notdefteri - Not Defteri menüsü"""
+    buttons = [
+        [
+            InlineKeyboardButton("📝 Yeni Not", callback_data="not_yeni"),
+            InlineKeyboardButton("📋 Notlarım", callback_data="not_listele")
+        ]
+    ]
+    await update.message.reply_text(
+        "📝 *Not Defteri*\n\nNe yapmak istersin?",
         parse_mode="Markdown",
-        reply_markup=ForceReply(selective=True)
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
 
 
@@ -1288,13 +1408,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Sohbet temizlendi!")
         return
 
-    # 📝 NOT AL butonu
-    if user_input == "📝 Not Al":
-        context.user_data["not_bekliyor"] = True
+    # 📝 NOT DEFTERİ butonu - Menü göster
+    if user_input == "📝 Not Defteri":
+        buttons = [
+            [
+                InlineKeyboardButton("📝 Yeni Not", callback_data="not_yeni"),
+                InlineKeyboardButton("📋 Notlarım", callback_data="not_listele")
+            ]
+        ]
         await update.message.reply_text(
-            "📝 *Not içeriğini yaz:*\n\n_Örnek: yarın toplantı var_",
+            "📝 *Not Defteri*\n\nNe yapmak istersin?",
             parse_mode="Markdown",
-            reply_markup=ForceReply(selective=True)
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
         return
 
@@ -1305,6 +1430,62 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # X'e basıp iptal ettiyse reply_to_message olmaz, normal mesaj olarak işle
         if update.message.reply_to_message:
             user_input = f"not al: {user_input}"
+
+    # ⏰ ÖZEL HATIRLATMA SÜRESİ - Kullanıcı süre girdiyse
+    if context.user_data.get("hatirlatma_ozel_not_id"):
+        not_id = context.user_data.pop("hatirlatma_ozel_not_id")
+
+        # Süreyi parse et
+        dakika = _parse_ozel_sure(user_input)
+
+        if dakika is None or dakika <= 0:
+            await update.message.reply_text(
+                "❌ Süreyi anlayamadım.\n\n"
+                "Örnekler: `40`, `40 dk`, `2 saat`, `1 saat 30 dk`",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Kullanıcının AI'larını al
+        user = get_user_ai(user_id)
+        asistan = user["hafiza"]
+
+        # Not'u bul ve hatırlatma ekle
+        from datetime import datetime, timedelta
+        hatirlatma_zamani = datetime.now() + timedelta(minutes=dakika)
+
+        not_bulundu = False
+        for n in asistan.not_manager.notes:
+            if n.get('id') == not_id:
+                n['hatirlatma'] = hatirlatma_zamani.isoformat()
+                n['hatirlatma_gonderildi'] = False
+                asistan.not_manager._save_notes()
+                not_bulundu = True
+
+                # JobQueue'ya ekle
+                hatirlatma_job_ekle(context.application, user_id, n)
+
+                # Süre formatla
+                if dakika < 60:
+                    sure_str = f"{dakika} dakika"
+                elif dakika % 60 == 0:
+                    sure_str = f"{dakika // 60} saat"
+                else:
+                    saat = dakika // 60
+                    dk = dakika % 60
+                    sure_str = f"{saat} saat {dk} dakika"
+
+                await update.message.reply_text(
+                    f"✅ Hatırlatma eklendi!\n\n"
+                    f"📝 {n['icerik']}\n\n"
+                    f"⏰ {sure_str} sonra\n"
+                    f"🕐 {hatirlatma_zamani.strftime('%H:%M')}"
+                )
+                return
+
+        if not not_bulundu:
+            await update.message.reply_text("❌ Not bulunamadı.")
+        return
 
     # Kullanıcının AI'larını al
     user = get_user_ai(user_id)
@@ -1376,6 +1557,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             asistan.save(user_input, mesaj, [])
             return
 
+        # ⏰ HATIRLATMA SEÇİMİ - Not kaydedildi, zaman seçimi butonları göster
+        if paket.get("hatirlatma_secimi"):
+            data = paket["hatirlatma_secimi"]
+            mesaj = data["mesaj"]
+            not_id = data["not_id"]
+
+            # Status mesajını sil
+            try:
+                await context.bot.delete_message(chat_id, status.message_id)
+            except:
+                pass
+
+            # Zaman seçimi butonları
+            buttons = [
+                [
+                    InlineKeyboardButton("1 dk", callback_data=f"hatirlatma_ekle:{not_id}:1"),
+                    InlineKeyboardButton("5 dk", callback_data=f"hatirlatma_ekle:{not_id}:5"),
+                    InlineKeyboardButton("15 dk", callback_data=f"hatirlatma_ekle:{not_id}:15"),
+                    InlineKeyboardButton("30 dk", callback_data=f"hatirlatma_ekle:{not_id}:30"),
+                ],
+                [
+                    InlineKeyboardButton("1 sa", callback_data=f"hatirlatma_ekle:{not_id}:60"),
+                    InlineKeyboardButton("2 sa", callback_data=f"hatirlatma_ekle:{not_id}:120"),
+                    InlineKeyboardButton("6 sa", callback_data=f"hatirlatma_ekle:{not_id}:360"),
+                    InlineKeyboardButton("12 sa", callback_data=f"hatirlatma_ekle:{not_id}:720"),
+                ],
+                [
+                    InlineKeyboardButton("24 sa", callback_data=f"hatirlatma_ekle:{not_id}:1440"),
+                    InlineKeyboardButton("⌨️ Özel Süre", callback_data=f"hatirlatma_ozel:{not_id}"),
+                ],
+                [
+                    InlineKeyboardButton("❌ Hatırlatma Yok", callback_data="hatirlatma_iptal"),
+                ],
+            ]
+
+            await update.message.reply_text(mesaj, reply_markup=InlineKeyboardMarkup(buttons))
+            asistan.save(user_input, mesaj, [])
+            return
+
         # 📝 NOTLAR LİSTESİ - Inline butonlarla göster
         if paket.get("notlar_listesi"):
             data = paket["notlar_listesi"]
@@ -1394,13 +1614,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for n in notlar:
                 gun = n.get('gun', '')
                 gun_str = f" {gun}" if gun else ""
-                mesaj += f"{n['id']}. [{n['tarih']}{gun_str} - {n['saat']}]\n"
+                hatirlatma_str = ""
+                if n.get('hatirlatma') and not n.get('hatirlatma_gonderildi', False):
+                    hatirlatma_str = " ⏰"
+                mesaj += f"{n['id']}. [{n['tarih']}{gun_str} - {n['saat']}]{hatirlatma_str}\n"
                 mesaj += f"   {n['icerik']}\n\n"
                 # Silme butonu
                 buttons.append([InlineKeyboardButton(
                     f"🗑️ {n['id']}. sil",
                     callback_data=f"not_sil:{n['id']}"
                 )])
+
+            # Kapat butonu
+            buttons.append([InlineKeyboardButton("✅ Tamam", callback_data="notlar_kapat")])
 
             reply_markup = InlineKeyboardMarkup(buttons)
             await update.message.reply_text(mesaj.strip(), reply_markup=reply_markup)
@@ -1694,10 +1920,176 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asistan = user["hafiza"]
 
         # Notu sil
-        result = asistan.not_manager.not_sil(not_id)
+        silme_sonuc = asistan.not_manager.not_sil(not_id)
 
-        # Mesajı güncelle
-        await query.edit_message_text(result)
+        # Güncel notları al
+        notlar_result = asistan.not_manager.notlari_getir()
+
+        # Eğer not kalmadıysa sadece mesaj göster
+        if isinstance(notlar_result, str):
+            await query.edit_message_text(f"{silme_sonuc}\n\n{notlar_result}")
+            return
+
+        # Not varsa listeyi güncelle
+        notlar = notlar_result["notlar"]
+        baslik = notlar_result["baslik"]
+
+        mesaj = f"✅ {silme_sonuc}\n\n{baslik}\n\n"
+        buttons = []
+        for n in notlar:
+            gun = n.get('gun', '')
+            gun_str = f" {gun}" if gun else ""
+            hatirlatma_str = ""
+            if n.get('hatirlatma') and not n.get('hatirlatma_gonderildi', False):
+                hatirlatma_str = " ⏰"
+            mesaj += f"{n['id']}. [{n['tarih']}{gun_str} - {n['saat']}]{hatirlatma_str}\n"
+            mesaj += f"   {n['icerik']}\n\n"
+            # Silme butonu
+            buttons.append([InlineKeyboardButton(
+                f"🗑️ {n['id']}. sil",
+                callback_data=f"not_sil:{n['id']}"
+            )])
+
+        # Kapat butonu ekle
+        buttons.append([InlineKeyboardButton("✅ Tamam", callback_data="notlar_kapat")])
+
+        await query.edit_message_text(mesaj, reply_markup=InlineKeyboardMarkup(buttons))
+
+    # 📝 NOTLAR LİSTESİNİ KAPAT
+    elif data == "notlar_kapat":
+        await query.edit_message_text("📝 Notlar kapatıldı.")
+
+    # 📝 YENİ NOT - Not ekleme moduna geç
+    elif data == "not_yeni":
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        # Pending not moduna geç
+        user = user_instances[user_id]
+        user["hafiza"]._pending_not = True
+
+        # Eski mesajı sil
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        # Yeni mesaj ile ForceReply gönder
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="📝 *Not içeriğini yaz:*\n\n_Örnek: yarın toplantı var_",
+            parse_mode="Markdown",
+            reply_markup=ForceReply(selective=True)
+        )
+
+    # 📋 NOTLARIMI LİSTELE
+    elif data == "not_listele":
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        user = user_instances[user_id]
+        asistan = user["hafiza"]
+
+        # Notları getir
+        notlar_result = asistan.not_manager.notlari_getir()
+
+        # Not yoksa mesaj göster
+        if isinstance(notlar_result, str):
+            await query.edit_message_text(notlar_result)
+            return
+
+        # Notları listele
+        notlar = notlar_result["notlar"]
+        baslik = notlar_result["baslik"]
+
+        mesaj = f"{baslik}\n\n"
+        buttons = []
+        for n in notlar:
+            gun = n.get('gun', '')
+            gun_str = f" {gun}" if gun else ""
+            hatirlatma_str = ""
+            if n.get('hatirlatma') and not n.get('hatirlatma_gonderildi', False):
+                hatirlatma_str = " ⏰"
+            mesaj += f"{n['id']}. [{n['tarih']}{gun_str} - {n['saat']}]{hatirlatma_str}\n"
+            mesaj += f"   {n['icerik']}\n\n"
+            buttons.append([InlineKeyboardButton(
+                f"🗑️ {n['id']}. sil",
+                callback_data=f"not_sil:{n['id']}"
+            )])
+
+        buttons.append([InlineKeyboardButton("✅ Tamam", callback_data="notlar_kapat")])
+        await query.edit_message_text(mesaj, reply_markup=InlineKeyboardMarkup(buttons))
+
+    # ⏰ HATIRLATMA EKLEME CALLBACK'İ
+    elif data.startswith("hatirlatma_ekle:"):
+        parts = data.split(":")
+        not_id = int(parts[1])
+        dakika = int(parts[2])
+
+        # Kullanıcıyı kontrol et
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        user = user_instances[user_id]
+        asistan = user["hafiza"]
+
+        # Not'u bul ve hatırlatma ekle
+        from datetime import datetime, timedelta
+        hatirlatma_zamani = datetime.now() + timedelta(minutes=dakika)
+
+        # Not'a hatırlatma bilgisi ekle
+        not_bulundu = False
+        for n in asistan.not_manager.notes:
+            if n.get('id') == not_id:
+                n['hatirlatma'] = hatirlatma_zamani.isoformat()
+                n['hatirlatma_gonderildi'] = False
+                asistan.not_manager._save_notes()
+                not_bulundu = True
+
+                # JobQueue'ya ekle
+                hatirlatma_job_ekle(context.application, user_id, n)
+
+                # Süre formatla
+                if dakika < 60:
+                    sure_str = f"{dakika} dakika"
+                else:
+                    saat = dakika // 60
+                    sure_str = f"{saat} saat"
+
+                await query.edit_message_text(
+                    f"✅ Not kaydedildi!\n\n"
+                    f"📝 {n['icerik']}\n\n"
+                    f"⏰ {sure_str} sonra hatırlatılacak\n"
+                    f"🕐 {hatirlatma_zamani.strftime('%H:%M')}"
+                )
+                break
+
+        if not not_bulundu:
+            await query.edit_message_text("❌ Not bulunamadı.")
+
+    # ⏰ HATIRLATMA İPTAL - Sadece not olarak kalsın
+    elif data == "hatirlatma_iptal":
+        await query.edit_message_text("✅ Not kaydedildi (hatırlatma yok)")
+
+    # ⏰ ÖZEL SÜRE - Kullanıcıdan süre iste
+    elif data.startswith("hatirlatma_ozel:"):
+        not_id = int(data.split(":")[1])
+
+        # Not ID'yi kaydet
+        context.user_data["hatirlatma_ozel_not_id"] = not_id
+
+        await query.edit_message_text(
+            "⏰ *Özel süre gir:*\n\n"
+            "Örnekler:\n"
+            "• `40` veya `40 dk` → 40 dakika\n"
+            "• `2 saat` veya `2 sa` → 2 saat\n"
+            "• `1 saat 30 dk` → 1.5 saat\n"
+            "• `90` → 90 dakika",
+            parse_mode="Markdown"
+        )
 
     # 📷 KAMERA CALLBACK'LERİ
 
@@ -2351,12 +2743,15 @@ def main():
                 BotCommand("bagis", "💝 Projeyi destekle"),
                 BotCommand("yeni", "🔄 Yeni sohbet"),
                 BotCommand("konum", "📍 Konum paylaş"),
-                BotCommand("not", "📝 Not al"),
+                BotCommand("notdefteri", "📝 Not Defteri"),
                 BotCommand("kameralarim", "📷 Kamera yönetimi"),
                 BotCommand("limit", "📊 Günlük limitler")
             ]
             await application.bot.set_my_commands(komutlar)
             print("[OK] Telegram menusu ayarlandi!")
+
+            # Mevcut hatırlatmaları yükle
+            await mevcut_hatirlatmalari_yukle(application)
         except Exception as e:
             print(f"[HATA] Menu hatasi: {e}")
 
@@ -2385,7 +2780,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("yeni", yeni_command))
     app.add_handler(CommandHandler("konum", konum_command))
-    app.add_handler(CommandHandler("not", not_command))
+    app.add_handler(CommandHandler("notdefteri", notdefteri_command))
     app.add_handler(CommandHandler("limit", limit_command))
     app.add_handler(CommandHandler("bagis", bagis_command))
     app.add_handler(CommandHandler("premium", premium_command))  # Eski uyumluluk
