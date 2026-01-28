@@ -62,6 +62,7 @@ class SystemConfig:
     TOP_P = 0.95
     TOP_K = 64          # Ollama için (Mistral kullanmaz)
     MAX_TOKENS = 4000
+    REPETITION_PENALTY = 1.1  # Tekrar cezası (1.0=kapalı, 1.1-1.3=hafif)
 
     ENABLE_VISION = True
 
@@ -191,6 +192,7 @@ class LocalLLM:
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
                 "top_p": SystemConfig.TOP_P,
+                "repetition_penalty": SystemConfig.REPETITION_PENALTY,
                 "stream": False
             }
 
@@ -235,6 +237,7 @@ class LocalLLM:
                 "max_tokens": SystemConfig.MAX_TOKENS,
                 "temperature": SystemConfig.TEMPERATURE,
                 "top_p": SystemConfig.TOP_P,
+                "repetition_penalty": SystemConfig.REPETITION_PENALTY,
                 "stream": False
             }
 
@@ -284,7 +287,8 @@ class LocalLLM:
                     "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": SystemConfig.MAX_TOKENS,
                     "temperature": SystemConfig.TEMPERATURE,
-                    "top_p": SystemConfig.TOP_P
+                    "top_p": SystemConfig.TOP_P,
+                    "repetition_penalty": SystemConfig.REPETITION_PENALTY
                 }
 
                 async with aiohttp.ClientSession() as session:
@@ -349,7 +353,8 @@ class LocalLLM:
                     "messages": messages,
                     "max_tokens": SystemConfig.MAX_TOKENS,
                     "temperature": SystemConfig.TEMPERATURE,
-                    "top_p": SystemConfig.TOP_P
+                    "top_p": SystemConfig.TOP_P,
+                    "repetition_penalty": SystemConfig.REPETITION_PENALTY
                 }
 
                 async with aiohttp.ClientSession() as session:

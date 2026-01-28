@@ -740,17 +740,23 @@ async def yeni_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/konum - Konum paylaş butonu"""
+    """/konum - Konum paylaş butonu gönder"""
     chat_id = update.effective_chat.id
     # Komut mesajını sil
     try:
         await update.message.delete()
     except:
         pass
-    # Ana menüyü koru, sadece bilgi mesajı gönder
+    # Konum paylaşma butonu gönder
+    keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("📍 Konum Paylaş", request_location=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
     await context.bot.send_message(
         chat_id=chat_id,
-        text="📍 Konum paylaşmak için menüdeki '📍 Konum Paylaş' butonunu kullan."
+        text="📍 Aşağıdaki butona bas ve konumunu paylaş:",
+        reply_markup=keyboard
     )
 
 
