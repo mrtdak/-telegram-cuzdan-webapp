@@ -49,8 +49,6 @@ class SohbetAnalizi:
     konu_degisimi: bool
     onceki_konuyu_kapat: bool
     guven_skoru: float  # 0.0 - 1.0
-    emoji_duygular: List[str] = None  # Emoji'lerden çıkarılan duygular
-    ogrenme_modu: bool = False  # Ardarda soru = öğrenme/araştırma modu
 
 
 class TurkishConversationIntelligence:
@@ -231,33 +229,7 @@ class TurkishConversationIntelligence:
             "farkında mısın", "gördün mü", "gordunmu",
             "tanıyor musun", "tanıyon mu",
             "hatırlıyor musun", "hatırlıyon mu"
-        ],
-
-        # Kinaye / İroni (alaycı, ters anlam - tekrarlı ifadeler genelde ironi)
-        "kinaye": [
-            "tabi tabi", "tabii tabii", "tabi cnm", "tabi canım",
-            "kesin öyledir", "kesin yaşanmıştır",
-            "yav he he", "yav he hee", "yav he heee", "he he", "he hee", "he heee",
-            "çok beklersin", "oldu canım", "hadi ordan", "tabiki tabiki", "nasıl olsa"
         ]
-    }
-
-    # ═══════════════════════════════════════════════════════════════
-    # EMOJİ DUYGU ANALİZİ
-    # ═══════════════════════════════════════════════════════════════
-
-    EMOJI_DUYGULAR = {
-        "kahkaha": ["😂", "🤣", "😆", "😹", "😁", "😄"],
-        "sevgi": ["❤️", "😍", "🥰", "💕", "😘", "💖", "💗", "♥️", "🫶"],
-        "uzuntu": ["😢", "😭", "🥺", "😞", "😔", "💔", "😿"],
-        "ofke": ["😡", "🤬", "😤", "💢"],
-        "onay": ["👍", "✅", "👌", "🙌", "💪", "🤝", "👏"],
-        "heyecan": ["🔥", "💯", "🚀", "⭐", "🎉", "✨", "🥳", "🎊"],
-        "dusunme": ["🤔", "🧐", "❓", "❔", "🤷"],
-        "sasirma": ["😱", "😮", "🤯", "😲", "😳", "🙀"],
-        "uzgun_gulumse": ["🥲", "😅", "😬"],
-        "memnun": ["😊", "🙂", "😌", "☺️", "🤗"],
-        "cool": ["😎", "🤙", "✌️"],
     }
 
     # ═══════════════════════════════════════════════════════════════
@@ -414,65 +386,30 @@ class TurkishConversationIntelligence:
         # 1. Durumları tespit et
         durumlar = self._durumlari_tespit_et(mesaj_clean)
 
-        # 2. Emoji analizi - emoji'lerden duygu çıkar ve durumlara ekle
-        emoji_duygular = self._emoji_analiz(mesaj)
-        emoji_sayisi = self._emoji_sayisi(mesaj)
-
-        # Emoji duyguları -> durum mapping
-        emoji_durum_map = {
-            "kahkaha": "heyecan",
-            "sevgi": "heyecan",
-            "heyecan": "heyecan",
-            "memnun": "onay",
-            "onay": "onay",
-            "uzuntu": "sikayet",
-            "ofke": "sikayet",
-            "sasirma": "sasirma",
-            "dusunme": "merak",
-        }
-        for emoji_duygu in emoji_duygular:
-            mapped = emoji_durum_map.get(emoji_duygu)
-            if mapped and mapped not in durumlar:
-                durumlar.append(mapped)
-
-        # 3. Ardarda soru kontrolü (öğrenme modu)
-        ogrenme_modu = self._ardarda_soru_kontrolu(onceki_mesajlar)
-
-        # 4. Kombinasyon bul
+        # 2. Kombinasyon bul
         kombinasyon = self._kombinasyon_bul(durumlar)
 
-        # 5. Duygu analizi (emoji duyguları da dahil)
+        # 3. Duygu analizi
         duygu = self._duygu_analiz(durumlar, mesaj)
-        # Emoji'den gelen duyguyu önceliklendir
-        if emoji_duygular:
-            duygu = emoji_duygular[0]  # İlk emoji duygusu
 
-        # 6. Enerji seviyesi (emoji sayısı da etkiler)
+        # 4. Enerji seviyesi
         enerji = self._enerji_hesapla(durumlar, mesaj)
-        # Çok emoji varsa enerjiyi yükselt
-        if emoji_sayisi >= 3 and enerji == SohbetEnerjisi.NORMAL:
-            enerji = SohbetEnerjisi.YUKSEK
 
-        # 7. Beklenen cevap tipi
+        # 5. Beklenen cevap tipi
         beklenen = self._beklenen_cevap_belirle(durumlar, kombinasyon, duygu)
-        # Öğrenme modundaysa detaylı cevap bekle
-        if ogrenme_modu and beklenen == BeklenenCevap.NORMAL:
-            beklenen = BeklenenCevap.ACIKLAMA
 
-        # 8. Örtük istek
+        # 6. Örtük istek
         ortuk_istek = self._ortuk_istek_bul(mesaj_clean)
 
-        # 9. Konu değişimi kontrolü
+        # 7. Konu değişimi kontrolü
         konu_degisimi = self._konu_degisimi_var_mi(mesaj_clean, durumlar)
         onceki_konuyu_kapat = self._onceki_konu_kapaniyor_mu(durumlar, kombinasyon)
 
-        # 10. Devam beklentisi
-        devam_beklentisi = "gecis" in durumlar or "merak" in durumlar or "devam_istek" in durumlar or ogrenme_modu
+        # 8. Devam beklentisi
+        devam_beklentisi = "gecis" in durumlar or "merak" in durumlar or "devam_istek" in durumlar
 
-        # 11. Güven skoru (emoji varsa güveni artır)
+        # 9. Güven skoru
         guven = self._guven_skoru_hesapla(durumlar, kombinasyon)
-        if emoji_duygular:
-            guven = min(guven + 0.1, 1.0)
 
         return SohbetAnalizi(
             durumlar=durumlar,
@@ -484,9 +421,7 @@ class TurkishConversationIntelligence:
             duygu=duygu,
             konu_degisimi=konu_degisimi,
             onceki_konuyu_kapat=onceki_konuyu_kapat,
-            guven_skoru=guven,
-            emoji_duygular=emoji_duygular,
-            ogrenme_modu=ogrenme_modu
+            guven_skoru=guven
         )
 
     def _temizle(self, mesaj: str) -> str:
@@ -512,45 +447,6 @@ class TurkishConversationIntelligence:
 
         return tespit_edilenler
 
-    def _emoji_analiz(self, mesaj: str) -> List[str]:
-        """Mesajdaki emoji'lerden duygu durumları çıkar"""
-        tespit_edilen_duygular = []
-
-        for duygu, emojiler in self.EMOJI_DUYGULAR.items():
-            for emoji in emojiler:
-                if emoji in mesaj:
-                    if duygu not in tespit_edilen_duygular:
-                        tespit_edilen_duygular.append(duygu)
-                    break
-
-        return tespit_edilen_duygular
-
-    def _emoji_sayisi(self, mesaj: str) -> int:
-        """Mesajdaki toplam emoji sayısını hesapla"""
-        sayac = 0
-        for emojiler in self.EMOJI_DUYGULAR.values():
-            for emoji in emojiler:
-                sayac += mesaj.count(emoji)
-        return sayac
-
-    def _ardarda_soru_kontrolu(self, onceki_mesajlar: List[Dict[str, Any]]) -> bool:
-        """Kullanıcı ardarda soru mu soruyor? (öğrenme/araştırma modu)"""
-        if not onceki_mesajlar or len(onceki_mesajlar) < 4:
-            return False
-
-        # Son 4 mesaja bak (2 user, 2 assistant)
-        soru_isareti_sayisi = 0
-        merak_kelimeleri = ["ne", "nasıl", "neden", "niye", "kim", "nerede", "kaç", "hangi"]
-
-        for msg in onceki_mesajlar[-4:]:
-            if msg.get("role") == "user":
-                content = msg.get("content", "").lower()
-                if "?" in content or any(k in content for k in merak_kelimeleri):
-                    soru_isareti_sayisi += 1
-
-        # 2 veya daha fazla ardarda soru = öğrenme modu
-        return soru_isareti_sayisi >= 2
-
     def _kombinasyon_bul(self, durumlar: List[str]) -> Optional[str]:
         """Durum kombinasyonunu bul"""
         if len(durumlar) < 2:
@@ -569,9 +465,7 @@ class TurkishConversationIntelligence:
 
     def _duygu_analiz(self, durumlar: List[str], mesaj: str) -> Optional[str]:
         """Mesajdaki ana duyguyu belirle"""
-        if "kinaye" in durumlar:
-            return "kinaye"
-        elif "heyecan" in durumlar:
+        if "heyecan" in durumlar:
             return "heyecan"
         elif "sikayet" in durumlar:
             return "şikayetçi/üzüntü"
@@ -799,19 +693,17 @@ class TurkishConversationIntelligence:
 
         return uzunluklar.get(beklenen, (100, 400))
 
-    def debug_analiz(self, mesaj: str, onceki_mesajlar: List[Dict[str, Any]] = None) -> str:
+    def debug_analiz(self, mesaj: str) -> str:
         """Debug için detaylı analiz çıktısı"""
-        analiz = self.analiz_et(mesaj, onceki_mesajlar)
+        analiz = self.analiz_et(mesaj)
 
         output = []
         output.append(f"Mesaj: \"{mesaj}\"")
         output.append(f"Durumlar: {analiz.durumlar}")
         output.append(f"Kombinasyon: {analiz.kombinasyon}")
         output.append(f"Duygu: {analiz.duygu}")
-        output.append(f"Emoji Duygular: {analiz.emoji_duygular}")
         output.append(f"Enerji: {analiz.sohbet_enerjisi.value}")
         output.append(f"Beklenen Cevap: {analiz.beklenen_cevap.value}")
-        output.append(f"Ogrenme Modu: {analiz.ogrenme_modu}")
         output.append(f"Ortuk Istek: {analiz.ortuk_istek}")
         output.append(f"Konu Degisimi: {analiz.konu_degisimi}")
         output.append(f"Onceki Konu Kapaniyor: {analiz.onceki_konuyu_kapat}")
@@ -833,12 +725,6 @@ if __name__ == "__main__":
         "Hmm peki bu nasil oluyor?",
         "Yoruldum ya biliyo musun",
         "Aynen oyle kesinlikle",
-        # Emoji testleri
-        "😂😂😂 çok komik",
-        "harika olmuş ❤️🔥",
-        "anladım 👍",
-        "😭😭 çok üzüldüm",
-        "🤔 emin değilim",
     ]
 
     print("=" * 60)
