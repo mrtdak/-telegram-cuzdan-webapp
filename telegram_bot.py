@@ -678,6 +678,31 @@ def get_belge_asistani(user_id: int) -> BelgeAsistani:
     return user["belge"]
 
 
+def clear_active_modes(user_id: int, context=None):
+    """Menü geçişlerinde tüm aktif modları temizle (çakışma önleme)"""
+    global user_kamera_wizard
+
+    if user_id not in user_instances:
+        return
+
+    user = user_instances[user_id]
+
+    # 1. Pending not modunu kapat (context.user_data ile)
+    if context is not None and hasattr(context, 'user_data'):
+        context.user_data["not_bekliyor"] = False
+        context.user_data.pop("hatirlatma_ozel_not_id", None)
+
+    # 2. Aktif belgeyi kapat
+    if user["belge"] is not None:
+        user["belge"].clear_aktif()
+
+    # 3. Kamera wizard'ı kapat
+    if user_id in user_kamera_wizard:
+        del user_kamera_wizard[user_id]
+
+    print(f"🧹 Aktif modlar temizlendi: {user_id}")
+
+
 # === KOMUTLAR ===
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1548,13 +1573,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Mesaj içeriğinden otomatik tetikleme kaldırıldı
     user_lower = user_input.lower().strip()
 
-    # 📝 NOT KAYDETME - Kullanıcı not içeriği yazdıysa (reply ile)
+    # 📝 NOT KAYDETME - Butonla not yazdıysa direkt kaydet (LLM'e gitmesin)
     if context.user_data.get("not_bekliyor"):
         context.user_data["not_bekliyor"] = False
-        # Sadece reply ile cevap verdiyse not olarak kaydet
-        # X'e basıp iptal ettiyse reply_to_message olmaz, normal mesaj olarak işle
-        if update.message.reply_to_message:
-            user_input = f"not al: {user_input}"
+
+        # Direkt notu kaydet
+        user = get_user_ai(user_id)
+        user["hafiza"].not_manager.not_al(user_input)
+
+        # Son kaydedilen notu al (tarih/saat için)
+        not_id = None
+        not_tarih = ""
+        not_saat = ""
+        if user["hafiza"].not_manager.notes:
+            son_not = user["hafiza"].not_manager.notes[-1]
+            not_id = son_not.get('id')
+            not_tarih = son_not.get('tarih', '')
+            not_saat = son_not.get('saat', '')
+
+        # Hatırlatma seçeneği ile yanıt
+        buttons = [
+            [InlineKeyboardButton("🕐 Hatırlatma Ekle", callback_data=f"hatirlatma_ozel:{not_id}")],
+            [InlineKeyboardButton("✅ Tamam", callback_data=f"hatirlatma_iptal:{not_id}")]
+        ]
+
+        await update.message.reply_text(
+            f"✅ Not kaydedildi:\n\n"
+            f"📝 {user_input}\n"
+            f"📅 {not_tarih} - {not_saat}\n\n"
+            f"⏰ Hatırlatma eklemek ister misin?",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
 
     # ⏰ ÖZEL HATIRLATMA SÜRESİ - Kullanıcı süre girdiyse
     if context.user_data.get("hatirlatma_ozel_not_id"):
@@ -1600,11 +1650,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     dk = dakika % 60
                     sure_str = f"{saat} saat {dk} dakika"
 
+                buttons = [[InlineKeyboardButton("↩️ Geri Al", callback_data=f"hatirlatma_geri_al:{not_id}")]]
                 await update.message.reply_text(
                     f"✅ Hatırlatma eklendi!\n\n"
                     f"📝 {n['icerik']}\n\n"
                     f"⏰ {sure_str} sonra\n"
-                    f"🕐 {hatirlatma_zamani.strftime('%H:%M')}"
+                    f"🕐 {hatirlatma_zamani.strftime('%H:%M')}",
+                    reply_markup=InlineKeyboardMarkup(buttons)
                 )
                 return
 
@@ -2161,6 +2213,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Önce botu başlat.")
             return
 
+        # ⚠️ Diğer aktif modları temizle (not vs.)
+        clear_active_modes(user_id, context)
+
         belge_asistani = get_belge_asistani(user_id)
         result = belge_asistani.get_icerik(belge_id)
 
@@ -2227,6 +2282,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id not in user_instances:
             await query.edit_message_text("❌ Önce botu başlat.")
             return
+
+        # ⚠️ Diğer aktif modları temizle (not vs.)
+        clear_active_modes(user_id, context)
 
         # Belge asistanını al (lazy init)
         belge_asistani = get_belge_asistani(user_id)
@@ -2320,6 +2378,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Önce botu başlat.")
             return
 
+        # ⚠️ Diğer aktif modları temizle (not bekleme vs.)
+        clear_active_modes(user_id, context)
+
         belge_asistani = get_belge_asistani(user_id)
         result = belge_asistani.set_aktif(belge_id)
 
@@ -2390,9 +2451,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Önce botu başlat.")
             return
 
-        # Pending not moduna geç
-        user = user_instances[user_id]
-        user["hafiza"]._pending_not = True
+        # ⚠️ Diğer aktif modları temizle (belge vs.)
+        clear_active_modes(user_id, context)
+
+        # Pending not moduna geç (context.user_data ile - message handler'da kontrol ediliyor)
+        context.user_data["not_bekliyor"] = True
 
         # Eski mesajı sil
         try:
@@ -2413,6 +2476,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id not in user_instances:
             await query.edit_message_text("❌ Önce botu başlat.")
             return
+
+        # ⚠️ Diğer aktif modları temizle (belge vs.)
+        clear_active_modes(user_id, context)
 
         user = user_instances[user_id]
         asistan = user["hafiza"]
@@ -2496,8 +2562,60 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Not bulunamadı.")
 
     # ⏰ HATIRLATMA İPTAL - Sadece not olarak kalsın
-    elif data == "hatirlatma_iptal":
-        await query.edit_message_text("✅ Not kaydedildi (hatırlatma yok)")
+    elif data.startswith("hatirlatma_iptal"):
+        # Not içeriğini göster
+        not_icerik = ""
+        not_tarih = ""
+        not_saat = ""
+        if ":" in data:
+            not_id = int(data.split(":")[1])
+            if user_id in user_instances:
+                user = user_instances[user_id]
+                for n in user["hafiza"].not_manager.notes:
+                    if n.get('id') == not_id:
+                        not_icerik = n['icerik']
+                        not_tarih = n.get('tarih', '')
+                        not_saat = n.get('saat', '')
+                        break
+
+        if not_icerik:
+            await query.edit_message_text(f"✅ Not kaydedildi:\n\n📝 {not_icerik}\n📅 {not_tarih} - {not_saat}")
+        else:
+            await query.edit_message_text("✅ Not kaydedildi")
+
+    # ↩️ HATIRLATMA GERİ AL
+    elif data.startswith("hatirlatma_geri_al:"):
+        not_id = int(data.split(":")[1])
+
+        if user_id not in user_instances:
+            await query.edit_message_text("❌ Önce botu başlat.")
+            return
+
+        user = user_instances[user_id]
+        asistan = user["hafiza"]
+
+        # Not'u bul ve hatırlatmayı kaldır
+        for n in asistan.not_manager.notes:
+            if n.get('id') == not_id:
+                n.pop('hatirlatma', None)
+                n.pop('hatirlatma_gonderildi', None)
+                asistan.not_manager._save_notes()
+
+                # JobQueue'dan da kaldır
+                job_name = f"hatirlatma_{user_id}_{not_id}"
+                jobs = context.job_queue.get_jobs_by_name(job_name)
+                for job in jobs:
+                    job.schedule_removal()
+
+                # Yeniden süre girme seçeneği
+                buttons = [[InlineKeyboardButton("🕐 Yeniden Hatırlatma Ekle", callback_data=f"hatirlatma_ozel:{not_id}")]]
+                await query.edit_message_text(
+                    f"↩️ Hatırlatma geri alındı.\n\n📝 {n['icerik']}",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                return
+
+        await query.edit_message_text("❌ Not bulunamadı.")
 
     # ⏰ ÖZEL SÜRE - Kullanıcıdan süre iste
     elif data.startswith("hatirlatma_ozel:"):
@@ -2520,6 +2638,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Kamera ekle wizard başlat
     elif data == "kamera_ekle_wizard":
+        # ⚠️ Diğer aktif modları temizle (belge, not vs.)
+        clear_active_modes(user_id, context)
+
         user_kamera_wizard[user_id] = {
             "adim": "ad",
             "data": {}
@@ -2622,6 +2743,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Kameralarım listesi
     elif data == "kameralarim":
+        # ⚠️ Diğer aktif modları temizle (belge, not vs.)
+        clear_active_modes(user_id, context)
+
         kamera_manager = KameraManager(user_id)
         kameralar = kamera_manager.kamera_listele()
 
@@ -2983,6 +3107,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id not in user_instances:
             await query.edit_message_text("❌ Önce botu başlat.")
             return
+
+        # ⚠️ Diğer aktif modları temizle
+        clear_active_modes(user_id, context)
 
         user = user_instances[user_id]
         asistan = user["hafiza"]
