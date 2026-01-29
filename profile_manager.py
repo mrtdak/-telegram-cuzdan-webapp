@@ -39,7 +39,7 @@ class ProfileManager:
     def __init__(self, user_id: str, base_dir: str = "user_data"):
         self.user_id = user_id
         self.base_dir = base_dir
-        self.user_dir = os.path.join(base_dir, user_id)
+        self.user_dir = os.path.join(base_dir, f"user_{user_id}")
         self.profile_path = os.path.join(self.user_dir, "profile.json")
 
         # Dizin yoksa oluştur
