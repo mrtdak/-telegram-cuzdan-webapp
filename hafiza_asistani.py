@@ -918,10 +918,6 @@ class HafizaAsistani:
         )
         print("✅ Topic Memory aktif!")
 
-        self._injected_categories = {}  # {category_id: message_count_when_injected}
-        self._message_counter = 0  # Toplam mesaj sayacı
-        self._injection_cooldown = 5  # Kaç mesaj sonra tekrar enjekte edilebilir
-
         # 🔍 Netleştirme sonrası otomatik web arama flag'i
         self._netlistirme_bekleniyor = False
 
@@ -997,6 +993,19 @@ class HafizaAsistani:
         self.mesaj_ekle(user_message, rol="user")
         self.mesaj_ekle(ai_response, rol="assistant")
 
+        # 💾 Her mesajı anında TopicMemory'ye kaydet (uzun dönem hafıza)
+        if self.topic_memory and user_message and ai_response:
+            try:
+                messages_to_save = [
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": ai_response}
+                ]
+                saved = self.topic_memory.save_messages(messages_to_save)
+                if saved > 0:
+                    print(f"💾 TopicMemory: {saved} mesaj kaydedildi (toplam: {len(self.topic_memory.messages)})")
+            except Exception as e:
+                print(f"⚠️ TopicMemory kaydetme hatası: {e}")
+
         if self.conversation_context and chat_history:
             try:
                 result = self.conversation_context.process_message(
@@ -1005,17 +1014,10 @@ class HafizaAsistani:
                 if result.get("new_session_started"):
                     print("🔄 Yeni konu tespit edildi, session değiştirildi")
 
-                    if len(self.hafiza) > 12:
-                        tampon_bolge = self.hafiza[:-12]  # 12'den eski mesajlar
-                        if tampon_bolge and self.topic_memory:
-                            tampon_text = "\n".join([
-                                f"[{m['rol'].upper()}]: {m['mesaj']}"
-                                for m in tampon_bolge if m.get('mesaj')
-                            ])
-                            topic_summary = result.get('current_summary', '') or tampon_text[:200]
-                            if topic_summary:
-                                print(f"💾 Tampon bölge TopicMemory'ye kaydediliyor ({len(tampon_bolge)} mesaj)")
-                                self.add_closed_topic(topic_summary, chat_history)
+                    # Konu değiştiğinde özeti kaydet (closed_topics listesine)
+                    topic_summary = result.get('current_summary', '')
+                    if topic_summary:
+                        self.add_closed_topic(topic_summary, chat_history)
 
                     # Konu değiştiğinde aktif context'i temizle (son 10 mesaj kalsın)
                     if len(self.hafiza) > 10:
@@ -1108,13 +1110,10 @@ class HafizaAsistani:
 
     def get_silent_long_term_context(self, query: str) -> str:
         """
-        🔇 SILENT CONTEXT INJECTION (with cooldown)
+        🔇 SILENT CONTEXT INJECTION
 
-        TopicMemory'den hızlı kategori eşleşmesi yap.
+        TopicMemory'den semantic search ile ilgili geçmiş mesajları bul.
         Eşleşme varsa, sessizce LLM'e arka plan bilgisi olarak ver.
-
-        COOLDOWN: Aynı kategori son 5 mesajda enjekte edildiyse tekrar enjekte etme.
-        Böylece sohbet akışında aynı bilgi sürekli tekrarlanmaz.
 
         Bu bilgi:
         - Kullanıcıya gösterilMEZ
@@ -1129,84 +1128,27 @@ class HafizaAsistani:
             return ""
 
         try:
-            self._message_counter += 1
+            msg_count = len(self.topic_memory.messages)
+            print(f"   🔇 TopicMemory kontrol: {msg_count} mesaj mevcut")
 
-            cat_count = len(self.topic_memory.index.get("categories", {}))
-            print(f"   🔇 TopicMemory kontrol: {cat_count} kategori mevcut")
+            if msg_count == 0:
+                print(f"   🔇 TopicMemory: hafiza bos")
+                return ""
 
-            context = self.topic_memory.get_context_for_query(query, max_sessions=2)
+            context = self.topic_memory.get_context(query, max_messages=6)
 
             if context:
-                import re
-                category_match = re.search(r'\[([^\]]+)\]', context)
-                if category_match:
-                    category_id = category_match.group(1)
-
-                    if category_id in self._injected_categories:
-                        last_injection = self._injected_categories[category_id]
-                        messages_since = self._message_counter - last_injection
-
-                        if messages_since < self._injection_cooldown:
-                            print(f"   🔇 TopicMemory: '{category_id}' cooldown'da ({messages_since}/{self._injection_cooldown} mesaj)")
-                            return ""  # Cooldown'daysa enjekte etme
-
-                    self._injected_categories[category_id] = self._message_counter
-                    print(f"   🔇 Silent long-term context bulundu ({len(context)} karakter) - cooldown başladı")
-                    return context
-                else:
-                    print(f"   🔇 Silent long-term context bulundu ({len(context)} karakter)")
-                    return context
+                print(f"   🔇 Silent long-term context bulundu ({len(context)} karakter)")
+                return context
             else:
-                print(f"   🔇 TopicMemory: eşleşme yok")
+                print(f"   🔇 TopicMemory: eslesen mesaj yok")
                 return ""
 
         except Exception as e:
-            print(f"   ⚠️ Silent context hatası: {e}")
+            print(f"   ⚠️ Silent context hatasi: {e}")
             import traceback
             traceback.print_exc()
             return ""
-
-    def should_check_long_term_memory(self, user_input: str) -> bool:
-        """
-        Uzun dönem hafıza kontrolü gerekli mi?
-
-        True döndüren durumlar:
-        1. Kullanıcı geçmişe referans veriyor
-        2. Soru mevcut kategori konularıyla alakalı olabilir
-
-        False döndüren durumlar:
-        1. Kısa onay mesajları (tamam, oke, anladım vb.)
-        2. Çok kısa mesajlar
-        """
-        user_lower = user_input.lower().strip()
-
-        # Kısa onay/tepki mesajlarını filtrele - bunlar için TopicMemory KULLANILMAZ
-        short_responses = [
-            "tamam", "oke", "ok", "okay", "anladım", "anladim",
-            "he", "hee", "evet", "hayır", "hayir", "yok", "var",
-            "peki", "oldu", "olur", "olmaz", "iyi", "güzel", "super",
-            "eyvallah", "sağol", "teşekkür", "tesekkur", "saol",
-            "devam", "devam et", "sorun yok", "problem yok"
-        ]
-
-        if user_lower in short_responses or len(user_input.split()) <= 3:
-            return False
-
-        past_references = [
-            "daha önce", "geçen sefer", "hatırlıyor musun",
-            "konuşmuştuk", "sormuştum", "demiştin", "söylemiştin",
-            "geçen", "önceki", "bahsetmiştik", "anlatmıştın"
-        ]
-
-        if any(ref in user_lower for ref in past_references):
-            print(f"   📌 Geçmiş referansı tespit edildi")
-            return True
-
-        # Minimum 30 karakter (AŞMA!)ve 4+ kelime olmalı
-        if len(user_input) > 30 and len(user_input.split()) >= 4 and self.topic_memory.index.get("categories"):
-            return True
-
-        return False
 
     def get_conversation_context(self) -> str:
         """
@@ -1277,20 +1219,6 @@ class HafizaAsistani:
             self.closed_topics = self.closed_topics[-self.max_closed_topics:]
 
         print(f"📕 Konu kapandı: '{topic_summary}'")
-        print(f"   📊 Chat history uzunluğu: {len(chat_history) if chat_history else 0} mesaj")
-
-        if chat_history and len(chat_history) >= 2:
-            print(f"   💾 TopicMemory.save_topic() çağrılıyor...")
-            saved = self.topic_memory.save_topic(
-                messages=chat_history,
-                topic_hint=topic_summary
-            )
-            if saved:
-                print(f"   ✅ Uzun dönem hafızaya kaydedildi: [{saved.get('category_name', 'Genel')}] - {saved.get('summary', topic_summary)[:50]}...")
-            else:
-                print(f"   ⏩ Uzun dönem hafıza: Kalite kontrolünden geçmedi (kısa/yüzeysel konuşma)")
-        else:
-            print(f"   ⏩ TopicMemory atlandı: Yetersiz mesaj ({len(chat_history) if chat_history else 0} < 2)")
 
     def is_topic_closed(self, user_input: str, threshold: float = 0.75) -> Tuple[bool, str]:
         """
@@ -1571,6 +1499,18 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 • greeting: Selam/merhaba/naber gibi selamlama → question_type: "greeting" (espri DEĞİL!)
 • espri: SADECE açık şaka/komik söz/dalga geçme varsa → question_type: "espri"
 
+🧠 UZUN DÖNEM HAFIZA (needs_long_term_memory):
+✅ TRUE yap:
+• Kullanıcı bir konu hakkında bilgi/açıklama istiyor
+• Daha önce konuşulmuş olabilecek konular (Python, kitaplar, tarifler vb.)
+• Spesifik soru soruyor (nasıl, neden, ne, kim)
+• Geçmişe referans var (hatırlıyor musun, geçen, demiştik)
+❌ FALSE yap:
+• Selamlama (merhaba, selam)
+• Kısa onay/tepki (tamam, ok, teşekkürler, anladım, evet, hayır)
+• Vedalaşma
+• Günlük sohbet, hal hatır
+
 ---
 {history_section}MESAJ: {user_input}
 
@@ -1579,11 +1519,12 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 2. MESAJ ne istiyor?
 3. Asıl soru ne?
 4. Hangi araç + neden?
+5. Uzun dönem hafıza gerekli mi?
 </analiz>
 
 JSON:
 {{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous|topic_closed|espri",
-"needs_faiss": bool, "needs_semantic_memory": bool, "needs_chat_history": bool, "needs_clarification": bool,
+"needs_faiss": bool, "needs_semantic_memory": bool, "needs_long_term_memory": bool, "needs_chat_history": bool, "needs_clarification": bool,
 "tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|yok",
 "tool_param": "", "is_farewell": bool, "topic_closed": bool, "confidence": "low|medium|high", "reasoning": ""}}
 
@@ -1638,6 +1579,7 @@ JSON:
                     "question_type": "general",
                     "needs_faiss": False,
                     "needs_semantic_memory": False,
+                    "needs_long_term_memory": False,
                     "needs_chat_history": False,
                     "needs_clarification": False,
                     "tool_name": "yok",
@@ -1691,6 +1633,7 @@ JSON:
                     print(f"   • Güven: {confidence_emoji} {decision['confidence']}")
                     print(f"   • FAISS: {'✅' if decision['needs_faiss'] else '❌'}")
                     print(f"   • Semantic: {'✅' if decision['needs_semantic_memory'] else '❌'}")
+                    print(f"   • LongTerm: {'✅' if decision.get('needs_long_term_memory') else '❌'}")
                     print(f"   • History: {'✅' if decision['needs_chat_history'] else '❌'}")
                     print(f"   • Tool: {decision['tool_name']}")
                     if decision['tool_param']:
@@ -1724,8 +1667,9 @@ JSON:
         return {
             "question_type": "general",
             "needs_faiss": False,
-            "needs_semantic_memory": False,  # Fallback: kapalı (retry var, gereksiz)
-            "needs_chat_history": True,     # Güvenli mod: history aç
+            "needs_semantic_memory": False,
+            "needs_long_term_memory": False,  # Fallback: kapalı
+            "needs_chat_history": True,
             "tool_name": "yok",
             "tool_param": "",
             "response_style": "conversational",
@@ -1733,7 +1677,7 @@ JSON:
             "topic_closed": False,
             "closed_topic_summary": "",
             "confidence": "medium",
-            "reasoning": "Fallback: Güvenli mod, tüm bağlamı kullan"
+            "reasoning": "Fallback: Guvenli mod, tum baglami kullan"
         }
 
     def _generate_session_summary(self, chat_history: List[Dict]) -> str:
@@ -1859,6 +1803,7 @@ Gerçek sohbet karşılıklı ilgiden doğar, zorlamayla değil. Kullanıcının
 Doğal konuş, dolgu ifadeler ("değil mi?", "vay be!", "vay canına!", "ne dersin?") ve yapay sorular kullanma.
 - Kullanıcı kısa cevap verirse → Sen de kısa cevap ver.
 - Kullanıcı bir şey sorarsa → Direkt cevap ver, gereksiz ekleme yapma.
+- 🚫 Geçmiş konuşmalar hakkında UYDURMA YAPMA! Prompt'ta [📚 GEÇMİŞ KONUŞMALAR] bölümü yoksa böyle bir konuşma/kayıt/hatıra yok demektir, uydurma ve olmayan şeyi hatırlatmaya çalışma!
 Sohbeti uzatmak için yapay sorular sorma. Bu samimiyet değil, zorlamadır. Her boşluğu doldurmaya çalışma.
 Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 
@@ -2047,7 +1992,7 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
             combined_sources.append(f"[BİLGİ TABANI]:\n{faiss_context}")
 
         if silent_long_term_context:
-            combined_sources.append(f"[🔇 ARKA PLAN BİLGİSİ - KULLANICIYA SÖYLEME]:\n{silent_long_term_context}")
+            combined_sources.append(f"[📚 GEÇMİŞ KONUŞMALAR - Bu kullanıcıyla daha önce yaptığın konuşmaların kaydı]:\n{silent_long_term_context}")
 
         # 📄 Belge/Çalışma Alanı context'i ekle (varsa)
         if hasattr(self, 'belge_context') and self.belge_context:
@@ -2294,14 +2239,14 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
             print(f"   • 🧠 ConversationContext: ⏩ henüz özet yok")
 
         silent_long_term_context = ""
-        if self.should_check_long_term_memory(user_input):
+        if decision.get('needs_long_term_memory'):
             silent_long_term_context = self.get_silent_long_term_context(user_input)
             if silent_long_term_context:
-                print(f"   • 🔇 TopicMemory: ✅ sessiz bağlam enjekte edildi")
+                print(f"   • 🔇 TopicMemory: ✅ sessiz baglam enjekte edildi (LLM karari)")
             else:
-                print(f"   • 🔇 TopicMemory: ❌ eşleşme yok")
+                print(f"   • 🔇 TopicMemory: ❌ eslesen mesaj yok")
         else:
-            print("   • 🔇 TopicMemory: ⏩ atlandı (geçmiş referansı yok)")
+            print("   • 🔇 TopicMemory: ⏩ atlandi (LLM: gereksiz)")
 
         combined_silent_context = ""
         if conversation_context:
