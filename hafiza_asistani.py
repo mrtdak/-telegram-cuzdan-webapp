@@ -2252,6 +2252,12 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
             tool_name = decision.get('tool_name', 'yok')
             tool_param = decision.get('tool_param', '')
 
+        # 📄 Belge context'i varsa web araması atla - belge zaten context sağlıyor
+        if tool_name == "web_ara" and hasattr(self, 'belge_context') and self.belge_context:
+            print("   📄 Belge context'i var - web araması atlanıyor")
+            tool_name = "yok"
+            tool_param = ""
+
         print(f"\n🛠️ 2. Araç çalıştırılıyor (LLM kararı: {tool_name})...")
         tool_result = await self._tool_calistir(tool_name, tool_param, user_input)
         if tool_result:
