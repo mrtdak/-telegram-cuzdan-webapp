@@ -106,13 +106,20 @@ def hatirlatma_job_ekle(application, user_id: int, not_data: dict):
 
     gecikme = (hatirlatma_zamani - now).total_seconds()
 
+    # Aynı isimli eski job varsa sil (duplicate önleme)
+    job_name = f"hatirlatma_{user_id}_{not_data['id']}"
+    existing_jobs = application.job_queue.get_jobs_by_name(job_name)
+    for job in existing_jobs:
+        job.schedule_removal()
+        print(f"[HATIRLATMA] Eski job silindi: {job_name}")
+
     application.job_queue.run_once(
         hatirlatma_gonder,
         when=gecikme,
         data={'user_id': user_id, 'not': not_data},
-        name=f"hatirlatma_{user_id}_{not_data['id']}"
+        name=job_name
     )
-    print(f"[HATIRLATMA] Job eklendi: User {user_id}, Not #{not_data['id']}, {gecikme:.0f} saniye sonra")
+    print(f"[HATIRLATMA] Job eklendi: {job_name}, {gecikme:.0f} saniye sonra")
 
 
 async def mevcut_hatirlatmalari_yukle(application):
@@ -646,7 +653,7 @@ TIMEOUT = 120
 def get_user_ai(user_id: int) -> Dict:
     """Kullanıcı için HafizaAsistani + PersonalAI + BelgeAsistani al (izole)"""
     if user_id not in user_instances:
-        user_str = f"user_{user_id}"
+        user_str = str(user_id)  # Sadece ID (user_ prefix'i HafizaAsistani'da ekleniyor)
 
         # HafizaAsistani - prompt hazırlar, hafıza tutar
         hafiza = HafizaAsistani(user_id=user_str)
@@ -2167,6 +2174,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Notu sil
         silme_sonuc = asistan.not_manager.not_sil(not_id)
+
+        # İlgili hatırlatma job'ını da sil
+        job_name = f"hatirlatma_{user_id}_{not_id}"
+        jobs = context.job_queue.get_jobs_by_name(job_name)
+        for job in jobs:
+            job.schedule_removal()
+            print(f"[HATIRLATMA] Job silindi (not silme): {job_name}")
 
         # Güncel notları al
         notlar_result = asistan.not_manager.notlari_getir()
