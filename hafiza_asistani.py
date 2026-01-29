@@ -959,6 +959,9 @@ class HafizaAsistani:
         self.son_arama_kategorisi: Optional[str] = None  # Son aranan kategori (eczane, market vs.)
         print("✅ Konum Hizmetleri aktif")
 
+        # 🌤️ Hava Durumu Cache (3 saatten eskiyse güncellenir)
+        self.hava_cache: Optional[Dict] = None  # {"veri": "8°C, Parçalı bulutlu", "saat": datetime, "il": "İstanbul"}
+
         # 📄 Belge/Çalışma Alanı Context
         self.belge_context: Optional[str] = None  # Seçilen belge içeriği
 
@@ -1868,6 +1871,12 @@ Doğal konuş, dolgu ifadeler ("değil mi?", "vay be!", "vay canına!", "ne ders
 Sohbeti uzatmak için yapay sorular sorma. Bu samimiyet değil, zorlamadır. Her boşluğu doldurmaya çalışma.
 Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 
+🌍 DİL KURALI:
+- Kullanıcı başka dilde konuşmak isterse (Almanca, İngilizce, Fransızca vs.) O DİLDE cevap ver
+- "Almanca konuşalım", "Let's speak English" gibi isteklerde o dile geç
+- Kullanıcı o dilde yazmaya devam ettikçe sen de o dilde devam et
+- Türkçeye dönmek isterse Türkçeye geç
+
 ⚡ [🎯 SOHBET ZEKASI TALİMATI] varsa → MUTLAKA uygula!
 
 🧠 DÜŞÜNCE SİSTEMİ:
@@ -1968,6 +1977,10 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 
         if analiz.duygu:
             sohbet_talimati += f"\n• Kullanıcı duygusu: {analiz.duygu}"
+
+            # Kinaye için özel talimat
+            if analiz.duygu == "kinaye":
+                sohbet_talimati += "\n• 😏 KİNAYE: Kullanıcı iğneli konuşuyor. TAKMA, savunmaya geçme! Hafif espriyle geçiştir. Kısa ve rahat cevap ver."
 
         # Kombinasyonlara göre özel talimatlar (birleşik map kullan)
         if analiz.kombinasyon:
@@ -2537,16 +2550,21 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
         if sohbet_talimati:
             sohbet_talimati = "\n" + sohbet_talimati  # Başına newline ekle
 
+        # Hava bilgisi (cache varsa)
+        hava_satiri = self._hava_bilgisi_prompt()
+        if hava_satiri:
+            hava_satiri = "\n" + hava_satiri
+
         # Dini sorularda minimal prompt, diğerlerinde tam SYSTEM_PROMPT
         if tool_used == "risale_ara":
             system_content = f"""Sen akıllı, profesyonel, olgun ve sıcakkanlı bir yapay zekasın.
 {user_info}
-[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']})
+[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']}){hava_satiri}
 ↳ Zaman farkındalığı.{context_info}{sohbet_talimati}"""
         else:
             system_content = f"""{self.SYSTEM_PROMPT}
 {user_info}
-[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']})
+[⏰ ŞU AN]: {zaman['full']} ({zaman['zaman_dilimi']}){hava_satiri}
 ↳ Zaman farkındalığı.{context_info}{sohbet_talimati}"""
 
         messages.append({"role": "system", "content": system_content})
@@ -2601,6 +2619,10 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
         """
         chat_history = chat_history or []
         self._firlama_modu = firlama_modu  # Instance'a kaydet
+
+        # 🌤️ Hava cache kontrolü (konum varsa, periyodik güncelleme)
+        if self.user_location and self.konum_adres:
+            await self._hava_cache_guncelle()
 
         # 📝 NOT SİSTEMİ - Tetikleyici kontrolü
         not_result = self._check_not_tetikleyici(user_input)
@@ -2719,9 +2741,79 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
         if self.konum_adres:
             print(f"   Adres: {self.konum_adres}")
 
+    async def _hava_cache_guncelle(self, zorla: bool = False) -> Optional[str]:
+        """Hava durumu cache'ini güncelle (periyodik)"""
+        from datetime import datetime
+        import aiohttp
+
+        # Konum yoksa güncelleme yapma
+        if not self.konum_adres:
+            return None
+
+        simdi = datetime.now()
+        saat = simdi.hour
+
+        # Güncelleme gerekli mi kontrol et
+        if not zorla and self.hava_cache:
+            son_guncelleme = self.hava_cache.get("saat")
+            if son_guncelleme:
+                gecen_saat = (simdi - son_guncelleme).total_seconds() / 3600
+                # 3 saatten az geçtiyse ve aynı periyottaysak güncelleme
+                if gecen_saat < 3:
+                    return self.hava_cache.get("veri")
+
+        # Şehir adını konum_adres'ten çıkar (son parça genelde il)
+        try:
+            parcalar = self.konum_adres.split(",")
+            sehir = parcalar[-1].strip() if parcalar else "İstanbul"
+        except:
+            sehir = "İstanbul"
+
+        # wttr.in'den kısa format al
+        try:
+            url = f"https://wttr.in/{sehir}?format=%C+%t&lang=tr"
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        hava_veri = await response.text()
+                        hava_veri = hava_veri.strip()
+                        # Cache'e kaydet
+                        self.hava_cache = {
+                            "veri": hava_veri,
+                            "saat": simdi,
+                            "il": sehir
+                        }
+                        print(f"🌤️ Hava cache güncellendi: {sehir} - {hava_veri}")
+                        return hava_veri
+        except Exception as e:
+            print(f"⚠️ Hava cache güncelleme hatası: {e}")
+
+        # Eski cache varsa onu döndür
+        if self.hava_cache:
+            return self.hava_cache.get("veri")
+        return None
+
+    def _hava_bilgisi_prompt(self) -> str:
+        """Prompt için hava bilgisi satırı oluştur"""
+        if not self.hava_cache or not self.hava_cache.get("veri"):
+            return ""
+
+        il = self.hava_cache.get("il", "")
+        veri = self.hava_cache.get("veri", "")
+        saat = self.hava_cache.get("saat")
+
+        if saat:
+            guncelleme = saat.strftime("%H:%M")
+            return f"[🌤️ HAVA]: {il}, {veri} ({guncelleme} güncellendi)"
+        return f"[🌤️ HAVA]: {il}, {veri}"
+
     async def prepare_konum_alindi(self, lat: float, lon: float, adres: str) -> Dict[str, Any]:
         """Konum alındığında LLM için prompt hazırla"""
         self.set_location(lat, lon, adres)  # konum_adres burada oluşturuldu
+
+        # Hava cache'ini güncelle (konum alındığında)
+        await self._hava_cache_guncelle(zorla=True)
 
         # Kullanıcı adını al
         kullanici_adi = ""
