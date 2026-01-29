@@ -467,7 +467,6 @@ def get_tool_system_class():
             class FallbackToolSystem:
                 TOOLS = {
                     "risale_ara": {"name": "risale_ara", "description": "Dini sorulara cevap", "parameters": "soru", "when": "Dini konularda", "examples": ["İman nedir?"]},
-                    "zaman_getir": {"name": "zaman_getir", "description": "Tarih/saat", "parameters": "yok", "when": "Zaman sorulduğunda", "examples": ["Saat kaç?"]},
                     "hava_durumu": {"name": "hava_durumu", "description": "Hava durumu", "parameters": "şehir", "when": "Hava sorulduğunda", "examples": ["İstanbul hava"]},
                     "namaz_vakti": {"name": "namaz_vakti", "description": "Namaz vakitleri", "parameters": "şehir", "when": "Namaz vakti sorulduğunda", "examples": ["Ankara namaz"]},
                     "web_ara": {"name": "web_ara", "description": "İnternette bilgi veya haber ara", "parameters": "arama terimi", "when": "Bilmediğin konu, güncel haber, kişi, yer, olay sorulduğunda", "examples": ["Einstein kimdir", "son haberler", "Python nedir"]},
@@ -974,7 +973,6 @@ class HafizaAsistani:
         print("   • risale_ara: ✅ (FAISS)")
         print("   • hava_durumu: ✅ (OpenWeatherMap)")
         print("   • namaz_vakti: ✅ (Aladhan)")
-        print("   • zaman_getir: ✅")
         print("=" * 60 + "\n")
 
 
@@ -1427,10 +1425,6 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
         print(f"🛠️ Araç çalıştırılıyor: {tool_name}({tool_param or 'auto'})")
 
         try:
-            if tool_name == "zaman_getir":
-                datetime_info = get_current_datetime()
-                return f"Saat: {datetime_info['saat']}, {datetime_info['gun']} {datetime_info['tarih']}"
-
             if tool_name == "hesapla":
                 result = calculate_math(tool_param or user_input)
                 print(f"   ✅ Hesaplama: {tool_param} = {result}")
@@ -1495,7 +1489,7 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 "needs_faiss": bool,
                 "needs_semantic_memory": bool,
                 "needs_chat_history": bool,
-                "tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
+                "tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|yok",
                 "tool_param": str,
                 "response_style": "brief|detailed|conversational",
                 "is_farewell": bool,
@@ -1555,7 +1549,6 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 • risale_ara → Dini sorular için
 • hava_durumu → Hava durumu için
 • namaz_vakti → Namaz vakti için
-• zaman_getir → Tarih/saat için
 • yok → Sohbet, espri, genel bilgi (sen biliyorsun)
 
 🌐 web_ara AKILLI KARAR:
@@ -1591,7 +1584,7 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 JSON:
 {{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous|topic_closed|espri",
 "needs_faiss": bool, "needs_semantic_memory": bool, "needs_chat_history": bool, "needs_clarification": bool,
-"tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|zaman_getir|yok",
+"tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|yok",
 "tool_param": "", "is_farewell": bool, "topic_closed": bool, "confidence": "low|medium|high", "reasoning": ""}}
 
 ÖNCE <analiz>, SONRA JSON:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
