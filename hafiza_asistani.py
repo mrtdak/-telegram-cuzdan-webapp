@@ -26,6 +26,14 @@ from topic_memory import TopicMemory
 from conversation_context import ConversationContextManager
 from profile_manager import ProfileManager
 from sohbet_zekasi import TurkishConversationIntelligence, BeklenenCevap, SohbetEnerjisi
+from gorsel_uretici import GorselUretici
+from db_manager import get_db
+
+# Global görsel üretici instance
+_gorsel_uretici = GorselUretici()
+
+# Admin ID'leri - görsel limiti yok
+ADMIN_IDS = [6505503887]
 
 
 # ============================================================
@@ -823,34 +831,35 @@ class HafizaAsistani:
     """
 
     # 📍 Konum kategorileri (tek kaynak)
+    # Format: (osm_value, emoji, osm_key) - osm_key default "amenity"
     KATEGORI_MAP = {
-        "eczane": ("pharmacy", "💊"),
-        "benzinlik": ("fuel", "⛽"),
-        "akaryakıt": ("fuel", "⛽"),
-        "restoran": ("restaurant", "🍽️"),
-        "lokanta": ("restaurant", "🍽️"),
-        "kafe": ("cafe", "☕"),
-        "kahve": ("cafe", "☕"),
-        "atm": ("atm", "🏧"),
-        "bankamatik": ("atm", "🏧"),
-        "hastane": ("hospital", "🏥"),
-        "acil": ("hospital", "🏥"),
-        "market": ("supermarket", "🛒"),
-        "süpermarket": ("supermarket", "🛒"),
-        "cami": ("place_of_worship", "🕌"),
-        "mescit": ("place_of_worship", "🕌"),
-        "avm": ("mall", "🏬"),
-        "alışveriş merkezi": ("mall", "🏬"),
-        "otopark": ("parking", "🅿️"),
-        "park yeri": ("parking", "🅿️"),
-        "otel": ("hotel", "🏨"),
-        "okul": ("school", "🏫"),
-        "lise": ("school", "🏫"),
-        "üniversite": ("university", "🎓"),
-        "istasyon": ("station", "🚉"),
-        "metro": ("station", "🚉"),
-        "tren": ("station", "🚉"),
-        "bakkal": ("convenience", "🏪"),
+        "eczane": ("pharmacy", "💊", "amenity"),
+        "benzinlik": ("fuel", "⛽", "amenity"),
+        "akaryakıt": ("fuel", "⛽", "amenity"),
+        "restoran": ("restaurant", "🍽️", "amenity"),
+        "lokanta": ("restaurant", "🍽️", "amenity"),
+        "kafe": ("cafe", "☕", "amenity"),
+        "kahve": ("cafe", "☕", "amenity"),
+        "atm": ("atm", "🏧", "amenity"),
+        "bankamatik": ("atm", "🏧", "amenity"),
+        "hastane": ("hospital", "🏥", "amenity"),
+        "acil": ("hospital", "🏥", "amenity"),
+        "market": ("supermarket", "🛒", "shop"),
+        "süpermarket": ("supermarket", "🛒", "shop"),
+        "cami": ("place_of_worship", "🕌", "amenity"),
+        "mescit": ("place_of_worship", "🕌", "amenity"),
+        "avm": ("mall", "🏬", "shop"),
+        "alışveriş merkezi": ("mall", "🏬", "shop"),
+        "otopark": ("parking", "🅿️", "amenity"),
+        "park yeri": ("parking", "🅿️", "amenity"),
+        "otel": ("hotel", "🏨", "tourism"),
+        "okul": ("school", "🏫", "amenity"),
+        "lise": ("school", "🏫", "amenity"),
+        "üniversite": ("university", "🎓", "amenity"),
+        "istasyon": ("station", "🚉", "railway"),
+        "metro": ("subway_entrance", "🚇", "railway"),
+        "tren": ("station", "🚉", "railway"),
+        "bakkal": ("convenience", "🏪", "shop"),
     }
 
     def __init__(
@@ -1803,7 +1812,6 @@ Gerçek sohbet karşılıklı ilgiden doğar, zorlamayla değil. Kullanıcının
 Doğal konuş, dolgu ifadeler ("değil mi?", "vay be!", "vay canına!", "ne dersin?") ve yapay sorular kullanma.
 - Kullanıcı kısa cevap verirse → Sen de kısa cevap ver.
 - Kullanıcı bir şey sorarsa → Direkt cevap ver, gereksiz ekleme yapma.
-- 🚫 Geçmiş konuşmalar hakkında UYDURMA YAPMA! Prompt'ta [📚 GEÇMİŞ KONUŞMALAR] bölümü yoksa böyle bir konuşma/kayıt/hatıra yok demektir, uydurma ve olmayan şeyi hatırlatmaya çalışma!
 Sohbeti uzatmak için yapay sorular sorma. Bu samimiyet değil, zorlamadır. Her boşluğu doldurmaya çalışma.
 Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 
@@ -2523,7 +2531,7 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 
         return messages
 
-    async def prepare(self, user_input: str, chat_history: List[Dict] = None, firlama_modu: bool = False) -> Dict[str, Any]:
+    async def prepare(self, user_input: str, chat_history: List[Dict] = None, firlama_modu: bool = False, image_base64: str = None) -> Dict[str, Any]:
         """
         Prompt ve messages hazırla - LLM ÇAĞIRMA!
 
@@ -2531,11 +2539,13 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
 
         Args:
             firlama_modu: True ise sohbet zekası bypass edilir, enerjik mod aktif
+            image_base64: Base64 encoded fotoğraf (multimodal için)
 
         Returns:
             {
                 "messages": [...],  # LLM için hazır messages
-                "paket": {...}      # Metadata (tool_used, role vs.)
+                "paket": {...},     # Metadata (tool_used, role vs.)
+                "image_base64": str # Fotoğraf varsa (LLM'e gönderilecek)
             }
         """
         chat_history = chat_history or []
@@ -2575,10 +2585,69 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
         # 2. Messages formatı oluştur
         messages = self._build_messages(user_input, paket, chat_history)
 
-        return {
+        # 🎨 GÖRSEL İSTEĞİ KONTROLÜ VE ÜRETİMİ
+        gorsel_prompt = self._check_gorsel_istegi(user_input)
+        if gorsel_prompt:
+            # Nesnesiz istek - bağlamdan çek
+            if gorsel_prompt == "__BAGLAM_GEREKLI__":
+                gorsel_prompt = self._extract_gorsel_context(chat_history)
+                if not gorsel_prompt:
+                    gorsel_prompt = None
+                    print("🎨 Bağlamdan görsel konusu çıkarılamadı")
+
+            if gorsel_prompt:
+                # 🔒 Limit kontrolü (admin hariç) - üretmeden ÖNCE kontrol et
+                limit_ok = True
+                if self.user_id not in ADMIN_IDS:
+                    db = get_db()
+                    limit_check = db.check_image_limit(self.user_id)
+                    if not limit_check["allowed"]:
+                        print(f"🔒 Görsel limiti dolmuş: {self.user_id}")
+                        paket["gorsel_limit_asıldı"] = True
+                        paket["gorsel_limit_mesaj"] = limit_check["message"]
+                        limit_ok = False
+
+                if limit_ok:
+                    print(f"🎨 Görsel üretiliyor: {gorsel_prompt[:50]}...")
+                    # ÖNCE görsel üret
+                    try:
+                        image_bytes = await _gorsel_uretici.uret(gorsel_prompt)
+                        if image_bytes:
+                            print(f"✅ Görsel üretildi ({len(image_bytes)} bytes)")
+                            paket["gorsel_bytes"] = image_bytes
+                            paket["gorsel_prompt"] = gorsel_prompt
+
+                            # Gemma BYPASS - hiç çağırmayacağız
+                            # Bağlamlı sabit cevap hazırla
+                            paket["gemma_bypass"] = True
+
+                            # Prompt'tan konu çıkar (kısa ve kullanıcı dostu)
+                            if "Bu sohbete uygun" in gorsel_prompt:
+                                # Bağlamdan çekilmiş - son konuyu bul
+                                konu = self._extract_topic_for_response()
+                                if konu:
+                                    paket["sabit_cevap"] = f"İşte sana {konu} için hazırladığım görsel! 😊"
+                                else:
+                                    paket["sabit_cevap"] = "İşte sana hazırladığım görsel! 😊"
+                            else:
+                                # Direkt prompt var (kedi, mavi kedili araba vs.)
+                                konu = gorsel_prompt[:150].strip()
+                                paket["sabit_cevap"] = f"İşte sana {konu} görseli! 😊"
+                        else:
+                            print("❌ Görsel üretilemedi")
+                    except Exception as e:
+                        print(f"❌ Görsel üretim hatası: {e}")
+
+        # 3. Fotoğraf varsa ekle
+        result = {
             "messages": messages,
             "paket": paket
         }
+        if image_base64:
+            result["image_base64"] = image_base64
+            print(f"   📷 Fotoğraf prepare'a eklendi")
+
+        return result
 
     def _check_not_tetikleyici(self, user_input: str) -> Optional[str]:
         """
@@ -2626,6 +2695,166 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
                 return self.not_manager.not_sil(not_id)
 
         return None
+
+    def _check_gorsel_istegi(self, user_input: str) -> Optional[str]:
+        """
+        Görsel üretim isteğini algıla ve prompt çıkar.
+
+        Tetikleyiciler:
+        - "... resmi çiz/yap/hazırla", "... resmini çiz"
+        - "... görseli oluştur/hazırla", "... görselini yap"
+        - "çiz: ...", "görsel: ..."
+        - "bana ... çiz/hazırla", "bir ... resmi yap"
+        - "hadi bir ... yap/çiz"
+        - "görsel yap/oluştur" (nesnesiz - önceki bağlamdan)
+
+        Returns:
+            str: Görsel prompt veya None
+        """
+        user_lower = user_input.lower().strip()
+
+        # ÖNCELİKLİ: Nesnesiz görsel istekleri (bağlamdan çekilecek)
+        # "görsel yap", "bir görsel oluştur", "hadi görsel yap", "görsel hazırlarmısın"
+        # "hadi sen bi görsel yap birtane" gibi varyasyonlar da dahil
+        nesnesiz_patterns = [
+            r'^(?:bir?\s+)?görsel\s*(?:yap|oluştur|hazırla)(?:r\s*m[ıi]s[ıi]n)?',
+            r'^(?:bir?\s+)?resim\s*(?:yap|oluştur|hazırla)(?:r\s*m[ıi]s[ıi]n)?',
+            r'hadi\s+(?:sen\s+)?(?:bir?\s+)?(?:görsel|resim)\s*(?:yap|oluştur|hazırla)',
+            r'(?:sen\s+)?(?:bir?\s+)?(?:görsel|resim)\s*(?:yap|oluştur|hazırla)(?:\s+(?:bir?tane|bakalım|bana))?',
+            r'görsel\s*hazırla(?:r\s*m[ıi]s[ıi]n)?\s*(?:bana)?',
+            r'(?:modern|minimalist|güzel|şık)\s+(?:bir?\s+)?görsel\s*hazırla',
+        ]
+
+        for pattern in nesnesiz_patterns:
+            if re.search(pattern, user_lower, re.IGNORECASE):
+                print(f"🎨 Nesnesiz görsel isteği algılandı - bağlamdan çekilecek")
+                return "__BAGLAM_GEREKLI__"
+
+        # Pattern'ler ve prompt çıkarma (group index)
+        patterns = [
+            # "kedi resmi çiz/yap/hazırla" → "kedi"
+            (r'(.+?)\s*resmi(?:ni)?\s*(?:çiz|oluştur|yap|hazırla)', 1),
+            # "kedi görseli oluştur/hazırla" → "kedi"
+            (r'(.+?)\s*görseli(?:ni)?\s*(?:çiz|oluştur|yap|hazırla)', 1),
+            # "çiz: kedi" → "kedi" (görsel: X hariç - nesnesiz olabilir)
+            (r'çiz[\s:]+(.+)', 1),
+            # "bana bir kedi çiz/hazırla" → "kedi"
+            (r'bana\s+(?:bir\s+)?(.+?)\s*(?:çiz|resmi|hazırla)$', 1),
+            # "bir kedi resmi yap/hazırla" → "kedi"
+            (r'bir\s+(.+?)\s*(?:resmi|görseli)\s*(?:yap|oluştur|çiz|hazırla)', 1),
+            # "hadi bir kedi yap/çiz" → "kedi" (görsel/resim hariç)
+            (r'hadi\s+(?:bir\s+)?(?!görsel|resim)(.+?)\s*(?:yap|çiz|oluştur|hazırla)$', 1),
+            # "kedi çiz" (basit) → "kedi"
+            (r'^(.+?)\s+çiz$', 1),
+        ]
+
+        for pattern, group in patterns:
+            match = re.search(pattern, user_lower, re.IGNORECASE)
+            if match:
+                prompt = match.group(group).strip()
+
+                # Baştaki gereksiz kelimeleri temizle
+                for kelime in ['hadi', 'bana', 'bir', 'lütfen', 'bi']:
+                    if prompt.startswith(kelime + ' '):
+                        prompt = prompt[len(kelime):].strip()
+
+                # Minimum 2 karakter ve gereksiz kelimeleri filtrele
+                gereksiz = ['bir', 'bana', 'lütfen', 'bi', 'hadi', 'görsel', 'resim']
+                if len(prompt) >= 2 and prompt not in gereksiz:
+                    print(f"🎨 Görsel isteği algılandı: '{prompt}'")
+                    return prompt
+
+        return None
+
+    def _extract_topic_for_response(self) -> Optional[str]:
+        """
+        Son sohbetten konu çıkar (kullanıcı dostu cevap için).
+        Örnek: "Kahve markam için görsel düşünüyorum" → "kahve markan"
+        """
+        if not self.hafiza:
+            return None
+
+        # Son birkaç user mesajına bak
+        for msg in reversed(self.hafiza[-6:]):
+            if msg.get("role") == "user":
+                content = msg.get("content", "").lower()
+
+                # Görsel isteği değilse, bu konudur
+                gorsel_kelimeleri = ["görsel", "resim", "çiz", "yap", "oluştur", "hazırla"]
+                if not any(k in content for k in gorsel_kelimeleri):
+                    # Konuyu temizle ve döndür
+                    # "Kahve markam için görsel düşünüyorum" → "kahve markan"
+                    konu = content.strip()
+
+                    # Gereksiz kelimeleri çıkar
+                    for kelime in ["için", "hakkında", "ile ilgili", "düşünüyorum", "istiyorum", "lazım"]:
+                        konu = konu.replace(kelime, "")
+
+                    konu = konu.strip()
+                    if len(konu) > 3 and len(konu) < 100:
+                        return konu
+
+        return None
+
+    def _extract_gorsel_context(self, chat_history: List[Dict]) -> Optional[str]:
+        """
+        Nesnesiz görsel istekleri için sohbet bağlamını Gemini'ye gönderilecek
+        formatta hazırla. Keyword extraction YOK - Gemini bağlamı kendisi anlasın.
+
+        Örnek:
+        User: "Kahve markam için görsel düşünüyorum"
+        Assistant: "Modern mi geleneksel mi?"
+        User: "Hadi bir görsel yap"
+
+        → Gemini'ye: "Sohbet bağlamı: [mesajlar] - Bu sohbete uygun bir görsel üret"
+
+        Returns:
+            str: Gemini için bağlam prompt'u veya None
+        """
+        # Önce parametre, sonra self.hafiza kullan
+        messages = []
+
+        if chat_history and len(chat_history) > 0:
+            messages = chat_history[-6:]  # Son 6 mesaj
+        elif hasattr(self, 'hafiza') and self.hafiza:
+            # self.hafiza formatını chat_history formatına çevir
+            for m in self.hafiza[-6:]:
+                role = "user" if m.get("rol") == "user" else "assistant"
+                content = m.get("mesaj", "") or m.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
+
+        print(f"🎨 Bağlam kontrolü: {len(messages)} mesaj bulundu")
+
+        if not messages:
+            print("🎨 Bağlam bulunamadı - hafıza boş")
+            return None
+
+        # Mesajları oku ve birleştir
+        conversation_parts = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                role = msg.get('role', 'user')
+                content = msg.get('content', '')
+                if content:
+                    role_tr = 'Kullanıcı' if role == 'user' else 'Asistan'
+                    conversation_parts.append(f"{role_tr}: {content[:200]}")  # Max 200 karakter
+
+        if not conversation_parts:
+            print("🎨 Bağlam bulunamadı - mesajlar boş")
+            return None
+
+        # Gemini için bağlam prompt'u oluştur
+        conversation_text = "\n".join(conversation_parts[-4:])  # Son 4 mesaj yeter
+
+        context_prompt = f"""Bu sohbete uygun bir görsel üret:
+
+{conversation_text}
+
+Sohbetin konusuna uygun, estetik ve yaratıcı bir görsel oluştur."""
+
+        print(f"🎨 Bağlam prompt'u hazırlandı ({len(conversation_parts)} mesaj)")
+        return context_prompt
 
     # ============================================================
     # 📍 KONUM SİSTEMİ
@@ -2720,76 +2949,103 @@ Senin görevin:
         if kategori not in self.KATEGORI_MAP:
             return None
 
-        osm_tag, emoji = self.KATEGORI_MAP[kategori]
+        osm_tag, emoji, osm_key = self.KATEGORI_MAP[kategori]
 
         # Overpass API sorgusu
         overpass_url = "https://overpass-api.de/api/interpreter"
         radius = 10000  # 10km
 
         if osm_tag == "place_of_worship":
+            # Cami için özel sorgu (sadece Müslüman)
             query = f"""
             [out:json][timeout:10];
             (
-              node["amenity"="{osm_tag}"]["religion"="muslim"](around:{radius},{lat},{lon});
-              way["amenity"="{osm_tag}"]["religion"="muslim"](around:{radius},{lat},{lon});
+              node["{osm_key}"="{osm_tag}"]["religion"="muslim"](around:{radius},{lat},{lon});
+              way["{osm_key}"="{osm_tag}"]["religion"="muslim"](around:{radius},{lat},{lon});
             );
             out center 10;
             """
         else:
+            # Genel sorgu - dinamik osm_key kullan
             query = f"""
             [out:json][timeout:10];
             (
-              node["amenity"="{osm_tag}"](around:{radius},{lat},{lon});
-              way["amenity"="{osm_tag}"](around:{radius},{lat},{lon});
+              node["{osm_key}"="{osm_tag}"](around:{radius},{lat},{lon});
+              way["{osm_key}"="{osm_tag}"](around:{radius},{lat},{lon});
             );
             out center 10;
             """
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(overpass_url, data={"data": query}) as resp:
-                    if resp.status != 200:
-                        return f"Yakın {kategori} araması başarısız oldu."
-                    data = await resp.json()
+        # Birden fazla Overpass endpoint dene (rate limiting için)
+        overpass_endpoints = [
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter",
+        ]
 
-            elements = data.get("elements", [])
-            if not elements:
-                return f"{radius//1000}km içinde {kategori} bulunamadı."
+        data = None
+        last_error = None
 
-            # Mesafe hesapla ve sırala
-            yerler = []
-            for el in elements:
-                el_lat = el.get("lat") or el.get("center", {}).get("lat")
-                el_lon = el.get("lon") or el.get("center", {}).get("lon")
-                if el_lat and el_lon:
-                    mesafe = haversine_distance(lat, lon, el_lat, el_lon)
-                    ad = el.get("tags", {}).get("name", f"{kategori.title()} {len(yerler)+1}")
-                    yerler.append({
-                        "ad": ad,
-                        "mesafe": int(mesafe),
-                        "lat": el_lat,
-                        "lon": el_lon
-                    })
+        for endpoint in overpass_endpoints:
+            try:
+                timeout = aiohttp.ClientTimeout(total=25)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(endpoint, data={"data": query}) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            break
+                        elif resp.status == 429:
+                            # Rate limited, sonraki endpoint'i dene
+                            last_error = "Çok fazla istek"
+                            await asyncio.sleep(1)
+                            continue
+                        elif resp.status == 504:
+                            last_error = "Sunucu zaman aşımı"
+                            continue
+                        else:
+                            last_error = f"HTTP {resp.status}"
+            except asyncio.TimeoutError:
+                last_error = "Bağlantı zaman aşımı"
+                continue
+            except Exception as e:
+                last_error = str(e)
+                continue
 
-            yerler.sort(key=lambda x: x["mesafe"])
-            yerler = yerler[:5]  # İlk 5
+        if data is None:
+            return f"Yakın {kategori} araması başarısız ({last_error}). Tekrar dene."
 
-            # Sonuçları kaydet (sohbet bağlamı için)
-            self.son_yakin_yerler = yerler
-            self.son_arama_kategorisi = kategori
+        elements = data.get("elements", [])
+        if not elements:
+            return f"{radius//1000}km içinde {kategori} bulunamadı."
 
-            # Inline butonlu format döndür
-            return {
-                "type": "yakin_yerler_listesi",
-                "kategori": kategori,
-                "emoji": emoji,
-                "yerler": yerler
-            }
+        # Mesafe hesapla ve sırala
+        yerler = []
+        for el in elements:
+            el_lat = el.get("lat") or el.get("center", {}).get("lat")
+            el_lon = el.get("lon") or el.get("center", {}).get("lon")
+            if el_lat and el_lon:
+                mesafe = haversine_distance(lat, lon, el_lat, el_lon)
+                ad = el.get("tags", {}).get("name", f"{kategori.title()} {len(yerler)+1}")
+                yerler.append({
+                    "ad": ad,
+                    "mesafe": int(mesafe),
+                    "lat": el_lat,
+                    "lon": el_lon
+                })
 
-        except Exception as e:
-            print(f"Overpass API hatası: {e}")
-            return f"Yakın {kategori} araması sırasında hata oluştu."
+        yerler.sort(key=lambda x: x["mesafe"])
+        yerler = yerler[:5]  # İlk 5
+
+        # Sonuçları kaydet (sohbet bağlamı için)
+        self.son_yakin_yerler = yerler
+        self.son_arama_kategorisi = kategori
+
+        # Inline butonlu format döndür
+        return {
+            "type": "yakin_yerler_listesi",
+            "kategori": kategori,
+            "emoji": emoji,
+            "yerler": yerler
+        }
 
     async def _get_nobetci_eczane(self, lat: float, lon: float, il: str = None, ilce: str = None) -> Any:
         """Nöbetçi eczane bilgisi al (CollectAPI)"""

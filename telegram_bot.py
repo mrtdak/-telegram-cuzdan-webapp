@@ -19,6 +19,7 @@ from hafiza_asistani import HafizaAsistani
 from personal_ai import PersonalAI
 from belge_asistani import BelgeAsistani
 import re
+import io
 import threading
 import json
 from db_manager import get_db, PlanType
@@ -855,11 +856,13 @@ async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rate_check = db.check_rate_limit(user_id)
     camera_check = db.check_camera_limit(user_id)
     location_check = db.check_location_limit(user_id)
+    image_check = db.check_image_limit(user_id)
     usage = db.get_daily_usage(user_id)
 
     text = f"""📊 *Günlük Kullanım Durumun*
 
 💬 Mesaj: *{rate_check['remaining']}/{rate_check['limit']}*
+🎨 Görsel üretimi: *{image_check['remaining']}/{image_check['limit']}*
 📷 Kamera bildirimi: *{camera_check['remaining']}/{camera_check['limit']}*
 📍 Konum sorgusu: *{location_check['remaining']}/{location_check['limit']}*
 
@@ -1159,7 +1162,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === FOTOĞRAF HANDLER ===
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """📷 Fotoğraf analiz handler - OpenRouter Vision"""
+    """📷 Fotoğraf handler - Ana LLM'e multimodal olarak gider (vision bypass)"""
     try:
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
@@ -1174,58 +1177,38 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
 
-        # Fotoğrafı indir
-        import io
+        # Fotoğrafı indir ve base64'e çevir
         import base64
         photo_bytes = await file.download_as_bytearray()
         img_base64 = base64.b64encode(photo_bytes).decode('utf-8')
 
-        # Caption varsa kullan, yoksa sohbet tarzı
+        # Caption varsa kullan, yoksa genel fotoğraf mesajı
         caption = update.message.caption or ""
         if caption:
-            prompt_text = f"Arkadaşın sana bu fotoğrafı attı ve şunu yazdı: '{caption}'. Samimi ve kısa cevap ver, Türkçe konuş."
+            user_input = f"[Fotoğraf gönderildi] {caption}"
         else:
-            prompt_text = "Arkadaşın sana bu fotoğrafı attı. Analiz yapma, sadece arkadaşça kısa bir yorum yap. Türkçe, 1-2 cümle."
+            user_input = "[Fotoğraf gönderildi]"
 
-        # OpenRouter vision API çağrısı
-        OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+        # HafizaAsistani ile prompt hazırla (fotoğraf dahil)
+        asistan = user["hafiza"]
+        ai = user["ai"]
 
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/personal-ai",
-            "X-Title": "PersonalAI"
-        }
+        # Fırlamama modu kontrolü
+        firlama_modu = context.user_data.get("firlama_modu", False)
 
-        payload = {
-            "model": "google/gemma-3-27b-it",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt_text},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
-                    ]
-                }
-            ],
-            "max_tokens": 1000,
-            "temperature": 0.7
-        }
+        # prepare() çağır - image_base64 ile
+        result = await asistan.prepare(user_input, chat_history=[], firlama_modu=firlama_modu, image_base64=img_base64)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    response = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
-                else:
-                    error_text = await resp.text()
-                    print(f"[HATA] Vision API: {resp.status} - {error_text[:200]}")
-                    response = "Fotoğrafı analiz edemedim, tekrar dener misin?"
+        messages = result.get("messages", [])
+        image_for_llm = result.get("image_base64")
+
+        if not messages:
+            await status.delete()
+            await update.message.reply_text("Fotoğrafı işleyemedim, tekrar dener misin?")
+            return
+
+        # PersonalAI ile cevap üret (multimodal - fotoğraf dahil)
+        response = await ai.generate(messages=messages, image_base64=image_for_llm)
 
         # Düşünüyorum mesajını sil
         await status.delete()
@@ -1233,18 +1216,23 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Cevabı gönder
         await update.message.reply_text(response)
 
-        # Hafızaya kaydet (fotoğraf içeriğiyle birlikte)
-        asistan = user["hafiza"]
+        # Hafızaya kaydet
+        # Kullanıcı mesajı: "[Kullanıcı fotoğraf gönderdi]" (vision cevabı YOK)
+        # Asistan mesajı: Ana LLM'in gerçek cevabı
         if caption:
-            foto_kayit = f"[Fotoğraf gönderildi, caption: '{caption}'. Fotoğrafta: {response[:150]}]"
+            foto_kayit = f"[Kullanıcı fotoğraf gönderdi: {caption}]"
         else:
-            foto_kayit = f"[Fotoğraf gönderildi. Fotoğrafta: {response[:150]}]"
+            foto_kayit = "[Kullanıcı fotoğraf gönderdi]"
         asistan.save(foto_kayit, response, [])
 
     except Exception as e:
         print(f"[HATA] Fotograf hatasi: {e}")
         import traceback
         traceback.print_exc()
+        try:
+            await status.delete()
+        except:
+            pass
         await update.message.reply_text("Fotoğrafı işlerken bir sorun oluştu.")
 
 
@@ -1880,6 +1868,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tool_used = paket.get("tool_used", "")
             if tool_used in ["konum_hizmeti", "not_sistemi"]:
                 asistan.save(user_input, response, [])
+
+        # 🎨 GÖRSEL - Gemma BYPASS (halüsinasyon önleme)
+        elif paket.get("gorsel_bytes") and paket.get("gemma_bypass"):
+            # Status sil
+            try:
+                await context.bot.delete_message(chat_id, status.message_id)
+            except:
+                pass
+
+            # Sabit cevap (Gemma çağrılmadı)
+            response = paket.get("sabit_cevap", "İşte sana hazırladığım görsel! 😊")
+            await update.message.reply_text(response)
+
+            # Görsel gönder
+            await update.message.reply_photo(
+                photo=io.BytesIO(paket["gorsel_bytes"])
+            )
+
+            # 🔢 Kullanımı artır (admin hariç)
+            if user_id not in ADMIN_IDS:
+                db = get_db()
+                db.increment_usage(user_id, "image_count")
+
+            # Kaydet (history'e Gemma söylemiş gibi ekle)
+            asistan.save(user_input, response, [])
+            return
+
+        # 🔒 Görsel limiti aşıldıysa bildir
+        elif paket.get("gorsel_limit_asıldı"):
+            try:
+                await context.bot.delete_message(chat_id, status.message_id)
+            except:
+                pass
+            await update.message.reply_text(f"😔 {paket.get('gorsel_limit_mesaj', 'Görsel limitin doldu.')}")
+            return
+
         else:
             messages = result["messages"]
 
@@ -3215,10 +3239,12 @@ Beğendiysen ve devam etmesini istiyorsan, sunucu altyapısı için bağış yap
         rate_check = db.check_rate_limit(user_id)
         camera_check = db.check_camera_limit(user_id)
         location_check = db.check_location_limit(user_id)
+        image_check = db.check_image_limit(user_id)
 
         text = f"""📊 *Günlük Limitler*
 
 💬 Mesaj: *{rate_check['remaining']}/{rate_check['limit']}*
+🎨 Görsel üretimi: *{image_check['remaining']}/{image_check['limit']}*
 📷 Kamera bildirimi: *{camera_check['remaining']}/{camera_check['limit']}*
 📍 Konum sorgusu: *{location_check['remaining']}/{location_check['limit']}*
 

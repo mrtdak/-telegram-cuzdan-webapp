@@ -24,6 +24,7 @@ PLAN_LIMITS = {
         "daily_messages": 30,              # Gunluk mesaj limiti
         "daily_camera_notifications": 5,   # Gunluk kamera bildirimi limiti
         "daily_location_queries": 10,      # Gunluk konum sorgusu limiti
+        "daily_images": 3,                 # Gunluk gorsel uretim limiti
         "max_cameras": 1,                  # Maksimum kamera sayisi
         "web_search": True,
         "photo_analysis": True,
@@ -129,6 +130,10 @@ class DatabaseManager:
                 pass
             try:
                 cursor.execute("ALTER TABLE daily_usage ADD COLUMN location_query_count INTEGER DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE daily_usage ADD COLUMN image_count INTEGER DEFAULT 0")
             except:
                 pass
 
@@ -308,7 +313,8 @@ class DatabaseManager:
                     "web_search_count": 0,
                     "photo_count": 0,
                     "camera_notification_count": 0,
-                    "location_query_count": 0
+                    "location_query_count": 0,
+                    "image_count": 0
                 }
 
     def increment_usage(self, user_id: int, field: str = "message_count") -> int:
@@ -471,6 +477,34 @@ class DatabaseManager:
                 "limit": daily_limit,
                 "message": f"Bugunluk {daily_limit} konum sorgusu limitin doldu.\n"
                           f"Yarin sifirlanir!\n\n"
+                          f"Projeyi desteklemek istersen: /bagis"
+            }
+
+        return {
+            "allowed": True,
+            "remaining": daily_limit - current_count,
+            "limit": daily_limit,
+            "message": None
+        }
+
+    def check_image_limit(self, user_id: int) -> Dict:
+        """Gorsel uretim limitini kontrol et"""
+        self.get_or_create_user(user_id)
+
+        plan = self.get_user_plan(user_id)
+        limits = PLAN_LIMITS[plan]
+        daily_limit = limits.get("daily_images", 3)
+
+        usage = self.get_daily_usage(user_id)
+        current_count = usage.get("image_count", 0)
+
+        if current_count >= daily_limit:
+            return {
+                "allowed": False,
+                "remaining": 0,
+                "limit": daily_limit,
+                "message": f"Bugünlük {daily_limit} görsel üretim hakkın doldu.\n"
+                          f"Yarın sıfırlanır!\n\n"
                           f"Projeyi desteklemek istersen: /bagis"
             }
 
