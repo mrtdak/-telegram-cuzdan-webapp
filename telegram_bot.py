@@ -18,6 +18,7 @@ from typing import Dict, Tuple, Optional
 from hafiza_asistani import HafizaAsistani
 from personal_ai import PersonalAI
 from belge_asistani import BelgeAsistani
+from cuzdan import Cuzdan
 import re
 import threading
 import json
@@ -698,6 +699,12 @@ def clear_active_modes(user_id: int, context=None):
     if context is not None and hasattr(context, 'user_data'):
         context.user_data["not_bekliyor"] = False
         context.user_data.pop("hatirlatma_ozel_not_id", None)
+        # Cüzdan modlarını da temizle
+        context.user_data.pop("cuzdan_tutar_bekliyor", None)
+        context.user_data.pop("cuzdan_baslangic_bekliyor", None)
+        context.user_data.pop("cuzdan_tip", None)
+        context.user_data.pop("cuzdan_kategori", None)
+        context.user_data.pop("cuzdan_menu_aktif", None)
 
     # 2. Aktif belgeyi kapat
     if user["belge"] is not None:
@@ -708,6 +715,27 @@ def clear_active_modes(user_id: int, context=None):
         del user_kamera_wizard[user_id]
 
     print(f"🧹 Aktif modlar temizlendi: {user_id}")
+
+
+async def clear_active_menu(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Aktif menü mesajını sil (ekran temizliği)"""
+    if context is None or not hasattr(context, 'user_data'):
+        return
+
+    msg_id = context.user_data.get("aktif_menu_msg_id")
+    if msg_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except:
+            pass  # Mesaj zaten silinmiş olabilir
+        context.user_data.pop("aktif_menu_msg_id", None)
+
+
+async def set_active_menu(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message):
+    """Yeni aktif menü mesajını kaydet (eski varsa sil)"""
+    await clear_active_menu(context, chat_id)
+    if context is not None and hasattr(context, 'user_data'):
+        context.user_data["aktif_menu_msg_id"] = message.message_id
 
 
 # === KOMUTLAR ===
@@ -771,7 +799,13 @@ async def yeni_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/konum - Konum paylaş butonu gönder"""
+    user_id = update.effective_user.id
     chat_id = update.effective_chat.id
+
+    # Eski menüyü temizle
+    clear_active_modes(user_id, context)
+    await clear_active_menu(context, chat_id)
+
     # Komut mesajını sil
     try:
         await update.message.delete()
@@ -792,22 +826,83 @@ async def konum_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def notdefteri_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/notdefteri - Not Defteri menüsü"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    # Eski menüyü temizle
+    clear_active_modes(user_id, context)
+    await clear_active_menu(context, chat_id)
+
     buttons = [
         [
             InlineKeyboardButton("📝 Yeni Not", callback_data="not_yeni"),
             InlineKeyboardButton("📋 Notlarım", callback_data="not_listele")
         ]
     ]
-    await update.message.reply_text(
+    msg = await update.message.reply_text(
         "📝 *Not Defteri*\n\nNe yapmak istersin?",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
+    await set_active_menu(context, chat_id, msg)
+
+
+# ============== CÜZDAN SİSTEMİ ==============
+
+# Her kullanıcı için cüzdan instance'ları
+user_cuzdanlar: Dict[int, Cuzdan] = {}
+
+def get_cuzdan(user_id: int) -> Cuzdan:
+    """Kullanıcının cüzdan instance'ını getir (lazy init)"""
+    if user_id not in user_cuzdanlar:
+        user_cuzdanlar[user_id] = Cuzdan(str(user_id))
+    return user_cuzdanlar[user_id]
+
+
+async def cuzdan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/cuzdan - Cüzdan/Banka menüsü"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    cuzdan = get_cuzdan(user_id)
+
+    # Eski menüyü temizle
+    clear_active_modes(user_id, context)
+    await clear_active_menu(context, chat_id)
+
+    # Cüzdan menüsü aktif flag'i
+    context.user_data["cuzdan_menu_aktif"] = True
+
+    buttons = [
+        [
+            InlineKeyboardButton("➕ Gelir Ekle", callback_data="cuzdan_gelir"),
+            InlineKeyboardButton("➖ Gider Ekle", callback_data="cuzdan_gider")
+        ],
+        [
+            InlineKeyboardButton("📊 Aylık Rapor", callback_data="cuzdan_rapor"),
+            InlineKeyboardButton("📋 Son İşlemler", callback_data="cuzdan_islemler")
+        ],
+        [
+            InlineKeyboardButton("⚙️ Başlangıç Bakiyesi", callback_data="cuzdan_baslangic"),
+            InlineKeyboardButton("❌ Kapat", callback_data="cuzdan_kapat")
+        ]
+    ]
+
+    msg = await update.message.reply_text(
+        cuzdan.format_bakiye_mesaj(),
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+    await set_active_menu(context, chat_id, msg)
 
 
 async def belgelerim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/belgelerim - Çalışma Alanım - Doküman seç ve üzerine konuş"""
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    # Eski menüyü temizle
+    clear_active_modes(user_id, context)
+    await clear_active_menu(context, chat_id)
 
     # Belge asistanını al (lazy init - mevcut belgeleri yükler)
     belge_asistani = get_belge_asistani(user_id)
@@ -831,12 +926,13 @@ async def belgelerim_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )])
     buttons.append([InlineKeyboardButton("🗑️ Doküman Sil", callback_data="belge_sil_menu")])
 
-    await update.message.reply_text(
+    msg = await update.message.reply_text(
         f"📄 *Çalışma Alanım*\n\n"
         f"Bir doküman seç, içeriğini gör ve üzerine konuş:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
+    await set_active_menu(context, chat_id, msg)
 
 
 async def limit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1580,6 +1676,112 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Mesaj içeriğinden otomatik tetikleme kaldırıldı
     user_lower = user_input.lower().strip()
 
+    # 💰 CÜZDAN MENÜSÜ AÇIKKEN MESAJ YAZILDI - LLM'e gitme, uyar
+    if context.user_data.get("cuzdan_menu_aktif"):
+        buttons = [
+            [
+                InlineKeyboardButton("➕ Gelir Ekle", callback_data="cuzdan_gelir"),
+                InlineKeyboardButton("➖ Gider Ekle", callback_data="cuzdan_gider")
+            ],
+            [
+                InlineKeyboardButton("📊 Rapor", callback_data="cuzdan_rapor"),
+                InlineKeyboardButton("📋 İşlemler", callback_data="cuzdan_islemler")
+            ],
+            [InlineKeyboardButton("❌ Cüzdanı Kapat", callback_data="cuzdan_kapat")]
+        ]
+        await update.message.reply_text(
+            "💰 *Cüzdan menüsü açık*\n\nButonlardan seçim yap veya kapat:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
+
+    # 💰 CÜZDAN TUTAR GİRİŞİ
+    if context.user_data.get("cuzdan_tutar_bekliyor"):
+        context.user_data["cuzdan_tutar_bekliyor"] = False
+
+        try:
+            # Tutarı ve açıklamayı ayır (örn: "200 elektrik", "elektrik 200", "1500.50 market alışverişi")
+            # Sayıyı bul (regex ile)
+            sayi_match = re.search(r'[\d.,]+', user_input)
+            if not sayi_match:
+                raise ValueError("Sayı bulunamadı")
+
+            tutar_str = sayi_match.group()
+            # Ondalık mı binlik mi? Son karakter nokta/virgül + 1-2 rakam ise ondalık
+            if re.match(r'^[\d.]+,\d{1,2}$', tutar_str):
+                # Türkçe format: 1.500,50 → nokta binlik, virgül ondalık
+                tutar_str = tutar_str.replace(".", "").replace(",", ".")
+            elif re.match(r'^[\d,]+\.\d{1,2}$', tutar_str):
+                # Amerikan format: 1,500.50 → virgül binlik, nokta ondalık
+                tutar_str = tutar_str.replace(",", "")
+            else:
+                # Sadece sayı veya binlik ayraçlı: 1500, 1.500
+                tutar_str = tutar_str.replace(".", "").replace(",", "")
+
+            tutar = float(tutar_str)
+
+            if tutar <= 0:
+                raise ValueError("Tutar 0'dan büyük olmalı")
+
+            # Açıklamayı al (sayı dışındaki kısım)
+            aciklama = user_input.replace(sayi_match.group(), "").replace("₺", "").replace("TL", "").strip()
+
+            tip = context.user_data.get("cuzdan_tip", "gider")
+            kategori = context.user_data.get("cuzdan_kategori", "diger_gider")
+
+            cuzdan = get_cuzdan(user_id)
+
+            if tip == "gelir":
+                cuzdan.gelir_ekle(tutar, kategori, aciklama)
+            else:
+                cuzdan.gider_ekle(tutar, kategori, aciklama)
+
+            # Temizle
+            context.user_data.pop("cuzdan_tip", None)
+            context.user_data.pop("cuzdan_kategori", None)
+
+            buttons = [[InlineKeyboardButton("🔙 Cüzdana Dön", callback_data="cuzdan_menu")]]
+            await update.message.reply_text(
+                cuzdan.format_islem_onay(tip, tutar, kategori, aciklama),
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+
+        except Exception as e:
+            buttons = [[InlineKeyboardButton("🔙 Cüzdana Dön", callback_data="cuzdan_menu")]]
+            await update.message.reply_text(
+                f"❌ Geçersiz tutar. Sayı gir (örn: 150 veya 1500.50)",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        return
+
+    # 💰 CÜZDAN BAŞLANGIÇ BAKİYESİ
+    if context.user_data.get("cuzdan_baslangic_bekliyor"):
+        context.user_data["cuzdan_baslangic_bekliyor"] = False
+
+        try:
+            tutar_str = user_input.replace(".", "").replace(",", ".").replace("₺", "").replace("TL", "").strip()
+            tutar = float(tutar_str)
+
+            cuzdan = get_cuzdan(user_id)
+            cuzdan.baslangic_bakiye_ayarla(tutar)
+
+            buttons = [[InlineKeyboardButton("🔙 Cüzdana Dön", callback_data="cuzdan_menu")]]
+            await update.message.reply_text(
+                f"✅ Başlangıç bakiyesi ayarlandı: *{tutar:,.2f}₺*",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+
+        except:
+            buttons = [[InlineKeyboardButton("🔙 Cüzdana Dön", callback_data="cuzdan_menu")]]
+            await update.message.reply_text(
+                f"❌ Geçersiz tutar. Sayı gir (örn: 5000)",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+        return
+
     # 📝 NOT KAYDETME - Butonla not yazdıysa direkt kaydet (LLM'e gitmesin)
     if context.user_data.get("not_bekliyor"):
         context.user_data["not_bekliyor"] = False
@@ -1737,6 +1939,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"[BELGE] Aktif belge context eklendi: {aktif_belge['dosya_adi']}")
         else:
             asistan.belge_context = None
+
+        # 💰 Cüzdan rapor context'i varsa user_input'a ekle
+        cuzdan_rapor = context.user_data.pop("cuzdan_rapor_context", None)
+        if cuzdan_rapor:
+            orijinal_soru = user_input
+            user_input = f"""[📊 KULLANICININ KİŞİSEL CÜZDAN RAPORU]
+Bu kullanıcının aylık gelir/gider raporudur. Bu verileri kullanarak sorusunu cevapla.
+Tavsiyelerde bulun, analiz yap, karşılaştır.
+
+{cuzdan_rapor}
+
+[💬 KULLANICININ SORUSU]
+{orijinal_soru}"""
+            print(f"\n{'='*50}")
+            print(f"[CÜZDAN] 📊 Rapor context eklendi!")
+            print(f"[CÜZDAN] 💬 Kullanıcı sorusu: {orijinal_soru}")
+            print(f"[CÜZDAN] 📝 Toplam prompt uzunluğu: {len(user_input)} karakter")
+            print(f"{'='*50}\n")
 
         result = await asyncio.wait_for(
             asistan.prepare(user_input, []),
@@ -2457,6 +2677,237 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ *{aktif_belge['dosya_adi']}* üzerinde konuşmaya devam ediyorsunuz.\n\n"
             f"_15 mesaj daha sorabilirsiniz._",
             parse_mode="Markdown"
+        )
+
+    # ============== CÜZDAN CALLBACK'LERİ ==============
+
+    # 💰 CÜZDAN ANA MENÜ
+    elif data == "cuzdan_menu":
+        context.user_data["cuzdan_menu_aktif"] = True  # Menüye dönünce flag'i aç
+        cuzdan = get_cuzdan(user_id)
+        buttons = [
+            [
+                InlineKeyboardButton("➕ Gelir Ekle", callback_data="cuzdan_gelir"),
+                InlineKeyboardButton("➖ Gider Ekle", callback_data="cuzdan_gider")
+            ],
+            [
+                InlineKeyboardButton("📊 Aylık Rapor", callback_data="cuzdan_rapor"),
+                InlineKeyboardButton("📋 Son İşlemler", callback_data="cuzdan_islemler")
+            ],
+            [
+                InlineKeyboardButton("⚙️ Başlangıç Bakiyesi", callback_data="cuzdan_baslangic"),
+                InlineKeyboardButton("❌ Kapat", callback_data="cuzdan_kapat")
+            ]
+        ]
+        await query.edit_message_text(
+            cuzdan.format_bakiye_mesaj(),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # ❌ CÜZDANI KAPAT
+    elif data == "cuzdan_kapat":
+        context.user_data.pop("cuzdan_menu_aktif", None)
+        await clear_active_menu(context, chat_id)
+        try:
+            await query.message.delete()
+        except:
+            pass
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="💰 Cüzdan kapatıldı."
+        )
+
+    # ➕ GELİR EKLE - Kategori seçimi
+    elif data == "cuzdan_gelir":
+        context.user_data["cuzdan_tip"] = "gelir"
+        context.user_data.pop("cuzdan_menu_aktif", None)  # Flag temizle
+        buttons = []
+        for key, (emoji, isim) in Cuzdan.GELIR_KATEGORILERI.items():
+            buttons.append([InlineKeyboardButton(f"{emoji} {isim}", callback_data=f"cuzdan_kat:{key}")])
+        buttons.append([InlineKeyboardButton("🔙 Geri", callback_data="cuzdan_menu")])
+
+        await query.edit_message_text(
+            "➕ *Gelir Kategorisi Seç:*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # ➖ GİDER EKLE - Kategori seçimi
+    elif data == "cuzdan_gider":
+        context.user_data["cuzdan_tip"] = "gider"
+        context.user_data.pop("cuzdan_menu_aktif", None)  # Flag temizle
+        # İlk 6 kategoriyi göster
+        kategoriler = list(Cuzdan.GIDER_KATEGORILERI.items())
+        buttons = []
+        row = []
+        for i, (key, (emoji, isim)) in enumerate(kategoriler):
+            row.append(InlineKeyboardButton(f"{emoji} {isim}", callback_data=f"cuzdan_kat:{key}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+        buttons.append([InlineKeyboardButton("🔙 Geri", callback_data="cuzdan_menu")])
+
+        await query.edit_message_text(
+            "➖ *Gider Kategorisi Seç:*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # 📁 KATEGORİ SEÇİLDİ - Tutar sor
+    elif data.startswith("cuzdan_kat:"):
+        kategori = data.split(":")[1]
+        context.user_data["cuzdan_kategori"] = kategori
+        context.user_data["cuzdan_tutar_bekliyor"] = True
+
+        tip = context.user_data.get("cuzdan_tip", "gider")
+        tip_emoji = "➕" if tip == "gelir" else "➖"
+
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"{tip_emoji} *Tutarı yaz:*\n\n_Örnek: 150 veya 1500.50_",
+            parse_mode="Markdown",
+            reply_markup=ForceReply(selective=True)
+        )
+
+    # 📊 AYLIK RAPOR
+    elif data == "cuzdan_rapor":
+        context.user_data.pop("cuzdan_menu_aktif", None)  # Flag temizle
+        cuzdan = get_cuzdan(user_id)
+        buttons = [
+            [InlineKeyboardButton("💬 LLM ile Konuş", callback_data="cuzdan_rapor_llm")],
+            [InlineKeyboardButton("🔙 Geri", callback_data="cuzdan_menu")]
+        ]
+        await query.edit_message_text(
+            cuzdan.format_rapor_mesaj(),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # 💬 RAPORU LLM'E GÖNDER
+    elif data == "cuzdan_rapor_llm":
+        cuzdan = get_cuzdan(user_id)
+        rapor = cuzdan.format_rapor_mesaj()
+
+        # Raporu context olarak kaydet
+        context.user_data["cuzdan_rapor_context"] = rapor
+
+        # Menüyü kapat
+        context.user_data.pop("cuzdan_menu_aktif", None)
+        await clear_active_menu(context, chat_id)
+
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="💬 *Rapor LLM'e gönderildi!*\n\nŞimdi rapor hakkında soru sorabilirsin:\n\n"
+                 "_Örnek: 'En çok neye harcamışım?', 'Tasarruf önerisi ver', 'Bu ay nasıl gitti?'_",
+            parse_mode="Markdown"
+        )
+
+    # 📋 SON İŞLEMLER
+    elif data == "cuzdan_islemler":
+        context.user_data.pop("cuzdan_menu_aktif", None)  # Flag temizle
+        cuzdan = get_cuzdan(user_id)
+        islemler = cuzdan.son_islemler(10)
+
+        buttons = []
+        if islemler:
+            buttons.append([InlineKeyboardButton("🗑️ İşlem Sil", callback_data="cuzdan_sil_menu")])
+        buttons.append([InlineKeyboardButton("🔙 Geri", callback_data="cuzdan_menu")])
+
+        await query.edit_message_text(
+            cuzdan.format_son_islemler_mesaj(),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # 🗑️ İŞLEM SİL MENÜ
+    elif data == "cuzdan_sil_menu":
+        cuzdan = get_cuzdan(user_id)
+        islemler = cuzdan.son_islemler(10)
+
+        if not islemler:
+            buttons = [[InlineKeyboardButton("🔙 Geri", callback_data="cuzdan_menu")]]
+            await query.edit_message_text("📋 Silinecek işlem yok.", reply_markup=InlineKeyboardMarkup(buttons))
+            return
+
+        buttons = []
+        for islem in islemler:
+            tip_emoji = "➕" if islem["tip"] == "gelir" else "➖"
+            buttons.append([InlineKeyboardButton(
+                f"{tip_emoji} {islem['tutar']:,.0f}₺ - {islem['gun']}",
+                callback_data=f"cuzdan_sil:{islem['id']}"
+            )])
+        buttons.append([InlineKeyboardButton("🔙 Geri", callback_data="cuzdan_islemler")])
+
+        await query.edit_message_text(
+            "🗑️ *Silmek istediğin işlemi seç:*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # 🗑️ İŞLEM SİL
+    elif data.startswith("cuzdan_sil:"):
+        islem_id = int(data.split(":")[1])
+        cuzdan = get_cuzdan(user_id)
+
+        if cuzdan.islem_sil(islem_id):
+            # Silme başarılı - kalan işlemleri göster (silmeye devam edebilsin)
+            islemler = cuzdan.son_islemler(10)
+
+            if not islemler:
+                # Tüm işlemler silindi
+                buttons = [[InlineKeyboardButton("🔙 Cüzdana Dön", callback_data="cuzdan_menu")]]
+                await query.edit_message_text(
+                    f"✅ İşlem #{islem_id} silindi.\n\n📋 Başka işlem kalmadı.",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            else:
+                # Hala işlem var - silme menüsünde kal
+                buttons = []
+                for islem in islemler:
+                    tip_emoji = "➕" if islem["tip"] == "gelir" else "➖"
+                    buttons.append([InlineKeyboardButton(
+                        f"{tip_emoji} {islem['tutar']:,.0f}₺ - {islem['gun']}",
+                        callback_data=f"cuzdan_sil:{islem['id']}"
+                    )])
+                buttons.append([InlineKeyboardButton("🔙 Cüzdana Dön", callback_data="cuzdan_menu")])
+
+                await query.edit_message_text(
+                    f"✅ İşlem #{islem_id} silindi.\n\n🗑️ *Başka silmek istediğin var mı?*",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+        else:
+            buttons = [[InlineKeyboardButton("🔙 Geri", callback_data="cuzdan_islemler")]]
+            await query.edit_message_text("❌ İşlem bulunamadı.", reply_markup=InlineKeyboardMarkup(buttons))
+
+    # ⚙️ BAŞLANGIÇ BAKİYESİ
+    elif data == "cuzdan_baslangic":
+        context.user_data.pop("cuzdan_menu_aktif", None)  # Flag temizle
+        context.user_data["cuzdan_baslangic_bekliyor"] = True
+
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⚙️ *Başlangıç bakiyeni yaz:*\n\n_Mevcut birikimini gir (örn: 5000)_",
+            parse_mode="Markdown",
+            reply_markup=ForceReply(selective=True)
         )
 
     # 📝 YENİ NOT - Not ekleme moduna geç
@@ -3309,6 +3760,7 @@ def main():
                 BotCommand("yeni", "🔄 Yeni sohbet"),
                 BotCommand("konum", "📍 Konum paylaş"),
                 BotCommand("notdefteri", "📝 Not Defteri"),
+                BotCommand("cuzdan", "💰 Cüzdanım"),
                 BotCommand("belgelerim", "📄 Çalışma Alanım"),
                 BotCommand("kameralarim", "📷 Kamera yönetimi"),
                 BotCommand("limit", "📊 Günlük limitler"),
@@ -3348,6 +3800,7 @@ def main():
     app.add_handler(CommandHandler("yeni", yeni_command))
     app.add_handler(CommandHandler("konum", konum_command))
     app.add_handler(CommandHandler("notdefteri", notdefteri_command))
+    app.add_handler(CommandHandler("cuzdan", cuzdan_command))
     app.add_handler(CommandHandler("belgelerim", belgelerim_command))
     app.add_handler(CommandHandler("limit", limit_command))
     app.add_handler(CommandHandler("bagis", bagis_command))

@@ -16,7 +16,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import defaultdict
 from web_search import WebSearch
+from doviz import DovizKur
 _web_searcher = WebSearch()  # Global instance
+_doviz_kur = DovizKur()  # Global instance
 
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("requests").setLevel(logging.WARNING)
@@ -1358,6 +1360,16 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 print(f"   ✅ Hesaplama: {tool_param} = {result}")
                 return f"🧮 Hesaplama: {tool_param} = {result}"
 
+            if tool_name == "doviz_kur":
+                # Döviz/kripto/altın sorgusu
+                sonuc = _doviz_kur.kur_sorgula(tool_param or user_input)
+                if sonuc:
+                    print(f"   ✅ Döviz kuru alındı")
+                    return sonuc
+                # Spesifik bulunamadıysa tüm kurları göster
+                print(f"   📊 Tüm kurlar gösteriliyor")
+                return _doviz_kur.tum_kurlar()
+
             if tool_name == "hava_durumu":
                 city = tool_param or user_input
                 return await get_weather(city)
@@ -1417,7 +1429,7 @@ CLEAN DATA:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
                 "needs_faiss": bool,
                 "needs_semantic_memory": bool,
                 "needs_chat_history": bool,
-                "tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|yok",
+                "tool_name": "doviz_kur|web_ara|risale_ara|hava_durumu|namaz_vakti|yok",
                 "tool_param": str,
                 "response_style": "brief|detailed|conversational",
                 "is_farewell": bool,
@@ -1473,11 +1485,22 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 5. Param yaz → Araç için gerekli bilgiyi GEÇMİŞ + MESAJ'dan al
 
 🔧 ELİNDEKİ ARAÇLAR:
+• doviz_kur → Döviz/kripto/altın fiyatı (dolar, euro, bitcoin, altın vb.)
 • web_ara → Güncel/faktüel bilgi (aşağıya bak!)
 • risale_ara → Dini sorular için
 • hava_durumu → Hava durumu için
 • namaz_vakti → Namaz vakti için
 • yok → Sohbet, espri, genel bilgi (sen biliyorsun)
+
+💰 doviz_kur AKILLI KARAR:
+✅ KULLAN - Gerçek kur/fiyat sorgusu:
+• "dolar kaç", "euro ne kadar", "bitcoin fiyatı", "altın kaç lira", "döviz kurları"
+• Direkt fiyat sorusu (kısa, net soru)
+❌ KULLANMA - Sohbet içinde geçiyorsa:
+• "dolar kaç oldu bir bilsen" → Sohbet, yakınma (yok)
+• "dolar yükselmiş diyorlar" → Yorum (yok)
+• "dolar almıştım geçen" → Anlatım (yok)
+🎯 KURAL: Sadece GERÇEK fiyat sorgusu ise doviz_kur, sohbet/yorum ise yok
 
 🌐 web_ara AKILLI KARAR:
 ✅ KULLAN (kendin karar ver, kullanıcı demese bile):
@@ -1525,7 +1548,7 @@ Yani sen köprüsün - kullanıcı ile araçlar arasında karar verici.
 JSON:
 {{"question_type": "greeting|farewell|followup|religious|math|weather|general|ambiguous|topic_closed|espri",
 "needs_faiss": bool, "needs_semantic_memory": bool, "needs_long_term_memory": bool, "needs_chat_history": bool, "needs_clarification": bool,
-"tool_name": "web_ara|risale_ara|hava_durumu|namaz_vakti|yok",
+"tool_name": "doviz_kur|web_ara|risale_ara|hava_durumu|namaz_vakti|yok",
 "tool_param": "", "is_farewell": bool, "topic_closed": bool, "confidence": "low|medium|high", "reasoning": ""}}
 
 ÖNCE <analiz>, SONRA JSON:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
@@ -1980,6 +2003,8 @@ Kullanıcının enerjisini ve niyetini oku, ona göre cevap ver.
                 combined_sources.append(f"[🌐 WEB SONUCU]:\n{tool_result}")
             elif tool_name == "risale_ara":
                 combined_sources.append(f"[📚 RİSALE-İ NUR BAŞLANGIÇ]\n{tool_result}\n[📚 RİSALE-İ NUR BİTİŞ]")
+            elif tool_name == "doviz_kur":
+                combined_sources.append(f"[💰 DÖVİZ SONUCU]:\n{tool_result}\n\n📌 Bu kur bilgisini kullanıcıya göster.")
             elif tool_name == "namaz_vakti":
                 combined_sources.append(f"[🔧 ARAÇ SONUCU]:\n{tool_result}\n\n📌 Bu vakitleri kullanıcıya aynen göster.")
             else:
