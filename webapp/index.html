@@ -3,56 +3,164 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Cüzdanım</title>
+    <title>Asistan</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Bakiye Kartı -->
-        <div class="balance-card">
-            <div class="balance-label">Bakiye</div>
-            <div class="balance-amount" id="bakiye">0.00 ₺</div>
-            <div class="balance-stats">
-                <div class="stat">
-                    <span class="stat-label">Bu Ay Gelir</span>
-                    <span class="stat-value green" id="aylik-gelir">+0 ₺</span>
+    <div class="app-container">
+        <!-- ==================== CÜZDAN TAB ==================== -->
+        <div class="tab-content active" id="tab-cuzdan">
+            <div class="container">
+                <!-- Bakiye Kartı -->
+                <div class="balance-card" onclick="showBakiyeModal()">
+                    <div class="balance-label">Bakiye <span class="edit-hint">✏️</span></div>
+                    <div class="balance-amount" id="bakiye">0.00 ₺</div>
+                    <div class="balance-stats">
+                        <div class="stat">
+                            <span class="stat-label">Bu Ay Gelir</span>
+                            <span class="stat-value green" id="aylik-gelir">+0 ₺</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Bu Ay Gider</span>
+                            <span class="stat-value red" id="aylik-gider">-0 ₺</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat">
-                    <span class="stat-label">Bu Ay Gider</span>
-                    <span class="stat-value red" id="aylik-gider">-0 ₺</span>
+
+                <!-- Hızlı Butonlar -->
+                <div class="quick-actions">
+                    <button class="action-btn green" onclick="showGelirModal()">
+                        <span class="action-icon">+</span>
+                        <span class="action-text">Gelir</span>
+                    </button>
+                    <button class="action-btn red" onclick="showGiderModal()">
+                        <span class="action-icon">−</span>
+                        <span class="action-text">Gider</span>
+                    </button>
+                </div>
+
+                <!-- AI Analiz Butonu -->
+                <button class="ai-analyze-btn" onclick="sendToAI()">
+                    <span class="ai-icon">🤖</span>
+                    <span class="ai-text">AI ile Analiz Et</span>
+                </button>
+
+                <!-- Kategori Grafiği -->
+                <div class="section">
+                    <h3>Bu Ay Harcamalar</h3>
+                    <div class="chart-container" id="chart">
+                        <!-- JS ile doldurulacak -->
+                    </div>
+                </div>
+
+                <!-- Son İşlemler -->
+                <div class="section">
+                    <h3>Son İşlemler</h3>
+                    <div class="transactions" id="transactions">
+                        <!-- JS ile doldurulacak -->
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Hızlı Butonlar -->
-        <div class="quick-actions">
-            <button class="action-btn green" onclick="showGelirModal()">
-                <span class="action-icon">+</span>
-                <span class="action-text">Gelir</span>
-            </button>
-            <button class="action-btn red" onclick="showGiderModal()">
-                <span class="action-icon">−</span>
-                <span class="action-text">Gider</span>
-            </button>
-        </div>
+        <!-- ==================== NOTLAR TAB ==================== -->
+        <div class="tab-content" id="tab-notlar">
+            <div class="container">
+                <!-- Not Ekle Butonu -->
+                <button class="add-note-btn" onclick="showNotEkleModal()">
+                    <span>➕</span>
+                    <span>Yeni Not Ekle</span>
+                </button>
 
-        <!-- Kategori Grafiği -->
-        <div class="section">
-            <h3>Bu Ay Harcamalar</h3>
-            <div class="chart-container" id="chart">
-                <!-- JS ile doldurulacak -->
+                <!-- Notlar Listesi -->
+                <div class="section">
+                    <h3>📝 Notlarım</h3>
+                    <div class="notes-list" id="notes-list">
+                        <!-- JS ile doldurulacak -->
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Son İşlemler -->
-        <div class="section">
-            <h3>Son İşlemler</h3>
-            <div class="transactions" id="transactions">
-                <!-- JS ile doldurulacak -->
+        <!-- ==================== KONUM TAB ==================== -->
+        <div class="tab-content" id="tab-konum">
+            <div class="container">
+                <!-- Konum Kartı -->
+                <div class="location-card" id="location-card">
+                    <div class="location-icon">📍</div>
+                    <div class="location-text" id="location-text">Konum alınmadı</div>
+                    <button class="location-btn" onclick="getLocation()">
+                        <span>📍</span>
+                        <span>Konumumu Al</span>
+                    </button>
+                </div>
+
+                <!-- Konum Bilgileri -->
+                <div class="location-info" id="location-info" style="display: none;">
+                    <!-- Hava Durumu -->
+                    <div class="info-card" id="weather-card">
+                        <div class="info-header">
+                            <span class="info-icon">🌤️</span>
+                            <span class="info-title">Hava Durumu</span>
+                        </div>
+                        <div class="info-content" id="weather-content">
+                            Yükleniyor...
+                        </div>
+                    </div>
+
+                    <!-- Namaz Vakitleri -->
+                    <div class="info-card" id="prayer-card">
+                        <div class="info-header">
+                            <span class="info-icon">🕌</span>
+                            <span class="info-title">Namaz Vakitleri</span>
+                        </div>
+                        <div class="info-content" id="prayer-content">
+                            Yükleniyor...
+                        </div>
+                    </div>
+
+                    <!-- Yakın Yerler -->
+                    <div class="section">
+                        <h3>📍 Yakın Yerler</h3>
+                        <div class="nearby-categories">
+                            <button class="nearby-btn" onclick="findNearby('pharmacy')">💊 Eczane</button>
+                            <button class="nearby-btn" onclick="findNearby('fuel')">⛽ Benzinlik</button>
+                            <button class="nearby-btn" onclick="findNearby('hospital')">🏥 Hastane</button>
+                            <button class="nearby-btn" onclick="findNearby('mosque')">🕌 Cami</button>
+                            <button class="nearby-btn" onclick="findNearby('atm')">🏧 ATM</button>
+                            <button class="nearby-btn" onclick="findNearby('supermarket')">🛒 Market</button>
+                            <button class="nearby-btn" onclick="findNearby('restaurant')">🍽️ Restoran</button>
+                            <button class="nearby-btn" onclick="findNearby('cafe')">☕ Kafe</button>
+                            <button class="nearby-btn" onclick="findNearby('parking')">🅿️ Otopark</button>
+                            <button class="nearby-btn" onclick="findNearby('police')">👮 Polis</button>
+                        </div>
+                        <div class="nearby-results" id="nearby-results">
+                            <!-- JS ile doldurulacak -->
+                        </div>
+                    </div>
+                </div>
             </div>
+        </div>
+
+        <!-- ==================== ALT TAB BAR ==================== -->
+        <div class="tab-bar">
+            <button class="tab-btn active" onclick="switchTab('cuzdan')">
+                <span class="tab-icon">💰</span>
+                <span class="tab-text">Cüzdan</span>
+            </button>
+            <button class="tab-btn" onclick="switchTab('notlar')">
+                <span class="tab-icon">📝</span>
+                <span class="tab-text">Notlar</span>
+            </button>
+            <button class="tab-btn" onclick="switchTab('konum')">
+                <span class="tab-icon">📍</span>
+                <span class="tab-text">Konum</span>
+            </button>
         </div>
     </div>
+
+    <!-- ==================== MODALS ==================== -->
 
     <!-- Gelir Modal -->
     <div class="modal" id="gelir-modal">
@@ -96,6 +204,62 @@
             <div class="modal-buttons">
                 <button class="btn cancel" onclick="closeModal('gider-modal')">İptal</button>
                 <button class="btn confirm" onclick="giderEkle()">Ekle</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Başlangıç Bakiye Modal -->
+    <div class="modal" id="bakiye-modal">
+        <div class="modal-content">
+            <h3>💰 Başlangıç Bakiyesi</h3>
+            <p class="modal-desc">Mevcut cüzdan bakiyenizi girin</p>
+            <input type="number" id="baslangic-tutar" placeholder="Mevcut bakiye (₺)" inputmode="decimal">
+            <div class="modal-buttons">
+                <button class="btn cancel" onclick="closeModal('bakiye-modal')">İptal</button>
+                <button class="btn confirm" onclick="baslangicBakiyeAyarla()">Kaydet</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- İşlem Silme Onay Modal -->
+    <div class="modal" id="sil-modal">
+        <div class="modal-content">
+            <h3>🗑️ İşlemi Sil</h3>
+            <p class="modal-desc" id="sil-detay">Bu işlemi silmek istediğinize emin misiniz?</p>
+            <div class="modal-buttons">
+                <button class="btn cancel" onclick="closeModal('sil-modal')">İptal</button>
+                <button class="btn confirm danger" onclick="islemSilOnayla()">Sil</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Not Ekle Modal -->
+    <div class="modal" id="not-ekle-modal">
+        <div class="modal-content">
+            <h3>📝 Yeni Not</h3>
+            <textarea id="not-icerik" placeholder="Notunuzu yazın..." rows="4"></textarea>
+            <div class="hatirlatma-section">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="hatirlatma-aktif" onchange="toggleHatirlatma()">
+                    <span>⏰ Hatırlatma ekle</span>
+                </label>
+                <input type="datetime-local" id="hatirlatma-zaman" style="display: none;">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn cancel" onclick="closeModal('not-ekle-modal')">İptal</button>
+                <button class="btn confirm" onclick="notEkle()">Kaydet</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Not Silme Modal -->
+    <div class="modal" id="not-sil-modal">
+        <div class="modal-content">
+            <h3>🗑️ Notu Sil</h3>
+            <p class="modal-desc" id="not-sil-detay">Bu notu silmek istediğinize emin misiniz?</p>
+            <div class="modal-buttons">
+                <button class="btn cancel" onclick="closeModal('not-sil-modal')">İptal</button>
+                <button class="btn confirm danger" onclick="notSilOnayla()">Sil</button>
             </div>
         </div>
     </div>

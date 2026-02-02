@@ -9,7 +9,13 @@ body {
     background: var(--tg-theme-bg-color, #1a1a2e);
     color: var(--tg-theme-text-color, #ffffff);
     min-height: 100vh;
-    padding-bottom: 20px;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    padding-bottom: 70px;
 }
 
 .container {
@@ -18,7 +24,58 @@ body {
     padding: 16px;
 }
 
-/* Bakiye Kartı */
+/* ==================== TAB NAVIGATION ==================== */
+.tab-content {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.tab-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    background: var(--tg-theme-secondary-bg-color, #16213e);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding: 8px 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.tab-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tab-btn.active {
+    color: var(--tg-theme-button-color, #667eea);
+}
+
+.tab-icon {
+    font-size: 24px;
+    margin-bottom: 4px;
+}
+
+.tab-text {
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* ==================== CÜZDAN ==================== */
 .balance-card {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-radius: 20px;
@@ -26,6 +83,12 @@ body {
     text-align: center;
     margin-bottom: 20px;
     box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.balance-card:active {
+    transform: scale(0.98);
 }
 
 .balance-label {
@@ -71,7 +134,7 @@ body {
 .quick-actions {
     display: flex;
     gap: 12px;
-    margin-bottom: 24px;
+    margin-bottom: 16px;
 }
 
 .action-btn {
@@ -225,7 +288,282 @@ body {
 .transaction-amount.green { color: #4ade80; }
 .transaction-amount.red { color: #f87171; }
 
-/* Modal */
+/* ==================== NOTLAR ==================== */
+.add-note-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    border: 2px dashed rgba(255,255,255,0.3);
+    border-radius: 16px;
+    background: transparent;
+    color: var(--tg-theme-text-color, #ffffff);
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-note-btn:active {
+    background: rgba(255,255,255,0.1);
+    border-color: var(--tg-theme-button-color, #667eea);
+}
+
+.notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.note-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 14px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+}
+
+.note-content {
+    flex: 1;
+}
+
+.note-text {
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 8px;
+    white-space: pre-wrap;
+}
+
+.note-date {
+    font-size: 12px;
+    opacity: 0.5;
+}
+
+.note-reminder {
+    font-size: 12px;
+    color: #f59e0b;
+    margin-top: 4px;
+}
+
+.hatirlatma-section {
+    margin-bottom: 16px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    margin-bottom: 8px;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+}
+
+/* ==================== KONUM ==================== */
+.location-card {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    border-radius: 20px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.location-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.location-text {
+    font-size: 16px;
+    opacity: 0.9;
+    margin-bottom: 16px;
+}
+
+.location-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: rgba(255,255,255,0.2);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.location-btn:active {
+    background: rgba(255,255,255,0.3);
+    transform: scale(0.95);
+}
+
+.location-info {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.info-card {
+    background: var(--tg-theme-secondary-bg-color, #16213e);
+    border-radius: 16px;
+    padding: 16px;
+}
+
+.info-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.info-icon {
+    font-size: 20px;
+}
+
+.info-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.info-content {
+    font-size: 14px;
+}
+
+/* Hava Durumu */
+.weather-main {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
+.weather-temp {
+    font-size: 32px;
+    font-weight: bold;
+}
+
+.weather-desc {
+    font-size: 16px;
+    opacity: 0.8;
+}
+
+.weather-details {
+    display: flex;
+    gap: 16px;
+    font-size: 13px;
+    opacity: 0.7;
+}
+
+/* Namaz Vakitleri */
+.prayer-times {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.prayer-time {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+}
+
+.prayer-time span:first-child {
+    font-size: 12px;
+    opacity: 0.7;
+    margin-bottom: 4px;
+}
+
+.prayer-time span:last-child {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* Yakın Yerler */
+.nearby-categories {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.nearby-btn {
+    padding: 12px 8px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--tg-theme-text-color, #ffffff);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.nearby-btn:active, .nearby-btn.active {
+    background: var(--tg-theme-button-color, #667eea);
+    border-color: var(--tg-theme-button-color, #667eea);
+}
+
+.nearby-results {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.nearby-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.nearby-item:active {
+    background: rgba(255,255,255,0.1);
+}
+
+.nearby-icon {
+    font-size: 24px;
+    margin-right: 12px;
+}
+
+.nearby-info {
+    flex: 1;
+}
+
+.nearby-name {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+
+.nearby-distance {
+    font-size: 12px;
+    opacity: 0.6;
+}
+
+.nearby-arrow {
+    font-size: 18px;
+    opacity: 0.5;
+}
+
+.loading {
+    text-align: center;
+    padding: 20px;
+    opacity: 0.7;
+}
+
+/* ==================== MODAL ==================== */
 .modal {
     display: none;
     position: fixed;
@@ -259,7 +597,8 @@ body {
     font-size: 18px;
 }
 
-.modal-content input {
+.modal-content input,
+.modal-content textarea {
     width: 100%;
     padding: 14px 16px;
     border: 1px solid rgba(255,255,255,0.2);
@@ -268,9 +607,12 @@ body {
     color: var(--tg-theme-text-color, #ffffff);
     font-size: 16px;
     margin-bottom: 16px;
+    font-family: inherit;
+    resize: none;
 }
 
-.modal-content input::placeholder {
+.modal-content input::placeholder,
+.modal-content textarea::placeholder {
     color: rgba(255,255,255,0.5);
 }
 
@@ -323,7 +665,12 @@ body {
     color: var(--tg-theme-button-text-color, #ffffff);
 }
 
-/* Boş durum */
+.btn.danger {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+}
+
+/* ==================== ORTAK ==================== */
 .empty-state {
     text-align: center;
     padding: 40px 20px;
@@ -333,4 +680,69 @@ body {
 .empty-state-icon {
     font-size: 48px;
     margin-bottom: 12px;
+}
+
+.modal-desc {
+    text-align: center;
+    opacity: 0.7;
+    font-size: 14px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.delete-btn {
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    padding: 8px;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.2s, transform 0.2s;
+    margin-left: 8px;
+}
+
+.delete-btn:hover {
+    opacity: 1;
+}
+
+.delete-btn:active {
+    transform: scale(0.9);
+}
+
+.edit-hint {
+    font-size: 12px;
+    opacity: 0.6;
+    margin-left: 4px;
+}
+
+/* AI Analiz Butonu */
+.ai-analyze-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    border: none;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.ai-analyze-btn:active {
+    transform: scale(0.98);
+}
+
+.ai-icon {
+    font-size: 20px;
+}
+
+.ai-text {
+    font-size: 15px;
 }
