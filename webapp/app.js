@@ -9,13 +9,11 @@ tg.ready();
 const user = tg.initDataUnsafe?.user;
 const userId = user?.id || 'demo';
 
-// API URL (bot'unuzun backend'i)
-const API_URL = 'https://YOUR_BACKEND_URL/api'; // Bunu değiştirin
-
 // State
 let selectedKategori = null;
 let veriler = {
     bakiye: 0,
+    baslangic_bakiye: 0,
     aylik_gelir: 0,
     aylik_gider: 0,
     islemler: [],
@@ -81,9 +79,9 @@ const kategoriIsim = {
 };
 
 // Sayfa yüklendiğinde
-document.addEventListener('DOMContentLoaded', () => {
-    // Demo veri yükle (backend olmadan test için)
-    loadDemoData();
+document.addEventListener('DOMContentLoaded', async () => {
+    // Telegram CloudStorage'dan veri yükle
+    await loadData();
 
     // Kategori butonlarına event listener ekle
     document.querySelectorAll('.kat-btn').forEach(btn => {
@@ -96,48 +94,99 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// Demo veri (backend olmadan test için)
-function loadDemoData() {
-    veriler = {
-        bakiye: 24850,
-        aylik_gelir: 25000,
-        aylik_gider: 1570,
-        islemler: [
-            { tip: 'gelir', tutar: 25000, kategori: 'maas', aciklama: 'Şubat maaşı', tarih: '2026-02-01' },
-            { tip: 'gider', tutar: 450, kategori: 'market', aciklama: 'Haftalık alışveriş', tarih: '2026-02-02' },
-            { tip: 'gider', tutar: 320, kategori: 'yemek', aciklama: '', tarih: '2026-02-02' },
-            { tip: 'gider', tutar: 800, kategori: 'yakit', aciklama: 'Benzin', tarih: '2026-02-01' }
-        ],
-        kategoriler: {
-            market: 450,
-            yemek: 320,
-            yakit: 800
-        }
-    };
-
-    updateUI();
-}
-
-// Backend'den veri yükle
+// Telegram CloudStorage'dan veri yükle
 async function loadData() {
     try {
-        const response = await fetch(`${API_URL}/cuzdan/${userId}`);
-        if (response.ok) {
-            veriler = await response.json();
+        // CloudStorage'dan oku
+        if (tg.CloudStorage) {
+            tg.CloudStorage.getItem('cuzdan_veriler', (err, value) => {
+                if (!err && value) {
+                    veriler = JSON.parse(value);
+                    hesaplaBakiye();
+                    updateUI();
+                } else {
+                    // İlk kullanım - boş veri
+                    veriler = {
+                        bakiye: 0,
+                        baslangic_bakiye: 0,
+                        islemler: []
+                    };
+                    updateUI();
+                }
+            });
+        } else {
+            // CloudStorage yoksa localStorage kullan
+            const saved = localStorage.getItem('cuzdan_veriler');
+            if (saved) {
+                veriler = JSON.parse(saved);
+                hesaplaBakiye();
+            }
             updateUI();
         }
     } catch (e) {
-        console.log('Backend bağlantısı yok, demo veri kullanılıyor');
-        loadDemoData();
+        console.error('Veri yükleme hatası:', e);
+        updateUI();
     }
+}
+
+// Veriyi kaydet
+async function saveData() {
+    try {
+        const dataStr = JSON.stringify(veriler);
+
+        if (tg.CloudStorage) {
+            tg.CloudStorage.setItem('cuzdan_veriler', dataStr, (err) => {
+                if (err) console.error('CloudStorage kayıt hatası:', err);
+            });
+        } else {
+            localStorage.setItem('cuzdan_veriler', dataStr);
+        }
+    } catch (e) {
+        console.error('Kaydetme hatası:', e);
+    }
+}
+
+// Bakiye hesapla
+function hesaplaBakiye() {
+    let bakiye = veriler.baslangic_bakiye || 0;
+
+    veriler.islemler.forEach(islem => {
+        if (islem.tip === 'gelir') {
+            bakiye += islem.tutar;
+        } else {
+            bakiye -= islem.tutar;
+        }
+    });
+
+    veriler.bakiye = bakiye;
+
+    // Bu ayın gelir/gider hesapla
+    const now = new Date();
+    const ayBasi = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    veriler.aylik_gelir = 0;
+    veriler.aylik_gider = 0;
+    veriler.kategoriler = {};
+
+    veriler.islemler.forEach(islem => {
+        const islemTarih = new Date(islem.tarih);
+        if (islemTarih >= ayBasi) {
+            if (islem.tip === 'gelir') {
+                veriler.aylik_gelir += islem.tutar;
+            } else {
+                veriler.aylik_gider += islem.tutar;
+                veriler.kategoriler[islem.kategori] = (veriler.kategoriler[islem.kategori] || 0) + islem.tutar;
+            }
+        }
+    });
 }
 
 // UI güncelle
 function updateUI() {
     // Bakiye
     document.getElementById('bakiye').textContent = formatMoney(veriler.bakiye);
-    document.getElementById('aylik-gelir').textContent = '+' + formatMoney(veriler.aylik_gelir);
-    document.getElementById('aylik-gider').textContent = '-' + formatMoney(veriler.aylik_gider);
+    document.getElementById('aylik-gelir').textContent = '+' + formatMoney(veriler.aylik_gelir || 0);
+    document.getElementById('aylik-gider').textContent = '-' + formatMoney(veriler.aylik_gider || 0);
 
     // Grafik
     updateChart();
@@ -157,7 +206,7 @@ function formatMoney(amount) {
 // Grafik güncelle
 function updateChart() {
     const container = document.getElementById('chart');
-    const kategoriler = veriler.kategoriler;
+    const kategoriler = veriler.kategoriler || {};
 
     if (Object.keys(kategoriler).length === 0) {
         container.innerHTML = `
@@ -197,7 +246,7 @@ function updateChart() {
 // İşlemler güncelle
 function updateTransactions() {
     const container = document.getElementById('transactions');
-    const islemler = veriler.islemler.slice(0, 10);
+    const islemler = (veriler.islemler || []).slice().reverse().slice(0, 10);
 
     if (islemler.length === 0) {
         container.innerHTML = `
@@ -220,7 +269,7 @@ function updateTransactions() {
         const tarih = new Date(islem.tarih).toLocaleDateString('tr-TR');
 
         html += `
-            <div class="transaction">
+            <div class="transaction" data-id="${islem.id}">
                 <div class="transaction-icon ${tipClass}">${emoji}</div>
                 <div class="transaction-info">
                     <div class="transaction-title">${isim}${islem.aciklama ? ' - ' + islem.aciklama : ''}</div>
@@ -271,23 +320,29 @@ async function gelirEkle() {
         return;
     }
 
-    // Demo modda local güncelle
-    veriler.bakiye += tutar;
-    veriler.aylik_gelir += tutar;
-    veriler.islemler.unshift({
+    // İşlem ekle
+    const islem = {
+        id: Date.now(),
         tip: 'gelir',
         tutar: tutar,
         kategori: selectedKategori,
         aciklama: aciklama,
         tarih: new Date().toISOString()
-    });
+    };
 
+    veriler.islemler.push(islem);
+    hesaplaBakiye();
+    await saveData();
     updateUI();
-    closeModal('gelir-modal');
-    tg.showAlert('✅ Gelir eklendi!');
 
-    // Backend'e gönder
-    sendToBot('gelir', tutar, selectedKategori, aciklama);
+    closeModal('gelir-modal');
+
+    // Haptic feedback
+    if (tg.HapticFeedback) {
+        tg.HapticFeedback.notificationOccurred('success');
+    }
+
+    tg.showAlert('✅ Gelir eklendi!');
 }
 
 // Gider ekle
@@ -305,36 +360,27 @@ async function giderEkle() {
         return;
     }
 
-    // Demo modda local güncelle
-    veriler.bakiye -= tutar;
-    veriler.aylik_gider += tutar;
-    veriler.kategoriler[selectedKategori] = (veriler.kategoriler[selectedKategori] || 0) + tutar;
-    veriler.islemler.unshift({
+    // İşlem ekle
+    const islem = {
+        id: Date.now(),
         tip: 'gider',
         tutar: tutar,
         kategori: selectedKategori,
         aciklama: aciklama,
         tarih: new Date().toISOString()
-    });
-
-    updateUI();
-    closeModal('gider-modal');
-    tg.showAlert('✅ Gider eklendi!');
-
-    // Backend'e gönder
-    sendToBot('gider', tutar, selectedKategori, aciklama);
-}
-
-// Bot'a veri gönder
-function sendToBot(tip, tutar, kategori, aciklama) {
-    const data = {
-        action: 'cuzdan_islem',
-        tip: tip,
-        tutar: tutar,
-        kategori: kategori,
-        aciklama: aciklama
     };
 
-    // Telegram üzerinden gönder
-    tg.sendData(JSON.stringify(data));
+    veriler.islemler.push(islem);
+    hesaplaBakiye();
+    await saveData();
+    updateUI();
+
+    closeModal('gider-modal');
+
+    // Haptic feedback
+    if (tg.HapticFeedback) {
+        tg.HapticFeedback.notificationOccurred('success');
+    }
+
+    tg.showAlert('✅ Gider eklendi!');
 }
