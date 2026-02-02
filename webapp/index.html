@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Cüzdanım</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Bakiye Kartı -->
+        <div class="balance-card">
+            <div class="balance-label">Bakiye</div>
+            <div class="balance-amount" id="bakiye">0.00 ₺</div>
+            <div class="balance-stats">
+                <div class="stat">
+                    <span class="stat-label">Bu Ay Gelir</span>
+                    <span class="stat-value green" id="aylik-gelir">+0 ₺</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Bu Ay Gider</span>
+                    <span class="stat-value red" id="aylik-gider">-0 ₺</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hızlı Butonlar -->
+        <div class="quick-actions">
+            <button class="action-btn green" onclick="showGelirModal()">
+                <span class="action-icon">+</span>
+                <span class="action-text">Gelir</span>
+            </button>
+            <button class="action-btn red" onclick="showGiderModal()">
+                <span class="action-icon">−</span>
+                <span class="action-text">Gider</span>
+            </button>
+        </div>
+
+        <!-- Kategori Grafiği -->
+        <div class="section">
+            <h3>Bu Ay Harcamalar</h3>
+            <div class="chart-container" id="chart">
+                <!-- JS ile doldurulacak -->
+            </div>
+        </div>
+
+        <!-- Son İşlemler -->
+        <div class="section">
+            <h3>Son İşlemler</h3>
+            <div class="transactions" id="transactions">
+                <!-- JS ile doldurulacak -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Gelir Modal -->
+    <div class="modal" id="gelir-modal">
+        <div class="modal-content">
+            <h3>➕ Gelir Ekle</h3>
+            <input type="number" id="gelir-tutar" placeholder="Tutar (₺)" inputmode="decimal">
+            <div class="kategori-grid" id="gelir-kategoriler">
+                <button class="kat-btn" data-kat="maas">💼 Maaş</button>
+                <button class="kat-btn" data-kat="ek_gelir">💵 Ek Gelir</button>
+                <button class="kat-btn" data-kat="yatirim">📈 Yatırım</button>
+                <button class="kat-btn" data-kat="hediye">🎁 Hediye</button>
+                <button class="kat-btn" data-kat="iade">🔄 İade</button>
+                <button class="kat-btn" data-kat="diger_gelir">💰 Diğer</button>
+            </div>
+            <input type="text" id="gelir-aciklama" placeholder="Açıklama (opsiyonel)">
+            <div class="modal-buttons">
+                <button class="btn cancel" onclick="closeModal('gelir-modal')">İptal</button>
+                <button class="btn confirm" onclick="gelirEkle()">Ekle</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gider Modal -->
+    <div class="modal" id="gider-modal">
+        <div class="modal-content">
+            <h3>➖ Gider Ekle</h3>
+            <input type="number" id="gider-tutar" placeholder="Tutar (₺)" inputmode="decimal">
+            <div class="kategori-grid" id="gider-kategoriler">
+                <button class="kat-btn" data-kat="market">🛒 Market</button>
+                <button class="kat-btn" data-kat="yemek">🍔 Yemek</button>
+                <button class="kat-btn" data-kat="fatura">📄 Fatura</button>
+                <button class="kat-btn" data-kat="yakit">⛽ Yakıt</button>
+                <button class="kat-btn" data-kat="ulasim">🚌 Ulaşım</button>
+                <button class="kat-btn" data-kat="saglik">💊 Sağlık</button>
+                <button class="kat-btn" data-kat="giyim">👕 Giyim</button>
+                <button class="kat-btn" data-kat="eglence">🎮 Eğlence</button>
+                <button class="kat-btn" data-kat="kira">🏠 Kira</button>
+                <button class="kat-btn" data-kat="diger_gider">💸 Diğer</button>
+            </div>
+            <input type="text" id="gider-aciklama" placeholder="Açıklama (opsiyonel)">
+            <div class="modal-buttons">
+                <button class="btn cancel" onclick="closeModal('gider-modal')">İptal</button>
+                <button class="btn confirm" onclick="giderEkle()">Ekle</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
